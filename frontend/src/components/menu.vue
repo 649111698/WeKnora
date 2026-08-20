@@ -1,7 +1,14 @@
 <template>
-    <div class="aside_box" :class="{ 'aside_box--collapsed': uiStore.sidebarCollapsed }">
+    <div class="aside_box" :class="{
+        'aside_box--collapsed': sidebarCollapsedUI,
+        'aside_box--mobile-open': uiStore.mobileNavOpen,
+    }">
+        <!-- 移动端抽屉遮罩：点击关闭 -->
+        <Teleport to="body">
+            <div v-if="uiStore.mobileNavOpen" class="mobile-nav-backdrop" @click="uiStore.closeMobileNav()"></div>
+        </Teleport>
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
-        <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
+        <div class="logo_row" v-if="!sidebarCollapsedUI">
             <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
                 <img class="logo" src="@/assets/img/weknora.png" alt="">
                 <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
@@ -50,16 +57,16 @@
         </t-tooltip>
 
         <!-- 空间选择器：仅在用户可切换空间时显示 -->
-        <TenantSelector v-if="canAccessAllTenants && !uiStore.sidebarCollapsed" />
+        <TenantSelector v-if="canAccessAllTenants && !sidebarCollapsedUI" />
 
         <!-- 折叠时右侧拖拽展开手柄 -->
-        <div v-if="uiStore.sidebarCollapsed" class="sidebar-drag-handle" @mousedown="onDragHandleMouseDown" />
+        <div v-if="sidebarCollapsedUI" class="sidebar-drag-handle" @mousedown="onDragHandleMouseDown" />
 
         <!-- 上半部分：新对话吸顶 + 知识库/智能体/共享空间/历史会话随滚动一起滚走 -->
         <div class="menu_top" ref="scrollContainer" @scroll="handleScroll">
             <!-- 全局搜索入口：点击打开命令面板（⌘K）。展开态移至顶部 logo_row 的图标按钮；
                  折叠态在此处保留为图标项 + 深色 tooltip。 -->
-            <div class="menu_box menu_box--cmdk" v-if="uiStore.sidebarCollapsed">
+            <div class="menu_box menu_box--cmdk" v-if="sidebarCollapsedUI">
                 <t-tooltip placement="right">
                     <template #content>
                         <span class="cmdk-tip">
@@ -76,9 +83,9 @@
                     </div>
                 </t-tooltip>
             </div>
-            <div class="menu_box" :class="{ 'menu_box--sticky': item.children && !uiStore.sidebarCollapsed }"
+            <div class="menu_box" :class="{ 'menu_box--sticky': item.children && !sidebarCollapsedUI }"
                 v-for="(item, index) in topMenuItems" :key="index">
-                <t-tooltip :content="item.title" placement="right" :disabled="!uiStore.sidebarCollapsed">
+                <t-tooltip :content="item.title" placement="right" :disabled="!sidebarCollapsedUI">
                     <div @click="handleMenuClick(item.path)" @mouseenter="mouseenteMenu(item.path)"
                         @mouseleave="mouseleaveMenu(item.path)" :data-guide="`nav-${item.path}`"
                         :class="['menu_item', item.childrenPath && item.childrenPath == currentpath ? 'menu_item_c_active' : isMenuItemActive(item.path) ? 'menu_item_active' : '']">
@@ -88,7 +95,7 @@
                                     :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'agent' ? agentIcon : item.icon == 'organization' ? organizationIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)"
                                     alt="">
                             </div>
-                            <template v-if="!uiStore.sidebarCollapsed">
+                            <template v-if="!sidebarCollapsedUI">
                                 <span class="menu_title" :title="item.title">{{ item.title }}</span>
                                 <span v-if="item.path === 'organizations' && orgStore.totalPendingJoinRequestCount > 0"
                                     class="menu-pending-badge"
@@ -101,7 +108,7 @@
             </div>
 
             <!-- 历史会话：按来源筛选后统一按日期分组展示 -->
-            <div class="submenu" v-if="!uiStore.sidebarCollapsed">
+            <div class="submenu" v-if="!sidebarCollapsedUI">
                 <!-- Stable, always-mounted source filter: reserving its row here
                      (instead of embedding it in the first date group, which
                      appears/disappears while a bucket loads) prevents the
@@ -170,7 +177,7 @@
         </div>
 
         <!-- 批量管理底部操作条：固定在侧栏底部、用户头像上方 -->
-        <div v-if="batchMode && !uiStore.sidebarCollapsed" class="batch-inline-footer">
+        <div v-if="batchMode && !sidebarCollapsedUI" class="batch-inline-footer">
             <div class="batch-footer-left">
                 <t-checkbox :checked="isAllBatchSelected" :indeterminate="isBatchIndeterminate"
                     @change="toggleBatchSelectAll">
@@ -341,6 +348,18 @@ type MenuItem = { title: string; icon: string; path: string; childrenPath?: stri
 const { menuArr, visibleMenuArr } = storeToRefs(usemenuStore);
 let activeSubmenu = ref<string>('');
 const isLiteEdition = ref(false);
+
+// 移动端抽屉打开时强制以展开形态渲染（桌面折叠偏好不影响抽屉内容）
+const sidebarCollapsedUI = computed(() => uiStore.sidebarCollapsed && !uiStore.mobileNavOpen);
+
+// 桌面断点监听：回到桌面时收起移动端抽屉
+const MOBILE_NAV_MEDIA = '(max-width: 959.98px)';
+const mobileNavMedia = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia(MOBILE_NAV_MEDIA)
+    : null;
+const handleMobileNavMediaChange = (e: MediaQueryListEvent) => {
+    if (!e.matches) uiStore.closeMobileNav();
+};
 
 // 批量管理状态
 const batchMode = ref(false)
@@ -976,6 +995,10 @@ onMounted(async () => {
 
     window.addEventListener(SESSION_MUTATION_EVENT, handleSessionMutation);
 
+    if (mobileNavMedia) {
+        mobileNavMedia.addEventListener('change', handleMobileNavMediaChange);
+    }
+
     isLiteEdition.value = authStore.isLiteMode
     getSystemInfo().then(res => {
         if (res.data?.edition === 'lite') {
@@ -1001,9 +1024,14 @@ onMounted(async () => {
 
 onUnmounted(() => {
     window.removeEventListener(SESSION_MUTATION_EVENT, handleSessionMutation);
+    if (mobileNavMedia) {
+        mobileNavMedia.removeEventListener('change', handleMobileNavMediaChange);
+    }
 });
 
 watch([() => route.name, () => route.params], (newvalue, oldvalue) => {
+    // 移动端抽屉：路由切换即收起（点击菜单/会话跳转后回到内容区）
+    uiStore.closeMobileNav();
     const nameStr = typeof newvalue[0] === 'string' ? (newvalue[0] as string) : (newvalue[0] ? String(newvalue[0]) : '')
     currentpath.value = nameStr;
     if (newvalue[1].chatid) {
@@ -1887,8 +1915,52 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
 .menu_box {
     position: relative;
 }
+
+// 移动端（<960px）：侧栏改为覆盖式抽屉，默认移出屏幕，由 uiStore.mobileNavOpen 控制滑入
+@media (max-width: 959.98px) {
+    .aside_box {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        height: auto;
+        z-index: 1200;
+        width: 260px;
+        min-width: 260px;
+        max-width: 85vw;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+
+        &.aside_box--mobile-open {
+            transform: translateX(0);
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
+        }
+
+        // 桌面折叠按钮与拖拽展开手柄在移动端抽屉里无意义
+        .sidebar-drag-handle,
+        .logo_actions .sidebar-toggle {
+            display: none;
+        }
+    }
+}
 </style>
 <style lang="less">
+// 移动端抽屉遮罩：Teleport 到 body，scoped 样式作用不到，放在非 scoped 块；
+// 桌面端（≥960px）不渲染也不显示。
+.mobile-nav-backdrop {
+    display: none;
+}
+
+@media (max-width: 959.98px) {
+    .mobile-nav-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 1100; // 低于抽屉(1200)，高于页面内容
+        background: rgba(0, 0, 0, 0.4);
+    }
+}
+
 // Dark mode: invert dark logo to light
 html[theme-mode="dark"] .aside_box .logo_box .logo {
     filter: invert(1) hue-rotate(180deg);

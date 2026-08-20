@@ -1,5 +1,14 @@
 <template>
   <header class="chat-header" :class="{ 'is-editing': titleEditing, 'is-docked': hasReferencesPanel }">
+    <!-- 移动端（<960px）：打开侧栏抽屉；桌面端隐藏 -->
+    <button
+      type="button"
+      class="chat-header__nav-btn"
+      :aria-label="t('menu.expandSidebar')"
+      @click="uiStore.toggleMobileNav()"
+    >
+      <t-icon name="view-list" size="18px" />
+    </button>
     <form
       v-if="titleEditing"
       class="chat-header__edit"
@@ -119,6 +128,7 @@ import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { copyToClipboard } from '@/utils/clipboard'
 import { getMessageList } from '@/api/chat'
+import { useUIStore } from '@/stores/ui'
 import {
   clearSession,
   removeSession,
@@ -144,6 +154,7 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const uiStore = useUIStore()
 const busyAction = ref('')
 const menuVisible = ref(false)
 const menuMode = ref<MenuMode>('menu')
@@ -450,6 +461,35 @@ function handleMenuClick(data: { value: string }): void {
 .chat-header__pin {
   flex: 0 0 auto;
   color: var(--td-text-color-placeholder);
+}
+
+// 移动端抽屉开关：桌面端隐藏，<960px 显示
+.chat-header__nav-btn {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--td-text-color-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    color: var(--td-text-color-primary);
+    background: var(--td-bg-color-container-hover);
+  }
+}
+
+@media (max-width: 959.98px) {
+  .chat-header__nav-btn {
+    display: inline-flex;
+  }
 }
 
 .chat-header__menu-btn {

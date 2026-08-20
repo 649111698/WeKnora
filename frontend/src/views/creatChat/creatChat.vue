@@ -2,6 +2,11 @@
     <div class="dialogue-wrap">
         <div class="dialogue-answers">
             <div class="dialogue-title" style="--wails-draggable: drag">
+                <!-- 移动端（<960px）：打开侧栏抽屉；桌面端隐藏 -->
+                <button type="button" class="dialogue-title__nav-btn" :aria-label="$t('menu.expandSidebar')"
+                    @click="uiStore.toggleMobileNav()">
+                    <t-icon name="view-list" size="18px" />
+                </button>
                 <span style="--wails-draggable: drag">{{ $t('createChat.title') }}</span>
             </div>
             <!-- 推荐问题 -->
@@ -400,6 +405,55 @@ const handleKBEditorSuccess = (kbId: string) => {
 
     :deep(.t-textarea__inner) {
         width: 300px !important;
+    }
+}
+
+/*
+ * 移动端（<960px）：侧栏已改为覆盖式抽屉，不再占据布局宽度，
+ * 上面的负向偏移与固定宽度全部失效，恢复居中 + 全宽。
+ */
+@media (max-width: 959.98px) {
+    .answers-input {
+        transform: translateX(0);
+        left: auto;
+        width: 100%;
+    }
+
+    :deep(.t-textarea__inner) {
+        width: 100% !important;
+    }
+
+    .dialogue-title {
+        padding: 0 16px;
+        box-sizing: border-box;
+    }
+}
+
+// 移动端抽屉开关：桌面端隐藏，<960px 显示
+.dialogue-title__nav-btn {
+    display: none;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    margin-right: 10px;
+    border: 0;
+    border-radius: 6px;
+    color: var(--td-text-color-secondary);
+    background: transparent;
+    cursor: pointer;
+
+    &:hover {
+        color: var(--td-text-color-primary);
+        background: var(--td-bg-color-container-hover);
+    }
+}
+
+@media (max-width: 959.98px) {
+    .dialogue-title__nav-btn {
+        display: inline-flex;
     }
 }
 </style>

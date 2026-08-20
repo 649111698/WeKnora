@@ -20,7 +20,9 @@ export const useUIStore = defineStore('ui', {
     manualEditorInitialContent: '',
     manualEditorInitialStatus: 'draft' as 'draft' | 'publish',
     manualEditorOnSuccess: null as null | ((payload: { kbId: string; knowledgeId: string; status: 'draft' | 'publish' }) => void),
-    sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true'
+    sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
+    // 移动端（<960px）侧栏抽屉开关；桌面端不读取该状态
+    mobileNavOpen: false
   }),
 
   actions: {
@@ -133,6 +135,18 @@ export const useUIStore = defineStore('ui', {
     expandSidebar() {
       this.sidebarCollapsed = false
       localStorage.setItem('sidebar_collapsed', 'false')
+    },
+
+    openMobileNav() {
+      this.mobileNavOpen = true
+    },
+
+    closeMobileNav() {
+      this.mobileNavOpen = false
+    },
+
+    toggleMobileNav() {
+      this.mobileNavOpen = !this.mobileNavOpen
     }
   }
 })

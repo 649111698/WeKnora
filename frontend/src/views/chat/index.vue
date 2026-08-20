@@ -1304,4 +1304,30 @@ onBeforeRouteUpdate((to, from, next) => {
 .sq-fade-leave-to {
     opacity: 0;
 }
+
+/*
+ * 移动端（<960px）：侧栏改为覆盖式抽屉（见 menu.vue），聊天区占满整个视口。
+ * 桌面端 max-width: calc(100vw - 260px) / min-width: 400px 在窄屏下互相冲突
+ * （390px 视口被 min-width 强行撑到 400px 造成横向溢出），这里统一放开。
+ */
+@media (max-width: 959.98px) {
+    .chat {
+        font-size: 16px;
+        padding: 0 8px 12px;
+        max-width: 100%;
+        min-width: 0;
+
+        &.is-sidebar-collapsed {
+            max-width: 100%;
+        }
+
+        .chat_scroll_box {
+            padding: 4px 4px 0;
+        }
+
+        .input-container {
+            padding: 0 4px;
+        }
+    }
+}
 </style>

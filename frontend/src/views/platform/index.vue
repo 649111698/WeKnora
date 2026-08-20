@@ -241,6 +241,13 @@ onUnmounted(() => {
     background: var(--td-bg-color-container);
 }
 
+/* 移动端（<960px）：取消 600px 最小宽度（侧栏已改为覆盖式抽屉，不占布局宽度） */
+@media (max-width: 959.98px) {
+    .main {
+        min-width: 0;
+    }
+}
+
 /* 右侧路由区：占满剩余宽度与整列高度，并把 min-height:0 传给子页面以便内部 flex 滚动 */
 .platform-route-outlet {
     flex: 1;
