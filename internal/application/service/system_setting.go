@@ -144,6 +144,24 @@ var registry = map[string]settingSpec{
 		Description: "公开注册成功后的默认空间策略。create_personal = 自动创建个人空间并设为 Owner；" +
 			"tenantless = 仅创建用户，等待接受邀请或主动创建空间。修改后只影响新注册用户。",
 	},
+	// 全站页面水印：前端启动时经 /auth/config 读取（DB > ENV > 默认），
+	// 管理端修改后新会话立即生效，无需重启。
+	"auth.watermark_enabled": {
+		Type:     "bool",
+		EnvName:  "WATERMARK_ENABLED",
+		Default:  false,
+		Category: "security",
+		Description: "全站页面水印开关。开启后所有界面（登录页、问答、设置等，PC 与移动端）叠加" +
+			"不可交互的平铺文本水印，用于防截图外泄溯源。",
+	},
+	"auth.watermark_text": {
+		Type:     "string",
+		EnvName:  "WATERMARK_TEXT",
+		Default:  "{username}",
+		Category: "security",
+		Description: "水印文案。支持 {username} 占位符，登录后替换为当前用户名。" +
+			"留空时回退为 {username}。",
+	},
 	// tenant.max_owned_per_user caps how many tenants a single non-superuser
 	// can create (and Own) via self-service POST /tenants. Read on every
 	// request — UI edits take effect immediately, no restart required. The

@@ -637,7 +637,7 @@ const SETTINGS_SECTION_KEYS: Record<Exclude<SettingsSection, 'other'>, readonly 
     'asynq.wiki_concurrency',
     'model.max_concurrency',
   ],
-  security: ['ssrf.whitelist'],
+  security: ['auth.watermark_enabled', 'auth.watermark_text', 'ssrf.whitelist'],
 }
 
 const activeSettingsSection = ref<SettingsSection>('access')

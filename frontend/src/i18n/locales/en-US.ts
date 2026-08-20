@@ -3578,7 +3578,9 @@ export default {
       keyLabels: {
         auth: {
           registration_mode: 'Self-service registration mode',
-          default_tenant_mode: 'Default workspace provisioning'
+          default_tenant_mode: 'Default workspace provisioning',
+          watermark_enabled: 'Site-wide page watermark',
+          watermark_text: 'Watermark text'
         },
         ssrf: {
           whitelist: 'SSRF protection allowlist'
@@ -3604,7 +3606,9 @@ export default {
       keyDescriptions: {
         auth: {
           registration_mode: 'Self-service registration mode. self_serve = anyone can register an account; invite_only = public registration is disabled and only Owners/Admins can invite. Takes effect immediately after saving, but use self_serve with care (the public internet will send spam sign-ups).',
-          default_tenant_mode: 'Workspace provisioning after public registration. create_personal creates an Owner workspace; tenantless creates only the account until the user accepts an invitation or creates a workspace. Applies to new users only.'
+          default_tenant_mode: 'Workspace provisioning after public registration. create_personal creates an Owner workspace; tenantless creates only the account until the user accepts an invitation or creates a workspace. Applies to new users only.',
+          watermark_enabled: 'When enabled, a non-interactive tiled text watermark overlays every page (login, chat, settings; desktop and mobile) to deter and trace screenshot leaks. Takes effect for new sessions without restart.',
+          watermark_text: 'Watermark text. Supports the {username} placeholder, replaced with the logged-in username; falls back to {username} when empty.'
         },
         ssrf: {
           whitelist: 'SSRF protection allowlist. Accepts entries such as example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1. Takes effect immediately after saving. The SSRF_WHITELIST_EXTRA environment variable is still maintained by the deployer and is not overridden here.'

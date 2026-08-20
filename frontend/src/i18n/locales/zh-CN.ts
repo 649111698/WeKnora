@@ -2790,7 +2790,9 @@ export default {
         },
         auth: {
           registration_mode: '自助注册模式。self_serve = 任何人可注册账号；invite_only = 关闭公网注册，仅 Owner/Admin 可邀请。修改后立即生效，但谨慎对待 self_serve（公网会接受 spam）。',
-          default_tenant_mode: '公开注册后的空间初始化策略。create_personal 会自动创建个人空间并授予 Owner；tenantless 仅创建账户，用户需要接受邀请或主动创建空间。只影响之后注册的用户。'
+          default_tenant_mode: '公开注册后的空间初始化策略。create_personal 会自动创建个人空间并授予 Owner；tenantless 仅创建账户，用户需要接受邀请或主动创建空间。只影响之后注册的用户。',
+          watermark_enabled: '开启后所有界面（登录页、问答、设置，PC 与移动端）叠加不可交互的平铺文本水印，用于防截图外泄溯源。修改后新会话生效，无需重启。',
+          watermark_text: '水印显示的文字。支持 {username} 占位符，登录后自动替换为当前用户名；留空回退为 {username}。'
         }
       },
       keyLabels: {
@@ -2816,7 +2818,9 @@ export default {
         },
         auth: {
           registration_mode: '自助注册模式',
-          default_tenant_mode: '注册默认空间策略'
+          default_tenant_mode: '注册默认空间策略',
+          watermark_enabled: '全站页面水印',
+          watermark_text: '水印文案'
         }
       },
       runtime: {

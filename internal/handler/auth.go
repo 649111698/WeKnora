@@ -780,8 +780,14 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 		"success":           true,
 		"registration_mode": mode,
 	}
-	// 全站水印配置：前端 App 启动时拉取一次，登录页与主界面共用。
-	if h.configInfo != nil && h.configInfo.Auth != nil {
+	// 全站水印配置：DB system_settings > ENV > 默认，管理端「全局设置」
+	// 修改后新会话立即生效，无需重启。
+	if h.systemSettingSvc != nil {
+		resp["watermark"] = gin.H{
+			"enabled": h.systemSettingSvc.GetBool(c.Request.Context(), "auth.watermark_enabled", "WATERMARK_ENABLED", false),
+			"text":    h.systemSettingSvc.GetString(c.Request.Context(), "auth.watermark_text", "WATERMARK_TEXT", "{username}"),
+		}
+	} else if h.configInfo != nil && h.configInfo.Auth != nil {
 		resp["watermark"] = gin.H{
 			"enabled": h.configInfo.Auth.WatermarkEnabled,
 			"text":    h.configInfo.Auth.WatermarkText,

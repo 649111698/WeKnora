@@ -2788,7 +2788,9 @@ export default {
         },
         auth: {
           registration_mode: '셀프 가입 모드입니다. self_serve = 누구나 계정을 만들 수 있음; invite_only = 공개 가입을 끄고 Owner/Admin만 초대 가능. 저장 즉시 적용되며, self_serve는 스팸 가입이 들어올 수 있으니 신중히 사용하세요.',
-          default_tenant_mode: '공개 가입 후 공간 초기화 정책입니다. create_personal은 개인 공간을 만들고 Owner를 부여하며, tenantless는 초대 수락 또는 직접 공간 생성 전까지 계정만 만듭니다.'
+          default_tenant_mode: '공개 가입 후 공간 초기화 정책입니다. create_personal은 개인 공간을 만들고 Owner를 부여하며, tenantless는 초대 수락 또는 직접 공간 생성 전까지 계정만 만듭니다.',
+          watermark_enabled: '활성화하면 모든 페이지(로그인, 채팅, 설정, 데스크톱 및 모바일)에 상호작용을 방해하지 않는 타일형 텍스트 워터마크가 표시되어 스크린샷 유출 추적에 도움입니다. 재시작 없이 새 세션부터 적용됩니다.',
+          watermark_text: '워터마크 텍스트입니다. {username} 플레이스홀더를 지원하며 로그인한 사용자 이름으로 대체됩니다. 비어 있으면 {username}로 대체됩니다.'
         }
       },
       keyLabels: {
@@ -2814,7 +2816,9 @@ export default {
         },
         auth: {
           registration_mode: '셀프 가입 모드',
-          default_tenant_mode: '기본 공간 프로비저닝'
+          default_tenant_mode: '기본 공간 프로비저닝',
+          watermark_enabled: '사이트 전체 페이지 워터마크',
+          watermark_text: '워터마크 텍스트'
         }
       },
       runtime: {
