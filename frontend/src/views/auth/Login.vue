@@ -344,6 +344,7 @@ import {
   type InviteLookup,
 } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { maybeStartIMSSOLogin } from '@/composables/useIMSSOLogin'
 import { useI18n } from 'vue-i18n'
 
 // Import screenshot images
@@ -791,6 +792,18 @@ onMounted(async () => {
     isRegisterMode.value = !inviteOnly
     loadOIDCConfig()
     return
+  }
+
+  // 企微/飞书内置浏览器 SSO 免登：环境命中且平台启用时自动跳授权；
+  // 平台回跳带 code 时转后端换登录态（首次访问自动创建访客账号）。
+  try {
+    const sso = await maybeStartIMSSOLogin()
+    if (sso.action === 'redirecting') return
+    if (sso.action === 'error') {
+      MessagePlugin.error(sso.message)
+    }
+  } catch (err) {
+    console.warn('[SSO] auto login skipped:', err)
   }
 
   if (authStore.isLoggedIn) {

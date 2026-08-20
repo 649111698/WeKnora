@@ -18,6 +18,12 @@ type UserService interface {
 	// provisioning is the default tenant mode for a newly auto-created user
 	// (resolved by the caller from auth.default_tenant_mode).
 	LoginWithOIDC(ctx context.Context, code, redirectURI string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+	// GetSSOStatus reports which IM-browser SSO providers (WeCom / Feishu) are enabled.
+	GetSSOStatus(ctx context.Context) (*types.SSOStatusResponse, error)
+	// LoginWithWeComCode completes WeCom in-browser OAuth login (JIT-provisioning guest accounts).
+	LoginWithWeComCode(ctx context.Context, code string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+	// LoginWithFeishuCode completes Feishu in-browser OAuth login (JIT-provisioning guest accounts).
+	LoginWithFeishuCode(ctx context.Context, code string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
 	// GetUserByID gets a user by ID
 	GetUserByID(ctx context.Context, id string) (*types.User, error)
 	// GetUsersByIDs batch-fetches users by id, returning a map keyed by

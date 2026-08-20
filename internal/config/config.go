@@ -24,6 +24,7 @@ type Config struct {
 	Auth            *AuthConfig            `yaml:"auth"             json:"auth"`
 	Audit           *AuditConfig           `yaml:"audit"            json:"audit"`
 	OIDCAuth        *OIDCAuthConfig        `yaml:"oidc_auth"        json:"oidc_auth"`
+	SSOAuth         *SSOAuthConfig         `yaml:"sso_auth"         json:"sso_auth"`
 	Models          []ModelConfig          `yaml:"models"           json:"models"`
 	VectorDatabase  *VectorDatabaseConfig  `yaml:"vector_database"  json:"vector_database"`
 	DocReader       *DocReaderConfig       `yaml:"docreader"        json:"docreader"`
@@ -320,6 +321,24 @@ type OIDCAuthConfig struct {
 	UserInfoMapping       *OIDCUserInfoMapping `yaml:"user_info_mapping"      json:"user_info_mapping"`
 }
 
+// SSOAuthConfig 企微/飞书内置浏览器 OAuth 免登（JIT 自动建号）。
+// 各平台在凭证齐全时视为启用；与 OIDC 相互独立。
+type SSOAuthConfig struct {
+	WeCom   *WeComSSOConfig  `yaml:"wecom"  json:"wecom"`
+	Feishu  *FeishuSSOConfig `yaml:"feishu" json:"feishu"`
+}
+
+type WeComSSOConfig struct {
+	CorpID   string `yaml:"corp_id"   json:"corp_id"`
+	Secret   string `yaml:"secret"    json:"-"`
+	AgentID  string `yaml:"agent_id"  json:"agent_id"`
+}
+
+type FeishuSSOConfig struct {
+	AppID     string `yaml:"app_id"     json:"app_id"`
+	AppSecret string `yaml:"app_secret" json:"-"`
+}
+
 // PromptTemplateI18n holds localized name and description for a prompt template.
 type PromptTemplateI18n struct {
 	Name        string `yaml:"name"        json:"name"`
@@ -578,6 +597,7 @@ func LoadConfig() (*Config, error) {
 
 	// Validate configuration values
 	applyOIDCEnvOverrides(&cfg)
+	applySSOEnvOverrides(&cfg)
 	applyAgentEnvOverrides(&cfg)
 	applyKnowledgeBaseEnvOverrides(&cfg)
 	applyAuthAndTenantDefaults(&cfg)
@@ -742,6 +762,34 @@ func applyOIDCEnvOverrides(cfg *Config) {
 	}
 	if cfg.OIDCAuth.DiscoveryURL == "" && cfg.OIDCAuth.IssuerURL != "" {
 		cfg.OIDCAuth.DiscoveryURL = strings.TrimRight(cfg.OIDCAuth.IssuerURL, "/") + "/.well-known/openid-configuration"
+	}
+}
+
+// applySSOEnvOverrides 加载企微/飞书 SSO 免登配置；凭证齐全才视为启用。
+func applySSOEnvOverrides(cfg *Config) {
+	if cfg.SSOAuth == nil {
+		cfg.SSOAuth = &SSOAuthConfig{}
+	}
+
+	wecomCorpID := strings.TrimSpace(os.Getenv("WECOM_SSO_CORP_ID"))
+	wecomSecret := strings.TrimSpace(os.Getenv("WECOM_SSO_CORP_SECRET"))
+	if wecomCorpID != "" && wecomSecret != "" {
+		if cfg.SSOAuth.WeCom == nil {
+			cfg.SSOAuth.WeCom = &WeComSSOConfig{}
+		}
+		cfg.SSOAuth.WeCom.CorpID = wecomCorpID
+		cfg.SSOAuth.WeCom.Secret = wecomSecret
+		cfg.SSOAuth.WeCom.AgentID = strings.TrimSpace(os.Getenv("WECOM_SSO_AGENT_ID"))
+	}
+
+	feishuAppID := strings.TrimSpace(os.Getenv("FEISHU_SSO_APP_ID"))
+	feishuSecret := strings.TrimSpace(os.Getenv("FEISHU_SSO_APP_SECRET"))
+	if feishuAppID != "" && feishuSecret != "" {
+		if cfg.SSOAuth.Feishu == nil {
+			cfg.SSOAuth.Feishu = &FeishuSSOConfig{}
+		}
+		cfg.SSOAuth.Feishu.AppID = feishuAppID
+		cfg.SSOAuth.Feishu.AppSecret = feishuSecret
 	}
 }
 

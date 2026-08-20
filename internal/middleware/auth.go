@@ -51,6 +51,11 @@ var noAuthAPI = map[string][]string{
 	"/api/v1/auth/oidc/url":           {"GET"},
 	"/api/v1/auth/oidc/start":         {"GET"},
 	"/api/v1/auth/oidc/callback":      {"GET"},
+	// 企微/飞书内置浏览器 SSO 免登：平台回跳不带 WeKnora token，
+	// 由平台 code 本身完成认证（首次登录自动创建访客账号）。
+	"/api/v1/auth/sso/config":         {"GET"},
+	"/api/v1/auth/sso/wecom/callback": {"GET"},
+	"/api/v1/auth/sso/feishu/callback": {"GET"},
 	// MCP OAuth provider redirect: the third-party authorization server
 	// redirects the browser here without a WeKnora bearer token. The request
 	// is authenticated by the opaque, single-use `state` parameter instead.

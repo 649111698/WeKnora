@@ -174,6 +174,20 @@ type OIDCCallbackResponse struct {
 	IsNewUser    bool         `json:"is_new_user,omitempty"`
 }
 
+// SSOProviderStatus 对前端公开的 IM 浏览器 SSO 提供方状态（不含密钥）。
+type SSOProviderStatus struct {
+	Enabled bool   `json:"enabled"`
+	CorpID  string `json:"corp_id,omitempty"`
+	AgentID string `json:"agent_id,omitempty"`
+	AppID   string `json:"app_id,omitempty"`
+}
+
+// SSOStatusResponse GET /auth/sso/config 的响应体。
+type SSOStatusResponse struct {
+	WeCom  *SSOProviderStatus `json:"wecom"`
+	Feishu *SSOProviderStatus `json:"feishu"`
+}
+
 type OIDCUserInfo struct {
 	Subject  string                 `json:"subject,omitempty"`
 	Username string                 `json:"username,omitempty"`

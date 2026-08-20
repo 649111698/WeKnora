@@ -196,6 +196,10 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 	r.GET("/auth/oidc/callback", handler.OIDCRedirectCallback)
 	// /auth/oidc/start：直连 302 跳转到 OIDC 提供方，供前端无法走 JS 拉取 URL 的场景直接发起登录
 	r.GET("/auth/oidc/start", handler.OIDCStart)
+	// 企微/飞书内置浏览器 SSO 免登（JIT 自动建号），登录页按 UA 自动发起
+	r.GET("/auth/sso/config", handler.GetSSOConfig)
+	r.GET("/auth/sso/wecom/callback", handler.SSOWeComCallback)
+	r.GET("/auth/sso/feishu/callback", handler.SSOFeishuCallback)
 	r.POST("/auth/refresh", handler.RefreshToken)
 	r.GET("/auth/validate", handler.ValidateToken)
 	r.POST("/auth/logout", handler.Logout)
