@@ -1956,8 +1956,8 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         display: block;
         position: fixed;
         inset: 0;
-        z-index: 1100; // 低于抽屉(1200)，高于页面内容
-        background: rgba(0, 0, 0, 0.4);
+        z-index: 1100; // 低于抽屉(1200)，高于页面内容；仅承担点击关闭，不再显示灰底
+        background: transparent;
     }
 }
 
