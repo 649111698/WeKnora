@@ -332,6 +332,10 @@
                   :title="$t('agent.copy')">
                   <t-icon name="copy" />
                 </t-button>
+                <t-button size="small" variant="outline" shape="round" @click.stop="handleScreenshotAnswer"
+                  :title="$t('chat.screenshot')">
+                  <t-icon name="camera" />
+                </t-button>
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)"
                   :title="$t('agent.addToKnowledgeBase')">
                   <t-icon name="bookmark-add" />
@@ -569,6 +573,7 @@ import {
   injectCachedMermaidSvg,
 } from '@/utils/chatMessageShared';
 import { copyWithToast } from '@/utils/clipboard';
+import { toPng } from 'html-to-image';
 import {
   configureMarkedForChatMarkdown,
   renderChatMarkdown,
@@ -2812,6 +2817,33 @@ const handleCopyAnswer = async (answerEvent: any) => {
   }
 
   await copyWithToast(content, 'agentStream.copy.success', 'agentStream.copy.failed');
+};
+
+// 回答内容导出为图片：捕获同一条 answer 事件的渲染区（含 Markdown/表格/代码高亮）
+const handleScreenshotAnswer = async (clickEvent: MouseEvent) => {
+  const trigger = clickEvent.currentTarget as HTMLElement | null;
+  const node = trigger?.closest('.answer-event')?.querySelector('.answer-content');
+  if (!node) {
+    MessagePlugin.warning(t('agentStream.copy.emptyContent'));
+    return;
+  }
+  try {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const background = rootStyle.getPropertyValue('--td-bg-color-container').trim() || '#ffffff';
+    const dataUrl = await toPng(node, {
+      backgroundColor: background,
+      pixelRatio: 2,
+      cacheBust: true,
+    });
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `weknora-answer-${Date.now()}.png`;
+    link.click();
+    MessagePlugin.success(t('chat.screenshotSuccess'));
+  } catch (error) {
+    console.error('[AgentStreamDisplay] screenshot export failed:', error);
+    MessagePlugin.error(t('chat.screenshotFailed'));
+  }
 };
 
 const handleAddToKnowledge = (answerEvent: any) => {
