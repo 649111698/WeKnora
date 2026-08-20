@@ -80,10 +80,15 @@ function triggerDownload(dataUrl: string) {
 
 export async function exportAnswerScreenshot(node: HTMLElement): Promise<void> {
   const t = i18n.global.t
+  // 导出图四周留白（px），避免内容贴边
+  const PAD = 24
   const options = {
     backgroundColor: pageBackground(),
     pixelRatio: 2,
     cacheBust: true,
+    style: { padding: `${PAD}px` },
+    width: node.offsetWidth + PAD * 2,
+    height: node.offsetHeight + PAD * 2,
   } as const
 
   let dataUrl: string
