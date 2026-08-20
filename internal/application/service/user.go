@@ -100,11 +100,12 @@ func getJwtSecret() string {
 
 // userService implements the UserService interface
 type userService struct {
-	userRepo      interfaces.UserRepository
-	tokenRepo     interfaces.AuthTokenRepository
-	tenantService interfaces.TenantService
-	memberService interfaces.TenantMemberService
-	config        *config.Config
+	userRepo          interfaces.UserRepository
+	tokenRepo         interfaces.AuthTokenRepository
+	tenantService     interfaces.TenantService
+	memberService     interfaces.TenantMemberService
+	config            *config.Config
+	systemSettingSvc  interfaces.SystemSettingService
 }
 
 // NewUserService creates a new user service instance
@@ -114,13 +115,15 @@ func NewUserService(
 	tokenRepo interfaces.AuthTokenRepository,
 	tenantService interfaces.TenantService,
 	memberService interfaces.TenantMemberService,
+	systemSettingSvc interfaces.SystemSettingService,
 ) interfaces.UserService {
 	return &userService{
-		userRepo:      userRepo,
-		tokenRepo:     tokenRepo,
-		tenantService: tenantService,
-		memberService: memberService,
-		config:        configInfo,
+		userRepo:         userRepo,
+		tokenRepo:        tokenRepo,
+		tenantService:    tenantService,
+		memberService:    memberService,
+		config:           configInfo,
+		systemSettingSvc: systemSettingSvc,
 	}
 }
 

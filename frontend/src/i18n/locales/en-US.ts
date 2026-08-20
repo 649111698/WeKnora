@@ -3588,6 +3588,17 @@ export default {
           watermark_enabled: 'Site-wide page watermark',
           watermark_text: 'Watermark text'
         },
+                sso: {
+          wecom: {
+            corp_id: 'WeCom SSO · Corp ID',
+            corp_secret: 'WeCom SSO · Secret',
+            agent_id: 'WeCom SSO · AgentId'
+          },
+          feishu: {
+            app_id: 'Feishu SSO · App ID',
+            app_secret: 'Feishu SSO · App Secret'
+          }
+        },
         ssrf: {
           whitelist: 'SSRF protection allowlist'
         },

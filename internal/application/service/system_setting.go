@@ -92,6 +92,9 @@ type settingSpec struct {
 	// (e.g. asynq worker pool size). The UI shows a restart badge; the
 	// service persists the flag on first write.
 	RequiresRestart bool
+	// IsSecret marks credential-like values: List() masks them as "***"
+	// and Update treats a literal "***" as "leave unchanged".
+	IsSecret bool
 }
 
 // registry pins the set of legal keys. Expanding it is a deliberate,
@@ -161,6 +164,43 @@ var registry = map[string]settingSpec{
 		Category: "security",
 		Description: "水印文案。支持 {username} 占位符，登录后替换为当前用户名。" +
 			"留空时回退为 {username}。",
+	},
+	// 企微/飞书内置浏览器 SSO 免登（JIT 自动建访客账号）。
+	// 凭证齐全才启用；密钥类值在管理界面打码展示，提交 "***" 表示不变。
+	"sso.wecom.corp_id": {
+		Type:     "string",
+		EnvName:  "WECOM_SSO_CORP_ID",
+		Category: "security",
+		Description: "企微 SSO 免登的企业 CorpID（我的企业→企业信息）。与 Secret 齐全后，" +
+			"员工在企微内置浏览器打开站点即自动登录；前置条件：自建应用「网页授权及JS-SDK」" +
+			"可信域名包含本站域名，且成员在应用可见范围内。",
+	},
+	"sso.wecom.corp_secret": {
+		Type:     "string",
+		EnvName:  "WECOM_SSO_CORP_SECRET",
+		Category: "security",
+		Description: "企微自建应用的 Secret。密钥值界面上打码显示，提交「***」表示保持不变。",
+		IsSecret: true,
+	},
+	"sso.wecom.agent_id": {
+		Type:     "string",
+		EnvName:  "WECOM_SSO_AGENT_ID",
+		Category: "security",
+		Description: "企微自建应用的 AgentId（用于网页授权构造，可选但建议填写）。",
+	},
+	"sso.feishu.app_id": {
+		Type:     "string",
+		EnvName:  "FEISHU_SSO_APP_ID",
+		Category: "security",
+		Description: "飞书自建应用的 App ID。与 App Secret 齐全后，飞书内置浏览器打开站点即自动登录；" +
+			"前置条件：应用开启「网页授权」能力，重定向 URL 配置为 https://<本站域名>/login。",
+	},
+	"sso.feishu.app_secret": {
+		Type:     "string",
+		EnvName:  "FEISHU_SSO_APP_SECRET",
+		Category: "security",
+		Description: "飞书自建应用的 App Secret。密钥值界面上打码显示，提交「***」表示保持不变。",
+		IsSecret: true,
 	},
 	// tenant.max_owned_per_user caps how many tenants a single non-superuser
 	// can create (and Own) via self-service POST /tenants. Read on every
@@ -758,11 +798,11 @@ func (s *systemSettingService) List(ctx context.Context) ([]*types.SystemSetting
 			if isBootstrapDefaultRow(row, spec) {
 				row.Value = s.fallbackJSONForSpec(key, spec)
 			}
-			out = append(out, row)
+			out = append(out, maskSecretValue(row, spec))
 			delete(byKey, key)
 			continue
 		}
-		out = append(out, s.virtualSetting(key, spec))
+		out = append(out, maskSecretValue(s.virtualSetting(key, spec), spec))
 	}
 
 	// Preserve out-of-band rows so operators can still see unexpected
@@ -776,6 +816,19 @@ func (s *systemSettingService) List(ctx context.Context) ([]*types.SystemSetting
 		out = append(out, byKey[key])
 	}
 	return out, nil
+}
+
+// maskSecretValue 把密钥类设置的非空值替换为 "***" 再返回给管理界面，
+// 避免 GET 列表/单查泄露凭证。真实值仅存于 DB。
+func maskSecretValue(row *types.SystemSetting, spec settingSpec) *types.SystemSetting {
+	if !spec.IsSecret || row == nil {
+		return row
+	}
+	var stored string
+	if err := json.Unmarshal(row.Value, &stored); err == nil && strings.TrimSpace(stored) != "" {
+		row.Value = types.JSON(`"***"`)
+	}
+	return row
 }
 
 // Get returns one row by key. Used by the management UI's "load before
@@ -814,7 +867,7 @@ func (s *systemSettingService) virtualSetting(key string, spec settingSpec) *typ
 		ValueType:       spec.Type,
 		Category:        category,
 		Description:     spec.Description,
-		IsSecret:        false,
+		IsSecret:        spec.IsSecret,
 		RequiresRestart: spec.RequiresRestart,
 		LastModifiedBy:  "",
 		Enum:            spec.Enum,
@@ -917,6 +970,23 @@ func (s *systemSettingService) Update(ctx context.Context, key string, rawValue 
 		return nil, fmt.Errorf("unknown setting key %q", key)
 	}
 
+	// 密钥类设置：提交字面量 "***" 表示保持原值不变（读取侧永远打码，
+	// 前端无法回显真实值，只能原样提交占位符或填写新值）。
+	if spec.IsSecret {
+		if str, isStr := rawValue.(string); isStr && strings.TrimSpace(str) == "***" {
+			if prev, gerr := s.repo.Get(ctx, key); gerr == nil && prev != nil {
+				var stored string
+				if uerr := json.Unmarshal(prev.Value, &stored); uerr == nil {
+					rawValue = stored
+				} else {
+					rawValue = ""
+				}
+			} else {
+				rawValue = ""
+			}
+		}
+	}
+
 	encoded, err := encodeForType(spec.Type, rawValue)
 	if err != nil {
 		return nil, fmt.Errorf("invalid value for %q (expected %s): %w", key, spec.Type, err)
@@ -977,6 +1047,7 @@ func (s *systemSettingService) Update(ctx context.Context, key string, rawValue 
 			category = "general"
 		}
 		description = spec.Description
+		isSecret = spec.IsSecret
 		requiresRestart = spec.RequiresRestart
 	}
 

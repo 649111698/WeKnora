@@ -2811,6 +2811,17 @@ export default {
           default_storage_quota_gb: '신규 워크스페이스 기본 저장 용량 (GB)',
           auto_create_api_key: '신규 워크스페이스 API Key 자동 생성'
         },
+                sso: {
+          wecom: {
+            corp_id: 'WeCom SSO · Corp ID',
+            corp_secret: 'WeCom SSO · Secret',
+            agent_id: 'WeCom SSO · AgentId'
+          },
+          feishu: {
+            app_id: 'Feishu SSO · App ID',
+            app_secret: 'Feishu SSO · App Secret'
+          }
+        },
         ssrf: {
           whitelist: 'SSRF 보호 허용 목록'
         },

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -74,33 +75,54 @@ func ssoInvalidateToken(key string) {
 }
 
 // GetSSOStatus 返回各 SSO 提供方启用状态与构建授权 URL 所需的公开参数。
+// 凭证来源：DB system_settings > ENV > 无（齐备才视为启用）。
 func (s *userService) GetSSOStatus(ctx context.Context) (*types.SSOStatusResponse, error) {
 	resp := &types.SSOStatusResponse{}
-	if s.config != nil && s.config.SSOAuth != nil {
-		if w := s.config.SSOAuth.WeCom; w != nil && w.CorpID != "" && w.Secret != "" {
-			resp.WeCom = &types.SSOProviderStatus{Enabled: true, CorpID: w.CorpID, AgentID: w.AgentID}
+	corpID := s.ssoSetting(ctx, "sso.wecom.corp_id", "WECOM_SSO_CORP_ID")
+	secret := s.ssoSetting(ctx, "sso.wecom.corp_secret", "WECOM_SSO_CORP_SECRET")
+	if corpID != "" && secret != "" {
+		resp.WeCom = &types.SSOProviderStatus{
+			Enabled: true,
+			CorpID:  corpID,
+			AgentID: s.ssoSetting(ctx, "sso.wecom.agent_id", "WECOM_SSO_AGENT_ID"),
 		}
-		if f := s.config.SSOAuth.Feishu; f != nil && f.AppID != "" && f.AppSecret != "" {
-			resp.Feishu = &types.SSOProviderStatus{Enabled: true, AppID: f.AppID}
-		}
+	}
+	appID := s.ssoSetting(ctx, "sso.feishu.app_id", "FEISHU_SSO_APP_ID")
+	appSecret := s.ssoSetting(ctx, "sso.feishu.app_secret", "FEISHU_SSO_APP_SECRET")
+	if appID != "" && appSecret != "" {
+		resp.Feishu = &types.SSOProviderStatus{Enabled: true, AppID: appID}
 	}
 	return resp, nil
 }
 
-func (s *userService) ssoWeComConfig() (*config.WeComSSOConfig, error) {
-	if s.config == nil || s.config.SSOAuth == nil || s.config.SSOAuth.WeCom == nil ||
-		s.config.SSOAuth.WeCom.CorpID == "" || s.config.SSOAuth.WeCom.Secret == "" {
-		return nil, errors.NewForbiddenError("WeCom SSO is not configured")
+// ssoSetting 三级解析一个 SSO 字符串配置：DB system_settings > ENV > 空。
+func (s *userService) ssoSetting(ctx context.Context, key, envName string) string {
+	if s.systemSettingSvc != nil {
+		return strings.TrimSpace(s.systemSettingSvc.GetString(ctx, key, envName, ""))
 	}
-	return s.config.SSOAuth.WeCom, nil
+	return strings.TrimSpace(os.Getenv(envName))
 }
 
-func (s *userService) ssoFeishuConfig() (*config.FeishuSSOConfig, error) {
-	if s.config == nil || s.config.SSOAuth == nil || s.config.SSOAuth.Feishu == nil ||
-		s.config.SSOAuth.Feishu.AppID == "" || s.config.SSOAuth.Feishu.AppSecret == "" {
+func (s *userService) ssoWeComConfig(ctx context.Context) (*config.WeComSSOConfig, error) {
+	corpID := s.ssoSetting(ctx, "sso.wecom.corp_id", "WECOM_SSO_CORP_ID")
+	secret := s.ssoSetting(ctx, "sso.wecom.corp_secret", "WECOM_SSO_CORP_SECRET")
+	if corpID == "" || secret == "" {
+		return nil, errors.NewForbiddenError("WeCom SSO is not configured")
+	}
+	return &config.WeComSSOConfig{
+		CorpID:  corpID,
+		Secret:  secret,
+		AgentID: s.ssoSetting(ctx, "sso.wecom.agent_id", "WECOM_SSO_AGENT_ID"),
+	}, nil
+}
+
+func (s *userService) ssoFeishuConfig(ctx context.Context) (*config.FeishuSSOConfig, error) {
+	appID := s.ssoSetting(ctx, "sso.feishu.app_id", "FEISHU_SSO_APP_ID")
+	appSecret := s.ssoSetting(ctx, "sso.feishu.app_secret", "FEISHU_SSO_APP_SECRET")
+	if appID == "" || appSecret == "" {
 		return nil, errors.NewForbiddenError("Feishu SSO is not configured")
 	}
-	return s.config.SSOAuth.Feishu, nil
+	return &config.FeishuSSOConfig{AppID: appID, AppSecret: appSecret}, nil
 }
 
 // --- 企微 API ---
@@ -271,7 +293,7 @@ func (s *userService) LoginWithWeComCode(
 	code string,
 	provisioning types.TenantProvisioningMode,
 ) (*types.OIDCCallbackResponse, error) {
-	cfg, err := s.ssoWeComConfig()
+	cfg, err := s.ssoWeComConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +313,7 @@ func (s *userService) LoginWithFeishuCode(
 	code string,
 	provisioning types.TenantProvisioningMode,
 ) (*types.OIDCCallbackResponse, error) {
-	cfg, err := s.ssoFeishuConfig()
+	cfg, err := s.ssoFeishuConfig(ctx)
 	if err != nil {
 		return nil, err
 	}

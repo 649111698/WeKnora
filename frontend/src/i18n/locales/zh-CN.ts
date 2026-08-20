@@ -2813,6 +2813,17 @@ export default {
           default_storage_quota_gb: '新空间默认存储配额 (GB)',
           auto_create_api_key: '创建空间时自动生成 API Key'
         },
+                sso: {
+          wecom: {
+            corp_id: '企微 SSO·企业 ID',
+            corp_secret: '企微 SSO·应用 Secret',
+            agent_id: '企微 SSO·AgentId'
+          },
+          feishu: {
+            app_id: '飞书 SSO·App ID',
+            app_secret: '飞书 SSO·App Secret'
+          }
+        },
         ssrf: {
           whitelist: 'SSRF 防护白名单'
         },
