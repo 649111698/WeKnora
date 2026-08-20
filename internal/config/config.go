@@ -281,6 +281,10 @@ type AuthConfig struct {
 	// tenantless creates only the identity and waits for an invitation or an
 	// explicit self-service tenant creation.
 	DefaultTenantMode string `yaml:"default_tenant_mode" json:"default_tenant_mode"`
+	// WatermarkEnabled 打开后前端在全站（含问答 PC/移动端）叠加不可交互的
+	// 平铺文本水印。水印文案支持 {username} 占位符，登录后替换为当前用户名。
+	WatermarkEnabled bool   `yaml:"watermark_enabled" json:"watermark_enabled"`
+	WatermarkText    string `yaml:"watermark_text"    json:"watermark_text"`
 }
 
 // AuthRegistrationMode constants used by handlers and middleware.
@@ -876,6 +880,18 @@ func applyAuthAndTenantDefaults(cfg *Config) {
 	}
 	if cfg.Tenant == nil {
 		cfg.Tenant = &TenantConfig{}
+	}
+
+	// 全站水印（前端 overlay）：WATERMARK_ENABLED=true 开启；
+	// WATERMARK_TEXT 支持 {username} 占位符，默认即当前用户名。
+	if value := strings.TrimSpace(os.Getenv("WATERMARK_ENABLED")); value != "" {
+		cfg.Auth.WatermarkEnabled = strings.EqualFold(value, "true")
+	}
+	if value := strings.TrimSpace(os.Getenv("WATERMARK_TEXT")); value != "" {
+		cfg.Auth.WatermarkText = value
+	}
+	if strings.TrimSpace(cfg.Auth.WatermarkText) == "" {
+		cfg.Auth.WatermarkText = "{username}"
 	}
 
 	if legacy := strings.TrimSpace(os.Getenv("DISABLE_REGISTRATION")); strings.EqualFold(legacy, "true") {

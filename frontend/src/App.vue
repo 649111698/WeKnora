@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, NotifyPlugin } from 'tdesign-vue-next'
@@ -7,7 +7,8 @@ import ManualKnowledgeEditor from '@/components/manual-knowledge-editor.vue'
 import UploadConfirmHost from '@/components/UploadConfirmHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
-import { getCurrentUser, userInfoFromApi } from '@/api/auth'
+import { getCurrentUser, userInfoFromApi, getAuthConfig } from '@/api/auth'
+import SiteWatermark from '@/components/SiteWatermark.vue'
 import { consumePendingTenantSwitchToast } from '@/utils/tenantSwitch'
 import { useRoleLabel } from '@/composables/useRoleLabel'
 import { notifyLoginSuccess } from '@/utils/loginNotify'
@@ -24,6 +25,27 @@ const { formatRole, roleIcon } = useRoleLabel()
 const router = useRouter()
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
+
+// 全站水印：启动时拉取一次配置；文案中的 {username} 用当前登录用户名替换，
+// 登录/切换账号后自动更新。
+const watermarkEnabled = ref(false)
+const watermarkRawText = ref('{username}')
+const watermarkText = computed(() =>
+  watermarkRawText.value.replaceAll('{username}', authStore.user?.username || '')
+)
+const loadWatermarkConfig = async () => {
+  try {
+    const cfg = await getAuthConfig()
+    if (cfg.watermark?.enabled) {
+      watermarkRawText.value = cfg.watermark.text || '{username}'
+      watermarkEnabled.value = true
+    } else {
+      watermarkEnabled.value = false
+    }
+  } catch {
+    watermarkEnabled.value = false
+  }
+}
 
 const tdLocaleMap: Record<string, object> = {
   'en-US': enUSConfig,
@@ -238,6 +260,7 @@ const showPendingTenantSwitchToast = () => {
 onMounted(() => {
   handleGlobalOIDCCallback()
   showPendingTenantSwitchToast()
+  loadWatermarkConfig()
 
   // Auto check for updates on startup
   setTimeout(() => {
@@ -276,6 +299,8 @@ onUnmounted(() => {
       <RouterView />
       <ManualKnowledgeEditor />
       <UploadConfirmHost />
+      <!-- 全站水印（WATERMARK_ENABLED 控制，{username} 替换为当前登录用户名） -->
+      <SiteWatermark v-if="watermarkEnabled" :text="watermarkText" />
     </div>
   </t-config-provider>
 </template>

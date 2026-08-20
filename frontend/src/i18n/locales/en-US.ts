@@ -3008,6 +3008,9 @@ export default {
     }
   },
   chat: {
+    screenshot: 'Export as image',
+    screenshotSuccess: 'Exported as image',
+    screenshotFailed: 'Failed to export image',
     memoryUsedCount: 'Used {count} memories',
     memoryForget: 'Delete this memory',
     memoryForgotten: 'Memory deleted',

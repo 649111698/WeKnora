@@ -776,10 +776,18 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 	// Same source-of-truth as Register's gate, so the UI hide-the-button
 	// signal can never disagree with the API enforcement signal.
 	mode := h.resolveRegistrationMode(c.Request.Context())
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"success":           true,
 		"registration_mode": mode,
-	})
+	}
+	// 全站水印配置：前端 App 启动时拉取一次，登录页与主界面共用。
+	if h.configInfo != nil && h.configInfo.Auth != nil {
+		resp["watermark"] = gin.H{
+			"enabled": h.configInfo.Auth.WatermarkEnabled,
+			"text":    h.configInfo.Auth.WatermarkText,
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // SwitchTenant godoc

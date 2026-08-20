@@ -38,7 +38,7 @@
         <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode">
             <!-- 直接渲染完整内容，避免切分导致的问题，样式与 thinking 一致 -->
             <!-- 只有当有实际内容时才显示包围框 -->
-            <div class="content-wrapper" v-if="hasActualContent">
+            <div class="content-wrapper" v-if="hasActualContent" ref="contentWrapperRef">
                 <div class="ai-markdown-template markdown-content" v-stable-html="renderedHTML">
                 </div>
             </div>
@@ -47,6 +47,10 @@
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer"
                     :title="$t('agent.copy')">
                     <t-icon name="copy" />
+                </t-button>
+                <t-button size="small" variant="outline" shape="round" @click.stop="handleScreenshot"
+                    :title="$t('chat.screenshot')" :loading="screenshotLoading">
+                    <t-icon name="camera" />
                 </t-button>
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge"
                     :title="$t('agent.addToKnowledgeBase')">
@@ -121,6 +125,7 @@ import {
     formatManualTitle,
 } from '@/utils/chatMessageShared';
 import { copyWithToast } from '@/utils/clipboard';
+import { toPng } from 'html-to-image';
 import {
     createChatMarkdownRenderer,
     renderChatMarkdown,
@@ -154,6 +159,8 @@ const emit = defineEmits(['scroll-bottom', 'render-complete-change'])
 const { t } = useI18n()
 const uiStore = useUIStore();
 let parentMd = ref()
+let contentWrapperRef = ref<HTMLElement | null>(null)
+const screenshotLoading = ref(false)
 const { float: citationFloat, rebind: rebindCitations, cancelClose: cancelCitationClose, scheduleClose: scheduleCitationClose } = useChatCitationPopover(parentMd, {
     getKnowledgeReferences: () => props.session?.knowledge_references,
     sessionId: () => props.sessionId,
@@ -313,6 +320,35 @@ const handleCopyAnswer = async () => {
     }
 
     await copyWithToast(content, 'chat.copySuccess', 'chat.copyFailed');
+};
+
+// 回答内容导出为图片（含 Markdown 渲染/表格/代码高亮，跟随当前明暗主题）
+const handleScreenshot = async () => {
+    const node = contentWrapperRef.value;
+    if (!node) {
+        MessagePlugin.warning(t('chat.emptyContentWarning'));
+        return;
+    }
+    screenshotLoading.value = true;
+    try {
+        const rootStyle = getComputedStyle(document.documentElement);
+        const background = rootStyle.getPropertyValue('--td-bg-color-container').trim() || '#ffffff';
+        const dataUrl = await toPng(node, {
+            backgroundColor: background,
+            pixelRatio: 2,
+            cacheBust: true,
+        });
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `weknora-answer-${Date.now()}.png`;
+        link.click();
+        MessagePlugin.success(t('chat.screenshotSuccess'));
+    } catch (error) {
+        console.error('[botmsg] screenshot export failed:', error);
+        MessagePlugin.error(t('chat.screenshotFailed'));
+    } finally {
+        screenshotLoading.value = false;
+    }
 };
 
 // 添加到知识库

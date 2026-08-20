@@ -3193,6 +3193,9 @@ export default {
     }
   },
   chat: {
+    screenshot: 'Экспорт как изображение',
+    screenshotSuccess: 'Экспортировано как изображение',
+    screenshotFailed: 'Не удалось экспортировать изображение',
     memoryUsedCount: 'Использовано записей памяти: {count}',
     memoryForget: 'Удалить эту запись',
     memoryForgotten: 'Запись удалена',
