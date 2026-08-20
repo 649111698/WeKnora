@@ -1322,7 +1322,9 @@ onBeforeRouteUpdate((to, from, next) => {
         }
 
         .chat_scroll_box {
-            padding: 4px 4px 0;
+            // ChatHeader 是 absolute 浮层（汉堡+标题+更多），移动端给首条
+            // 消息/推荐问题让出头部高度，避免与顶部工具栏重叠
+            padding: 56px 4px 0;
         }
 
         .input-container {
