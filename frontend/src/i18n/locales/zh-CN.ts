@@ -3202,6 +3202,7 @@ export default {
     screenshot: '截图导出',
     screenshotSuccess: '已导出为图片',
     screenshotFailed: '截图导出失败',
+    screenshotLongPress: '长按图片保存到相册',
     memoryUsedCount: '本次使用了 {count} 条记忆',
     memoryForget: '删除这条记忆',
     memoryForgotten: '已删除这条记忆',

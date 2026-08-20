@@ -3200,6 +3200,7 @@ export default {
     screenshot: '이미지로 내보내기',
     screenshotSuccess: '이미지로 내보냈습니다',
     screenshotFailed: '이미지 내보내기 실패',
+    screenshotLongPress: '이미지를 길게 눌러 저장하세요',
     memoryUsedCount: '기억 {count}개를 참고했습니다',
     memoryForget: '이 기억 삭제',
     memoryForgotten: '기억을 삭제했습니다',

@@ -3200,6 +3200,7 @@ export default {
     screenshot: 'Экспорт как изображение',
     screenshotSuccess: 'Экспортировано как изображение',
     screenshotFailed: 'Не удалось экспортировать изображение',
+    screenshotLongPress: 'Долгое нажатие на изображение, чтобы сохранить',
     memoryUsedCount: 'Использовано записей памяти: {count}',
     memoryForget: 'Удалить эту запись',
     memoryForgotten: 'Запись удалена',

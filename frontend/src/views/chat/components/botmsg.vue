@@ -125,7 +125,7 @@ import {
     formatManualTitle,
 } from '@/utils/chatMessageShared';
 import { copyWithToast } from '@/utils/clipboard';
-import { toPng } from 'html-to-image';
+import { exportAnswerScreenshot } from '@/utils/answerScreenshot';
 import {
     createChatMarkdownRenderer,
     renderChatMarkdown,
@@ -331,21 +331,7 @@ const handleScreenshot = async () => {
     }
     screenshotLoading.value = true;
     try {
-        const rootStyle = getComputedStyle(document.documentElement);
-        const background = rootStyle.getPropertyValue('--td-bg-color-container').trim() || '#ffffff';
-        const dataUrl = await toPng(node, {
-            backgroundColor: background,
-            pixelRatio: 2,
-            cacheBust: true,
-        });
-        const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = `weknora-answer-${Date.now()}.png`;
-        link.click();
-        MessagePlugin.success(t('chat.screenshotSuccess'));
-    } catch (error) {
-        console.error('[botmsg] screenshot export failed:', error);
-        MessagePlugin.error(t('chat.screenshotFailed'));
+        await exportAnswerScreenshot(node);
     } finally {
         screenshotLoading.value = false;
     }

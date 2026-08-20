@@ -3013,6 +3013,7 @@ export default {
     screenshot: 'Export as image',
     screenshotSuccess: 'Exported as image',
     screenshotFailed: 'Failed to export image',
+    screenshotLongPress: 'Long-press the image to save',
     memoryUsedCount: 'Used {count} memories',
     memoryForget: 'Delete this memory',
     memoryForgotten: 'Memory deleted',
