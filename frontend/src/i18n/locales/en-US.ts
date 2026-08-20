@@ -3,10 +3,22 @@ export default {
       navLabel: 'SSO & Watermark',
       loginDomain: {
         title: 'Dedicated login domain',
-        description: 'Bind a dedicated domain to this workspace (optional). Visitors from this domain (or the login link with the ?t= parameter) automatically get this workspace\'s SSO and watermark. Domains must be unique per workspace.',
+        description: 'Bind a dedicated login domain to this workspace (required). The domain is the only way workspaces are distinguished: visitors from this domain automatically get this workspace\'s SSO and watermark. Point DNS for the domain at this server and provision a TLS certificate. Domains must be unique per workspace.',
         label: 'Login domain',
         placeholder: 'e.g. sso.your-company.com (port allowed)',
         entryHint: 'Workspace login entry',
+      },
+      guide: {
+        wecom: {
+          title: 'WeCom admin console URLs',
+          description: 'Fill the generated values below into the matching fields of the WeCom admin console to finish the app login setup.',
+          homeUrl: 'Workbench app home URL (App Management → Self-built app → Home)',
+          trustedDomain: 'Trusted domain (Web authorization & JS-SDK)',
+          verifyNote: 'When WeCom asks to verify the trusted domain, choose file verification and paste the downloaded WW_verify_*.txt content into "Domain verification text" above — this site then answers WeCom\'s fetch automatically.',
+        },
+        feishu: {
+          redirectUrl: 'Web-authorization redirect URL (Feishu open platform → Security settings)',
+        },
       },
       wecom: {
         title: 'WeCom single sign-on',

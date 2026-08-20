@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -75,11 +74,11 @@ func ssoInvalidateToken(key string) {
 }
 
 // GetSSOStatus 返回各 SSO 提供方启用状态与构建授权 URL 所需的公开参数。
-// 凭证为租户级（tenants.sso_config），租户解析顺序：?t=<tenant id> >
-// 请求 Host 匹配租户 login_domain > 全实例仅一租户配置了该平台时回退到它。
-func (s *userService) GetSSOStatus(ctx context.Context, tenantParam, host string) (*types.SSOStatusResponse, error) {
+// 凭证为租户级（tenants.sso_config），租户按请求 Host 与其专属登录域名
+// （login_domain）精确匹配——域名是唯一的区分方式，不匹配即未启用。
+func (s *userService) GetSSOStatus(ctx context.Context, host string) (*types.SSOStatusResponse, error) {
 	resp := &types.SSOStatusResponse{}
-	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "")
+	tenant, err := s.resolveSSOTenant(ctx, host)
 	if err != nil || tenant == nil {
 		return resp, nil
 	}
@@ -98,8 +97,8 @@ func (s *userService) GetSSOStatus(ctx context.Context, tenantParam, host string
 }
 
 // GetSSOWatermark 解析未登录页面（登录页）的水印配置，租户解析同 GetSSOStatus。
-func (s *userService) GetSSOWatermark(ctx context.Context, tenantParam, host string) types.WatermarkConfig {
-	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "")
+func (s *userService) GetSSOWatermark(ctx context.Context, host string) types.WatermarkConfig {
+	tenant, err := s.resolveSSOTenant(ctx, host)
 	if err != nil || tenant == nil {
 		return (&types.WatermarkConfig{}).Resolved()
 	}
@@ -107,72 +106,37 @@ func (s *userService) GetSSOWatermark(ctx context.Context, tenantParam, host str
 }
 
 // GetSSODomainVerifyText 返回目标租户配置的企微可信域名验证文字。
-func (s *userService) GetSSODomainVerifyText(ctx context.Context, tenantParam, host string) string {
-	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "wecom")
+func (s *userService) GetSSODomainVerifyText(ctx context.Context, host string) string {
+	tenant, err := s.resolveSSOTenant(ctx, host)
 	if err != nil || tenant == nil || tenant.SSOConfig == nil || tenant.SSOConfig.WeCom == nil {
 		return ""
 	}
 	return strings.TrimSpace(tenant.SSOConfig.WeCom.DomainVerifyText)
 }
 
-// resolveSSOTenant 定位 SSO 登录的目标租户。
-//   - tenantParam: 登录链接携带的 ?t=<tenant id>，优先级最高；
-//   - host: 请求 Host（可能带端口），与各租户 login_domain 精确匹配（忽略大小写）；
-//   - 两者都未命中时：若全实例恰好只有一个租户配置了 platform（platform 为
-//     空则任一平台）的 SSO，回退到它——单企业部署不需要改登录链接。
-//
-// 找不到返回 (nil, nil)（调用方按"未启用"处理），配置歧义返回错误。
-func (s *userService) resolveSSOTenant(ctx context.Context, tenantParam, host, platform string) (*types.Tenant, error) {
-	if tid := strings.TrimSpace(tenantParam); tid != "" {
-		id, err := strconv.ParseUint(tid, 10, 64)
-		if err != nil {
-			return nil, errors.NewForbiddenError("invalid tenant parameter")
-		}
-		tenant, err := s.tenantService.GetTenantByID(ctx, id)
-		if err != nil || tenant == nil {
-			return nil, nil
-		}
-		return tenant, nil
+// resolveSSOTenant 定位 SSO 登录的目标租户：请求 Host 与各租户
+// login_domain 精确匹配（忽略大小写，可含端口）。域名是唯一的租户
+// 区分方式——未匹配到即未启用；不猜测、不回退。
+func (s *userService) resolveSSOTenant(ctx context.Context, host string) (*types.Tenant, error) {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if h == "" {
+		return nil, nil
 	}
 	tenants, err := s.tenantService.ListTenants(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if h := strings.ToLower(strings.TrimSpace(host)); h != "" {
-		for _, t := range tenants {
-			if t.SSOConfig != nil && strings.EqualFold(strings.TrimSpace(t.SSOConfig.LoginDomain), h) {
-				return t, nil
-			}
-		}
-	}
-	var matches []*types.Tenant
 	for _, t := range tenants {
-		cfg := t.SSOConfig
-		if cfg == nil {
-			continue
+		if t.SSOConfig != nil && strings.EqualFold(strings.TrimSpace(t.SSOConfig.LoginDomain), h) {
+			return t, nil
 		}
-		ok := false
-		switch platform {
-		case "wecom":
-			ok = cfg.WeComEnabled()
-		case "feishu":
-			ok = cfg.FeishuEnabled()
-		default:
-			ok = cfg.WeComEnabled() || cfg.FeishuEnabled()
-		}
-		if ok {
-			matches = append(matches, t)
-		}
-	}
-	if len(matches) == 1 {
-		return matches[0], nil
 	}
 	return nil, nil
 }
 
 // ssoTenantWeComConfig 取目标租户的企微凭证（要求已配置齐全）。
-func (s *userService) ssoTenantWeComConfig(ctx context.Context, tenantParam, host string) (*config.WeComSSOConfig, *types.Tenant, error) {
-	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "wecom")
+func (s *userService) ssoTenantWeComConfig(ctx context.Context, host string) (*config.WeComSSOConfig, *types.Tenant, error) {
+	tenant, err := s.resolveSSOTenant(ctx, host)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -188,8 +152,8 @@ func (s *userService) ssoTenantWeComConfig(ctx context.Context, tenantParam, hos
 }
 
 // ssoTenantFeishuConfig 取目标租户的飞书凭证（要求已配置齐全）。
-func (s *userService) ssoTenantFeishuConfig(ctx context.Context, tenantParam, host string) (*config.FeishuSSOConfig, *types.Tenant, error) {
-	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "feishu")
+func (s *userService) ssoTenantFeishuConfig(ctx context.Context, host string) (*config.FeishuSSOConfig, *types.Tenant, error) {
+	tenant, err := s.resolveSSOTenant(ctx, host)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -367,10 +331,10 @@ func (s *userService) getFeishuIdentity(ctx context.Context, cfg *config.FeishuS
 // 登录后直接进入该租户，非成员自动以 contributor 加入。
 func (s *userService) LoginWithWeComCode(
 	ctx context.Context,
-	code, tenantParam, host string,
+	code, host string,
 	provisioning types.TenantProvisioningMode,
 ) (*types.OIDCCallbackResponse, error) {
-	cfg, tenant, err := s.ssoTenantWeComConfig(ctx, tenantParam, host)
+	cfg, tenant, err := s.ssoTenantWeComConfig(ctx, host)
 	if err != nil {
 		return nil, err
 	}
@@ -387,10 +351,10 @@ func (s *userService) LoginWithWeComCode(
 // LoginWithFeishuCode 用飞书网页授权 code 完成登录（首次自动建号）。
 func (s *userService) LoginWithFeishuCode(
 	ctx context.Context,
-	code, tenantParam, host string,
+	code, host string,
 	provisioning types.TenantProvisioningMode,
 ) (*types.OIDCCallbackResponse, error) {
-	cfg, tenant, err := s.ssoTenantFeishuConfig(ctx, tenantParam, host)
+	cfg, tenant, err := s.ssoTenantFeishuConfig(ctx, host)
 	if err != nil {
 		return nil, err
 	}

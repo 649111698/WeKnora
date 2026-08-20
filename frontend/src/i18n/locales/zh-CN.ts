@@ -3,10 +3,22 @@ export default {
       navLabel: '单点登录与水印',
       loginDomain: {
         title: '专属登录域名',
-        description: '为当前空间绑定一个专属域名（可选）。员工通过该域名（或下方登录链接 ?t= 参数）访问时，自动使用本空间的 SSO 登录与水印配置。各空间域名不可重复。',
+        description: '为本空间绑定一个专属登录域名（必填）。域名是区分空间的唯一方式：员工通过该域名访问时，自动使用本空间的 SSO 登录与水印；DNS 请将该域名解析到本站点服务器，并配置 HTTPS 证书。各空间域名不可重复。',
         label: '登录域名',
         placeholder: '例如 sso.your-company.com（可含端口）',
         entryHint: '空间专属登录入口',
+      },
+      guide: {
+        wecom: {
+          title: '企业微信后台配置 URL',
+          description: '把下面生成的地址填到企微管理后台对应位置，即可完成应用的登录配置。',
+          homeUrl: '工作台应用主页 URL（应用管理 → 自建应用 → 主页）',
+          trustedDomain: '可信域名（网页授权及JS-SDK）',
+          verifyNote: '企微验证可信域名时选择「文件验证」，把下载的 WW_verify_*.txt 的内容粘贴到上方「域名验证文字」并保存，本站会自动响应企微的抓取。',
+        },
+        feishu: {
+          redirectUrl: '网页授权重定向 URL（飞书开放平台 → 安全设置）',
+        },
       },
       wecom: {
         title: '企业微信单点登录',

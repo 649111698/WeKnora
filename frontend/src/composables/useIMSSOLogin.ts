@@ -10,10 +10,9 @@
  *    后端完成登录（首次自动建访客账号）后 302 回 /#oidc_result=...，
  *    由 App.vue 的 OIDC 回调链路统一持久化会话。
  *
- * SSO 凭证为租户级：登录链接 ?t=<tenant id>（或租户专属域名）定位租户，
- * t 参数会透传到 config 请求、平台授权 redirect_uri 与后端 callback；
- * 登录后直接进入该租户。无 t 时后端按 Host 匹配租户登录域名，
- * 全实例仅一个租户配置了 SSO 时自动回退到它。
+ * SSO 凭证为租户级，租户按访问域名区分：后端把请求 Host 与各租户
+ * 配置的专属登录域名（login_domain）精确匹配，命中即用该租户的
+ * 凭证发起免登，登录后直接进入该租户；未命中则停留普通登录页。
  */
 
 const SSO_STATE_KEY = 'im_sso_state'
@@ -33,23 +32,15 @@ type SSOConfig = {
   feishu?: { enabled: boolean; app_id?: string }
 }
 
-// 当前登录链接携带的租户参数（?t=<tenant id>），全流程透传。
-function ssoTenantParam(): string {
-  return new URLSearchParams(window.location.search).get('t') || ''
-}
-
 async function fetchSSOConfig(): Promise<SSOConfig> {
-  const t = ssoTenantParam()
-  const qs = t ? `?t=${encodeURIComponent(t)}` : ''
-  const res = await fetch(`/api/v1/auth/sso/config${qs}`, { headers: { Accept: 'application/json' } })
+  const res = await fetch('/api/v1/auth/sso/config', { headers: { Accept: 'application/json' } })
   if (!res.ok) return {}
   return (await res.json()) as SSOConfig
 }
 
 function buildAuthorizeURL(platform: IMSSOPlatform, cfg: SSOConfig, state: string): string | null {
-  const t = ssoTenantParam()
-  const tenantQS = t ? `?t=${encodeURIComponent(t)}` : ''
-  const redirectUri = encodeURIComponent(`${window.location.origin}/login${tenantQS}`)
+  // Host 本身就是租户标识：授权回跳回到同域名 /login，后端按 Host 解析租户
+  const redirectUri = encodeURIComponent(`${window.location.origin}/login`)
   if (platform === 'wecom') {
     const wecom = cfg.wecom
     if (!wecom?.enabled || !wecom.corp_id) return null
@@ -102,10 +93,8 @@ export async function maybeStartIMSSOLogin(): Promise<IMSSOOutcome> {
       return { action: 'error', message: 'SSO state 校验失败，请重新进入' }
     }
     sessionStorage.removeItem(SSO_STATE_KEY)
-    const t = ssoTenantParam()
-    const tenantQS = t ? `&t=${encodeURIComponent(t)}` : ''
     window.location.href =
-      `/api/v1/auth/sso/${platform}/callback?code=${encodeURIComponent(code)}${tenantQS}`
+      `/api/v1/auth/sso/${platform}/callback?code=${encodeURIComponent(code)}`
     return { action: 'redirecting' }
   }
 

@@ -1,6 +1,6 @@
 <template>
   <div class="tenant-sso-settings">
-    <!-- 专属登录域名：每个租户（企业）一个登录入口 -->
+    <!-- 专属登录域名：每个租户（企业）一个登录入口，域名是唯一的租户区分方式 -->
     <section class="sso-card">
       <h3 class="sso-card__title">{{ t('tenantSSO.loginDomain.title') }}</h3>
       <p class="sso-card__desc">{{ t('tenantSSO.loginDomain.description') }}</p>
@@ -10,10 +10,24 @@
           <t-input v-model="form.login_domain" :placeholder="t('tenantSSO.loginDomain.placeholder')"
             :disabled="saving" @enter="saveAll" />
         </div>
-        <p v-if="loginUrl" class="sso-field__hint">
-          {{ t('tenantSSO.loginDomain.entryHint') }}:
-          <code class="sso-code">{{ loginUrl }}</code>
-        </p>
+      </div>
+    </section>
+
+    <!-- 企微后台配置 URL 生成 -->
+    <section v-if="form.login_domain" class="sso-card">
+      <h3 class="sso-card__title">{{ t('tenantSSO.guide.wecom.title') }}</h3>
+      <p class="sso-card__desc">{{ t('tenantSSO.guide.wecom.description') }}</p>
+      <div class="sso-form">
+        <div v-for="row in wecomGuideRows" :key="row.label" class="sso-field">
+          <label class="sso-field__label">{{ row.label }}</label>
+          <div class="sso-copy-row">
+            <code class="sso-code sso-code--block">{{ row.value }}</code>
+            <t-button size="small" variant="outline" @click="copyText(row.value)">
+              {{ t('common.copy') }}
+            </t-button>
+          </div>
+        </div>
+        <p class="sso-field__hint">{{ t('tenantSSO.guide.wecom.verifyNote') }}</p>
       </div>
     </section>
 
@@ -61,6 +75,15 @@
           <t-input v-model="form.feishu.app_secret" type="password"
             :placeholder="feishuSecretPlaceholder" :disabled="saving" />
         </div>
+        <div v-if="form.login_domain" class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.guide.feishu.redirectUrl') }}</label>
+          <div class="sso-copy-row">
+            <code class="sso-code sso-code--block">{{ loginUrl }}</code>
+            <t-button size="small" variant="outline" @click="copyText(loginUrl)">
+              {{ t('common.copy') }}
+            </t-button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -92,6 +115,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { get, put } from '@/utils/request'
+import { copyToClipboard } from '@/utils/clipboard'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -122,8 +146,27 @@ const feishuSecretPlaceholder = computed(() =>
 
 const loginUrl = computed(() => {
   if (!form.login_domain) return ''
-  return `https://${form.login_domain}/login`
+  return `https://${form.login_domain.trim().replace(/^https?:\/\//, '')}/login`
 })
+
+const loginHost = computed(() => {
+  try {
+    return new URL(loginUrl.value).host
+  } catch {
+    return form.login_domain
+  }
+})
+
+// 企微后台需要的三个值：工作台应用主页、可信域名、可信 IP 段不填
+const wecomGuideRows = computed(() => [
+  { label: t('tenantSSO.guide.wecom.homeUrl'), value: loginUrl.value },
+  { label: t('tenantSSO.guide.wecom.trustedDomain'), value: loginHost.value },
+])
+
+const copyText = async (text: string) => {
+  const ok = await copyToClipboard(text)
+  if (ok) MessagePlugin.success(t('common.copied'))
+}
 
 const loadConfig = async () => {
   try {
@@ -157,6 +200,12 @@ const loadConfig = async () => {
 }
 
 const saveAll = async () => {
+  const hasWecom = !!(form.wecom.corp_id.trim() || form.wecom.corp_secret)
+  const hasFeishu = !!(form.feishu.app_id.trim() || form.feishu.app_secret)
+  if ((hasWecom || hasFeishu) && !form.login_domain.trim()) {
+    MessagePlugin.warning(t('tenantSSO.loginDomain.required'))
+    return
+  }
   saving.value = true
   try {
     const payload = {
@@ -260,6 +309,19 @@ onMounted(loadConfig)
   background: var(--td-bg-color-component);
   font-size: 12px;
   user-select: all;
+}
+
+.sso-copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sso-code--block {
+  flex: 1;
+  padding: 6px 8px;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .sso-actions {

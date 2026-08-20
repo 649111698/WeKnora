@@ -780,11 +780,11 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 		"success":           true,
 		"registration_mode": mode,
 	}
-	// 水印配置为租户级（tenants.watermark_config）。未登录页面按
-	// ?t=<tenant id> 或 Host 匹配租户登录域名解析；登录后的页面由前端
-	// 从 /tenants/kv/watermark-config 按当前租户拉取。
+	// 水印配置为租户级（tenants.watermark_config），按请求 Host 匹配
+	// 租户专属登录域名解析；登录后的页面由前端从
+	// /tenants/kv/watermark-config 按当前租户拉取。
 	if h.userService != nil {
-		wm := h.userService.GetSSOWatermark(c.Request.Context(), c.Query("t"), c.Request.Host)
+		wm := h.userService.GetSSOWatermark(c.Request.Context(), c.Request.Host)
 		resp["watermark"] = gin.H{"enabled": wm.Enabled, "text": wm.Text}
 	}
 	c.JSON(http.StatusOK, resp)

@@ -28,7 +28,7 @@ const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 
 // 租户级水印：文案中的 {username} 用当前登录用户名替换。
-// 未登录（登录页）：按链接 ?t=<tenant id>（或 Host 由后端匹配租户域名）解析；
+// 未登录（登录页）：后端按请求 Host 匹配租户专属登录域名解析；
 // 已登录：从 /tenants/kv/watermark-config 按当前租户拉取（切换租户会整页刷新）。
 const watermarkEnabled = ref(false)
 const watermarkRawText = ref('{username}')
@@ -54,8 +54,7 @@ const loadWatermarkConfig = async () => {
     return
   }
   try {
-    const t = new URLSearchParams(window.location.search).get('t') || ''
-    const cfg = await getAuthConfig(t || undefined)
+    const cfg = await getAuthConfig()
     applyWatermark(cfg.watermark)
   } catch {
     applyWatermark(null)

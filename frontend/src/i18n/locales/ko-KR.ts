@@ -3,10 +3,22 @@ export default {
       navLabel: 'SSO 및 워터마크',
       loginDomain: {
         title: '전용 로그인 도메인',
-        description: '이 워크스페이스에 전용 도메인을 바인딩합니다(선택). 해당 도메인(또는 ?t= 매개변수가 붙은 로그인 링크)으로 접속하면 이 워크스페이스의 SSO와 워터마크가 자동 적용됩니다. 도메인은 워크스페이스별로 고유해야 합니다.',
+        description: '이 워크스페이스에 전용 로그인 도메인을 바인딩합니다(필수). 도메인이 워크스페이스를 구분하는 유일한 방식입니다: 해당 도메인으로 접속하면 이 워크스페이스의 SSO와 워터마크가 자동 적용됩니다. 도메인의 DNS를 이 서버로 지정하고 TLS 인증서를 구성하세요. 도메인은 워크스페이스별로 고유해야 합니다.',
         label: '로그인 도메인',
         placeholder: '예: sso.your-company.com (포트 허용)',
         entryHint: '워크스페이스 로그인 진입점',
+      },
+      guide: {
+        wecom: {
+          title: 'WeCom 관리 콘솔 URL',
+          description: '아래 생성된 주소를 WeCom 관리 콘솔의 해당 위치에 입력하면 앱 로그인 구성이 완료됩니다.',
+          homeUrl: '워크벤치 앱 홈 URL(앱 관리 → 자체 개발 앱 → 홈)',
+          trustedDomain: '신뢰 도메인(웹 인증 및 JS-SDK)',
+          verifyNote: 'WeCom이 신뢰 도메인 확인을 요구하면 파일 검증을 선택하고, 다운로드한 WW_verify_*.txt 내용을 위의 "도메인 인증 텍스트"에 붙여넣어 저장하세요. 사이트가 WeCom의 요청에 자동 응답합니다.',
+        },
+        feishu: {
+          redirectUrl: '웹 인증 리디렉션 URL(Feishu 오픈 플랫폼 → 보안 설정)',
+        },
       },
       wecom: {
         title: 'WeCom SSO',

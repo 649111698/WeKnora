@@ -1970,7 +1970,15 @@ func (h *TenantHandler) updateTenantSSOConfigInternal(c *gin.Context) {
 		return
 	}
 
+	// 域名是唯一的租户区分方式：配了任一 SSO 凭证就必须绑定域名。
 	merged := types.MergeTenantSSOConfigForUpdate(&cfg, tenant.SSOConfig)
+	hasCredentials := merged.WeComEnabled() || merged.FeishuEnabled() ||
+		(merged.WeCom != nil && (merged.WeCom.CorpID != "" || merged.WeCom.CorpSecret != "")) ||
+		(merged.Feishu != nil && (merged.Feishu.AppID != "" || merged.Feishu.AppSecret != ""))
+	if hasCredentials && merged.LoginDomain == "" {
+		c.Error(errors.NewBadRequestError("login_domain is required when SSO credentials are configured"))
+		return
+	}
 	if merged.LoginDomain != "" {
 		domain := strings.ToLower(strings.TrimSpace(merged.LoginDomain))
 		existing, err := h.service.ListAllTenants(ctx)
