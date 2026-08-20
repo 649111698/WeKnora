@@ -1,4 +1,48 @@
 export default {
+  tenantSSO: {
+      navLabel: 'SSO 및 워터마크',
+      loginDomain: {
+        title: '전용 로그인 도메인',
+        description: '이 워크스페이스에 전용 도메인을 바인딩합니다(선택). 해당 도메인(또는 ?t= 매개변수가 붙은 로그인 링크)으로 접속하면 이 워크스페이스의 SSO와 워터마크가 자동 적용됩니다. 도메인은 워크스페이스별로 고유해야 합니다.',
+        label: '로그인 도메인',
+        placeholder: '예: sso.your-company.com (포트 허용)',
+        entryHint: '워크스페이스 로그인 진입점',
+      },
+      wecom: {
+        title: 'WeCom SSO',
+        description: '이 워크스페이스의 WeCom 자체 개발 앱 자격 증명입니다. CorpID와 Secret을 모두 설정하면 WeCom 내장 브라우저에서 로그인 진입점을 열 때 자동 로그인되며, 첫 로그인 시 게스트 계정이 생성되어 이 워크스페이스에 추가됩니다.전제 조건: 앱의 웹 인증 신뢰 도메인에 사이트 도메인이 포함되고 구성원이 앱 표시 범위에 있어야 합니다.',
+        corpId: 'Corp ID',
+        corpIdPlaceholder: '내 기업 → 기업 정보 → Corp ID',
+        corpSecret: '앱 Secret',
+        corpSecretPlaceholder: 'WeCom 자체 개발 앱의 Secret',
+        agentId: 'AgentId',
+        agentIdPlaceholder: '자체 개발 앱의 AgentId(선택, 권장)',
+        domainVerifyText: '도메인 인증 텍스트',
+        domainVerifyPlaceholder: 'WeCom 관리 콘솔에서 다운로드한 WW_verify_*.txt 파일 내용',
+        domainVerifyHint: '입력하면 사이트가 /WW_verify_*.txt 요청에 이 텍스트로 응답합니다. 파일을 수동으로 둘 필요가 없습니다.',
+      },
+      feishu: {
+        title: 'Feishu SSO',
+        description: '이 워크스페이스의 Feishu 자체 개발 앱 자격 증명입니다. App ID와 App Secret을 모두 설정하면 Feishu 내장 브라우저에서 자동 로그인됩니다.전제 조건: 앱의 웹 인증 기능을 켜고 리디렉션 URL을 https://<도메인>/login 으로 설정하세요.',
+        appId: 'App ID',
+        appIdPlaceholder: 'Feishu 오픈 플랫폼 앱의 App ID',
+        appSecret: 'App Secret',
+        appSecretPlaceholder: 'Feishu 오픈 플랫폼 앱의 App Secret',
+      },
+      watermark: {
+        title: '워크스페이스 워터마크',
+        description: '이 워크스페이스에만 적용되는 유출 추적 워터마크입니다. 켜면 이 워크스페이스의 모든 페이지에 타일형 텍스트 워터마크가 표시되며 다른 워크스페이스는 영향을 받지 않습니다.',
+        enabled: '워터마크 사용',
+        text: '워터마크 텍스트',
+        textPlaceholder: '{username} 플레이스홀더 지원, 비우면 사용자 이름만 표시',
+        textHint: '{username}은 로그인한 사용자 이름으로 대체됩니다.',
+      },
+      keepSecretPlaceholder: '구성됨(비우면 유지)',
+      loadFailed: 'SSO 구성을 불러오지 못했습니다',
+      saveSuccess: 'SSO 및 워터마크 구성이 저장되었습니다',
+      saveFailed: '저장에 실패했습니다. 다시 시도하세요',
+    },
+
   platformApiKeys: {
     title: '플랫폼 API 키',
     description: '워크스페이스 간 자동화를 위한 플랫폼 자격 증명입니다. 워크스페이스 API에는 X-Tenant-ID를 사용하세요.',
@@ -2789,8 +2833,6 @@ export default {
         auth: {
           registration_mode: '셀프 가입 모드입니다. self_serve = 누구나 계정을 만들 수 있음; invite_only = 공개 가입을 끄고 Owner/Admin만 초대 가능. 저장 즉시 적용되며, self_serve는 스팸 가입이 들어올 수 있으니 신중히 사용하세요.',
           default_tenant_mode: '공개 가입 후 공간 초기화 정책입니다. create_personal은 개인 공간을 만들고 Owner를 부여하며, tenantless는 초대 수락 또는 직접 공간 생성 전까지 계정만 만듭니다.',
-          watermark_enabled: '활성화하면 모든 페이지(로그인, 채팅, 설정, 데스크톱 및 모바일)에 상호작용을 방해하지 않는 타일형 텍스트 워터마크가 표시되어 스크린샷 유출 추적에 도움입니다. 재시작 없이 새 세션부터 적용됩니다.',
-          watermark_text: '워터마크 텍스트입니다. {username} 플레이스홀더를 지원하며 로그인한 사용자 이름으로 대체됩니다. 비어 있으면 {username}로 대체됩니다.'
         }
       },
       keyLabels: {
@@ -2811,26 +2853,12 @@ export default {
           default_storage_quota_gb: '신규 워크스페이스 기본 저장 용량 (GB)',
           auto_create_api_key: '신규 워크스페이스 API Key 자동 생성'
         },
-                sso: {
-          wecom: {
-            corp_id: 'WeCom SSO · Corp ID',
-            corp_secret: 'WeCom SSO · Secret',
-            agent_id: 'WeCom SSO · AgentId',
-            domain_verify_text: 'WeCom SSO · 도메인 인증 텍스트'
-          },
-          feishu: {
-            app_id: 'Feishu SSO · App ID',
-            app_secret: 'Feishu SSO · App Secret'
-          }
-        },
         ssrf: {
           whitelist: 'SSRF 보호 허용 목록'
         },
         auth: {
           registration_mode: '셀프 가입 모드',
           default_tenant_mode: '기본 공간 프로비저닝',
-          watermark_enabled: '사이트 전체 페이지 워터마크',
-          watermark_text: '워터마크 텍스트'
         }
       },
       runtime: {
@@ -3049,21 +3077,6 @@ export default {
           tab: '기타 {count}',
           title: '기타 설정',
           description: '표준 제품 그룹에 포함되지 않은 현재 배포의 설정입니다.'
-        },
-        watermark: {
-          tab: '워터마크 {count}',
-          title: '사이트 워터마크',
-          description: '모든 페이지에 유출 추적용 워터마크를 표시합니다. 텍스트는 {username} 플레이스홀더를 지원하며 새 세션부터 재시작 없이 즉시 적용됩니다.'
-        },
-        ssoWecom: {
-          tab: 'WeCom SSO {count}',
-          title: 'WeCom SSO',
-          description: 'WeCom 자체 개발 앱 자격 증명(CorpID / Secret / AgentId)을 설정합니다. 설정하면 로그인 페이지에 WeCom 로그인 버튼이 표시되며, 저장 후 재시작 없이 즉시 적용됩니다.'
-        },
-        ssoFeishu: {
-          tab: 'Feishu SSO {count}',
-          title: 'Feishu SSO',
-          description: 'Feishu 자체 개발 앱 자격 증명(App ID / App Secret)을 설정합니다. 설정하면 로그인 페이지에 Feishu 로그인 버튼이 표시되며, 저장 후 재시작 없이 즉시 적용됩니다.'
         },
         security: {
           tab: '네트워크 보안 {count}',

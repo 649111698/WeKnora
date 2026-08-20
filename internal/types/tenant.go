@@ -120,6 +120,11 @@ type Tenant struct {
 	MemoryConfig *MemoryConfig `yaml:"memory_config" json:"memory_config" gorm:"type:jsonb"`
 	// API principal config: controls how X-API-Key requests map to terminal principals.
 	APIPrincipalConfig *APIPrincipalConfig `yaml:"api_principal_config" json:"-" gorm:"type:jsonb"`
+	// Tenant-level SSO (WeCom/Feishu self-built app credentials + dedicated
+	// login domain) and watermark. See internal/types/tenant_sso.go.
+	SSOConfig *TenantSSOConfig `yaml:"sso_config" json:"sso_config,omitempty" gorm:"type:jsonb"`
+	// WatermarkConfig tenant-wide page watermark. nil = disabled.
+	WatermarkConfig *WatermarkConfig `yaml:"watermark_config" json:"watermark_config,omitempty" gorm:"type:jsonb"`
 	// Creation time
 	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`
 	// Last updated time

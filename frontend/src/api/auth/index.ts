@@ -262,16 +262,17 @@ export async function getOIDCConfig(): Promise<OIDCConfigResponse> {
 export interface AuthConfigResponse {
   success: boolean
   registration_mode: 'self_serve' | 'invite_only' | string
-  /** 全站水印配置（WATERMARK_ENABLED / WATERMARK_TEXT） */
+  /** 当前租户的水印配置（租户级，未登录页按 ?t=/Host 解析租户） */
   watermark?: {
     enabled: boolean
     text: string
   }
 }
 
-export async function getAuthConfig(): Promise<AuthConfigResponse> {
+export async function getAuthConfig(tenantParam?: string): Promise<AuthConfigResponse> {
   try {
-    const response = await get('/api/v1/auth/config')
+    const qs = tenantParam ? `?t=${encodeURIComponent(tenantParam)}` : ''
+    const response = await get(`/api/v1/auth/config${qs}`)
     return response as unknown as AuthConfigResponse
   } catch {
     return { success: false, registration_mode: 'self_serve' }

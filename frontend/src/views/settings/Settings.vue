@@ -178,6 +178,11 @@
                     <TenantInfo />
                   </div>
 
+                  <!-- 单点登录与水印（租户级凭证，Admin 可配置） -->
+                  <div v-if="currentSection === 'tenant-sso'" class="section">
+                    <TenantSSOSettings />
+                  </div>
+
                   <!-- 成员管理 (#1303 PR 3) -->
                   <div v-if="currentSection === 'members'" class="section">
                     <TenantMembers />
@@ -212,6 +217,7 @@ import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import SystemInfo from './SystemInfo.vue'
 import TenantInfo from './TenantInfo.vue'
+import TenantSSOSettings from './TenantSSOSettings.vue'
 import UserProfile from './UserProfile.vue'
 import GeneralSettings from './GeneralSettings.vue'
 import ModelSettings from './ModelSettings.vue'
@@ -372,6 +378,7 @@ const navItems = computed(() => {
     { key: 'userprofile', icon: 'user', label: t('userProfile.title') },
     { key: 'mymemory', icon: 'bookmark', label: t('memorySettings.title') },
     { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
+    { key: 'tenant-sso', icon: 'lock-on', label: t('tenantSSO.navLabel') },
     { key: 'members', icon: 'usergroup', label: t('tenantMember.title') },
     ...integrationItems,
   ]
@@ -400,7 +407,7 @@ const navGroups = computed<NavGroup[]>(() => {
     {
       key: 'workspace',
       label: t('settings.navGroups.workspace'),
-      items: pickItems(['tenant', 'members', 'chathistory', 'memory']),
+      items: pickItems(['tenant', 'tenant-sso', 'members', 'chathistory', 'memory']),
     },
     {
       key: 'models_runtime',

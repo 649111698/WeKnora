@@ -65,9 +65,6 @@
         <t-tab-panel value="access" :label="sectionTabLabel('access')" />
         <t-tab-panel value="tenant" :label="sectionTabLabel('tenant')" />
         <t-tab-panel value="runtime" :label="sectionTabLabel('runtime')" />
-        <t-tab-panel value="watermark" :label="sectionTabLabel('watermark')" />
-        <t-tab-panel value="ssoWecom" :label="sectionTabLabel('ssoWecom')" />
-        <t-tab-panel value="ssoFeishu" :label="sectionTabLabel('ssoFeishu')" />
         <t-tab-panel value="security" :label="sectionTabLabel('security')" />
         <t-tab-panel
           v-if="hasUnknownSettings"
@@ -614,7 +611,7 @@ const savedKey = ref<string | null>(null)
 const saveAnnouncement = ref('')
 let savedKeyTimer: ReturnType<typeof setTimeout> | null = null
 
-type SettingsSection = 'access' | 'tenant' | 'runtime' | 'watermark' | 'ssoWecom' | 'ssoFeishu' | 'security' | 'other'
+type SettingsSection = 'access' | 'tenant' | 'runtime' | 'security' | 'other'
 
 // Product-oriented order, rather than the registry's alphabetical key order.
 // Unknown/out-of-band rows remain visible in a conditional "Other" tab so the
@@ -640,22 +637,8 @@ const SETTINGS_SECTION_KEYS: Record<Exclude<SettingsSection, 'other'>, readonly 
     'asynq.wiki_concurrency',
     'model.max_concurrency',
   ],
-  // 水印与两个 SSO 各自独立成区：归属清晰、改哪个找哪个，
-  // 避免和 SSRF 这类网络防护配置混在一个「安全」页里。
-  watermark: [
-    'auth.watermark_enabled',
-    'auth.watermark_text',
-  ],
-  ssoWecom: [
-    'sso.wecom.corp_id',
-    'sso.wecom.corp_secret',
-    'sso.wecom.agent_id',
-    'sso.wecom.domain_verify_text',
-  ],
-  ssoFeishu: [
-    'sso.feishu.app_id',
-    'sso.feishu.app_secret',
-  ],
+  // 水印与企微/飞书 SSO 已迁移为租户级配置（租户设置 → 单点登录/水印，
+  // 存 tenants.sso_config / tenants.watermark_config），不再出现在系统设置。
   security: [
     'ssrf.whitelist',
   ],

@@ -18,12 +18,22 @@ type UserService interface {
 	// provisioning is the default tenant mode for a newly auto-created user
 	// (resolved by the caller from auth.default_tenant_mode).
 	LoginWithOIDC(ctx context.Context, code, redirectURI string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
-	// GetSSOStatus reports which IM-browser SSO providers (WeCom / Feishu) are enabled.
-	GetSSOStatus(ctx context.Context) (*types.SSOStatusResponse, error)
+	// GetSSOStatus reports which IM-browser SSO providers (WeCom / Feishu)
+	// are enabled. SSO credentials are tenant-level: the tenant is resolved
+	// from tenantParam (?t=<tenant id>, optional) then the request Host
+	// against tenant login_domain, falling back to the single tenant that
+	// has the provider configured (single-company deployments).
+	GetSSOStatus(ctx context.Context, tenantParam, host string) (*types.SSOStatusResponse, error)
 	// LoginWithWeComCode completes WeCom in-browser OAuth login (JIT-provisioning guest accounts).
-	LoginWithWeComCode(ctx context.Context, code string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+	LoginWithWeComCode(ctx context.Context, code, tenantParam, host string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
 	// LoginWithFeishuCode completes Feishu in-browser OAuth login (JIT-provisioning guest accounts).
-	LoginWithFeishuCode(ctx context.Context, code string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+	LoginWithFeishuCode(ctx context.Context, code, tenantParam, host string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+	// GetSSOWatermark resolves the watermark for an unauthenticated page
+	// (login screen) using the same tenant resolution as GetSSOStatus.
+	GetSSOWatermark(ctx context.Context, tenantParam, host string) types.WatermarkConfig
+	// GetSSODomainVerifyText returns the WeCom trusted-domain verification
+	// text configured on the resolved tenant (empty when unset).
+	GetSSODomainVerifyText(ctx context.Context, tenantParam, host string) string
 	// GetUserByID gets a user by ID
 	GetUserByID(ctx context.Context, id string) (*types.User, error)
 	// GetUsersByIDs batch-fetches users by id, returning a map keyed by

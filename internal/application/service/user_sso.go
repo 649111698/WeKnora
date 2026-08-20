@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -75,54 +75,129 @@ func ssoInvalidateToken(key string) {
 }
 
 // GetSSOStatus 返回各 SSO 提供方启用状态与构建授权 URL 所需的公开参数。
-// 凭证来源：DB system_settings > ENV > 无（齐备才视为启用）。
-func (s *userService) GetSSOStatus(ctx context.Context) (*types.SSOStatusResponse, error) {
+// 凭证为租户级（tenants.sso_config），租户解析顺序：?t=<tenant id> >
+// 请求 Host 匹配租户 login_domain > 全实例仅一租户配置了该平台时回退到它。
+func (s *userService) GetSSOStatus(ctx context.Context, tenantParam, host string) (*types.SSOStatusResponse, error) {
 	resp := &types.SSOStatusResponse{}
-	corpID := s.ssoSetting(ctx, "sso.wecom.corp_id", "WECOM_SSO_CORP_ID")
-	secret := s.ssoSetting(ctx, "sso.wecom.corp_secret", "WECOM_SSO_CORP_SECRET")
-	if corpID != "" && secret != "" {
+	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "")
+	if err != nil || tenant == nil {
+		return resp, nil
+	}
+	cfg := tenant.SSOConfig
+	if cfg.WeComEnabled() {
 		resp.WeCom = &types.SSOProviderStatus{
 			Enabled: true,
-			CorpID:  corpID,
-			AgentID: s.ssoSetting(ctx, "sso.wecom.agent_id", "WECOM_SSO_AGENT_ID"),
+			CorpID:  cfg.WeCom.CorpID,
+			AgentID: cfg.WeCom.AgentID,
 		}
 	}
-	appID := s.ssoSetting(ctx, "sso.feishu.app_id", "FEISHU_SSO_APP_ID")
-	appSecret := s.ssoSetting(ctx, "sso.feishu.app_secret", "FEISHU_SSO_APP_SECRET")
-	if appID != "" && appSecret != "" {
-		resp.Feishu = &types.SSOProviderStatus{Enabled: true, AppID: appID}
+	if cfg.FeishuEnabled() {
+		resp.Feishu = &types.SSOProviderStatus{Enabled: true, AppID: cfg.Feishu.AppID}
 	}
 	return resp, nil
 }
 
-// ssoSetting 三级解析一个 SSO 字符串配置：DB system_settings > ENV > 空。
-func (s *userService) ssoSetting(ctx context.Context, key, envName string) string {
-	if s.systemSettingSvc != nil {
-		return strings.TrimSpace(s.systemSettingSvc.GetString(ctx, key, envName, ""))
+// GetSSOWatermark 解析未登录页面（登录页）的水印配置，租户解析同 GetSSOStatus。
+func (s *userService) GetSSOWatermark(ctx context.Context, tenantParam, host string) types.WatermarkConfig {
+	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "")
+	if err != nil || tenant == nil {
+		return (&types.WatermarkConfig{}).Resolved()
 	}
-	return strings.TrimSpace(os.Getenv(envName))
+	return tenant.WatermarkConfig.Resolved()
 }
 
-func (s *userService) ssoWeComConfig(ctx context.Context) (*config.WeComSSOConfig, error) {
-	corpID := s.ssoSetting(ctx, "sso.wecom.corp_id", "WECOM_SSO_CORP_ID")
-	secret := s.ssoSetting(ctx, "sso.wecom.corp_secret", "WECOM_SSO_CORP_SECRET")
-	if corpID == "" || secret == "" {
-		return nil, errors.NewForbiddenError("WeCom SSO is not configured")
+// GetSSODomainVerifyText 返回目标租户配置的企微可信域名验证文字。
+func (s *userService) GetSSODomainVerifyText(ctx context.Context, tenantParam, host string) string {
+	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "wecom")
+	if err != nil || tenant == nil || tenant.SSOConfig == nil || tenant.SSOConfig.WeCom == nil {
+		return ""
 	}
+	return strings.TrimSpace(tenant.SSOConfig.WeCom.DomainVerifyText)
+}
+
+// resolveSSOTenant 定位 SSO 登录的目标租户。
+//   - tenantParam: 登录链接携带的 ?t=<tenant id>，优先级最高；
+//   - host: 请求 Host（可能带端口），与各租户 login_domain 精确匹配（忽略大小写）；
+//   - 两者都未命中时：若全实例恰好只有一个租户配置了 platform（platform 为
+//     空则任一平台）的 SSO，回退到它——单企业部署不需要改登录链接。
+//
+// 找不到返回 (nil, nil)（调用方按"未启用"处理），配置歧义返回错误。
+func (s *userService) resolveSSOTenant(ctx context.Context, tenantParam, host, platform string) (*types.Tenant, error) {
+	if tid := strings.TrimSpace(tenantParam); tid != "" {
+		id, err := strconv.ParseUint(tid, 10, 64)
+		if err != nil {
+			return nil, errors.NewForbiddenError("invalid tenant parameter")
+		}
+		tenant, err := s.tenantService.GetTenantByID(ctx, id)
+		if err != nil || tenant == nil {
+			return nil, nil
+		}
+		return tenant, nil
+	}
+	tenants, err := s.tenantService.ListTenants(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if h := strings.ToLower(strings.TrimSpace(host)); h != "" {
+		for _, t := range tenants {
+			if t.SSOConfig != nil && strings.EqualFold(strings.TrimSpace(t.SSOConfig.LoginDomain), h) {
+				return t, nil
+			}
+		}
+	}
+	var matches []*types.Tenant
+	for _, t := range tenants {
+		cfg := t.SSOConfig
+		if cfg == nil {
+			continue
+		}
+		ok := false
+		switch platform {
+		case "wecom":
+			ok = cfg.WeComEnabled()
+		case "feishu":
+			ok = cfg.FeishuEnabled()
+		default:
+			ok = cfg.WeComEnabled() || cfg.FeishuEnabled()
+		}
+		if ok {
+			matches = append(matches, t)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	return nil, nil
+}
+
+// ssoTenantWeComConfig 取目标租户的企微凭证（要求已配置齐全）。
+func (s *userService) ssoTenantWeComConfig(ctx context.Context, tenantParam, host string) (*config.WeComSSOConfig, *types.Tenant, error) {
+	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "wecom")
+	if err != nil {
+		return nil, nil, err
+	}
+	if tenant == nil || !tenant.SSOConfig.WeComEnabled() {
+		return nil, nil, errors.NewForbiddenError("WeCom SSO is not configured for this workspace")
+	}
+	w := tenant.SSOConfig.WeCom
 	return &config.WeComSSOConfig{
-		CorpID:  corpID,
-		Secret:  secret,
-		AgentID: s.ssoSetting(ctx, "sso.wecom.agent_id", "WECOM_SSO_AGENT_ID"),
-	}, nil
+		CorpID:  w.CorpID,
+		Secret:  w.CorpSecret,
+		AgentID: w.AgentID,
+	}, tenant, nil
 }
 
-func (s *userService) ssoFeishuConfig(ctx context.Context) (*config.FeishuSSOConfig, error) {
-	appID := s.ssoSetting(ctx, "sso.feishu.app_id", "FEISHU_SSO_APP_ID")
-	appSecret := s.ssoSetting(ctx, "sso.feishu.app_secret", "FEISHU_SSO_APP_SECRET")
-	if appID == "" || appSecret == "" {
-		return nil, errors.NewForbiddenError("Feishu SSO is not configured")
+// ssoTenantFeishuConfig 取目标租户的飞书凭证（要求已配置齐全）。
+func (s *userService) ssoTenantFeishuConfig(ctx context.Context, tenantParam, host string) (*config.FeishuSSOConfig, *types.Tenant, error) {
+	tenant, err := s.resolveSSOTenant(ctx, tenantParam, host, "feishu")
+	if err != nil {
+		return nil, nil, err
 	}
-	return &config.FeishuSSOConfig{AppID: appID, AppSecret: appSecret}, nil
+	if tenant == nil || !tenant.SSOConfig.FeishuEnabled() {
+		return nil, nil, errors.NewForbiddenError("Feishu SSO is not configured for this workspace")
+	}
+	f := tenant.SSOConfig.Feishu
+	return &config.FeishuSSOConfig{AppID: f.AppID, AppSecret: f.AppSecret}, tenant, nil
 }
 
 // --- 企微 API ---
@@ -288,12 +363,14 @@ func (s *userService) getFeishuIdentity(ctx context.Context, cfg *config.FeishuS
 // --- 登录与 JIT 建号 ---
 
 // LoginWithWeComCode 用企微网页授权 code 完成登录（首次自动建号）。
+// 凭证与目标租户按 tenantParam/host 解析（见 resolveSSOTenant）；
+// 登录后直接进入该租户，非成员自动以 contributor 加入。
 func (s *userService) LoginWithWeComCode(
 	ctx context.Context,
-	code string,
+	code, tenantParam, host string,
 	provisioning types.TenantProvisioningMode,
 ) (*types.OIDCCallbackResponse, error) {
-	cfg, err := s.ssoWeComConfig(ctx)
+	cfg, tenant, err := s.ssoTenantWeComConfig(ctx, tenantParam, host)
 	if err != nil {
 		return nil, err
 	}
@@ -304,16 +381,16 @@ func (s *userService) LoginWithWeComCode(
 	if err != nil {
 		return nil, err
 	}
-	return s.completeSSOLogin(ctx, "wecom", userID, displayName, provisioning)
+	return s.completeSSOLogin(ctx, "wecom", userID, displayName, provisioning, tenant)
 }
 
 // LoginWithFeishuCode 用飞书网页授权 code 完成登录（首次自动建号）。
 func (s *userService) LoginWithFeishuCode(
 	ctx context.Context,
-	code string,
+	code, tenantParam, host string,
 	provisioning types.TenantProvisioningMode,
 ) (*types.OIDCCallbackResponse, error) {
-	cfg, err := s.ssoFeishuConfig(ctx)
+	cfg, tenant, err := s.ssoTenantFeishuConfig(ctx, tenantParam, host)
 	if err != nil {
 		return nil, err
 	}
@@ -324,15 +401,18 @@ func (s *userService) LoginWithFeishuCode(
 	if err != nil {
 		return nil, err
 	}
-	return s.completeSSOLogin(ctx, "feishu", openID, displayName, provisioning)
+	return s.completeSSOLogin(ctx, "feishu", openID, displayName, provisioning, tenant)
 }
 
 // completeSSOLogin 按平台身份查找本地用户，缺失则自动创建（JIT），
 // 然后签发与本地登录一致的 token/租户/成员关系。
+// targetTenant 非空时（租户专属 SSO 入口）：登录态直接落在该租户，
+// 非成员自动以 contributor 加入；新用户不建个人空间。
 func (s *userService) completeSSOLogin(
 	ctx context.Context,
 	platform, externalID, displayName string,
 	provisioning types.TenantProvisioningMode,
+	targetTenant *types.Tenant,
 ) (*types.OIDCCallbackResponse, error) {
 	email := ssoSyntheticEmail(platform, externalID)
 	user, err := s.userRepo.GetUserByEmail(ctx, email)
@@ -341,7 +421,12 @@ func (s *userService) completeSSOLogin(
 	}
 	isNewUser := false
 	if isUserLookupNotFound(err) || user == nil {
-		user, err = s.provisionSSOUser(ctx, platform, externalID, displayName, email, provisioning)
+		effProvisioning := provisioning
+		if targetTenant != nil {
+			// 目标租户已知：不建个人空间，建号后直接加入目标租户。
+			effProvisioning = types.TenantProvisioningTenantless
+		}
+		user, err = s.provisionSSOUser(ctx, platform, externalID, displayName, email, effProvisioning)
 		if err != nil {
 			return nil, err
 		}
@@ -353,7 +438,15 @@ func (s *userService) completeSSOLogin(
 		return &types.OIDCCallbackResponse{Success: false, Message: "Account is disabled"}, nil
 	}
 
-	resolvedTenantID := s.resolveLoginTenantID(ctx, user)
+	resolvedTenantID := uint64(0)
+	if targetTenant != nil {
+		resolvedTenantID = targetTenant.ID
+		if err := s.ensureTenantMembership(ctx, user.ID, targetTenant.ID); err != nil {
+			return nil, err
+		}
+	} else {
+		resolvedTenantID = s.resolveLoginTenantID(ctx, user)
+	}
 	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, resolvedTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate local tokens: %w", err)
@@ -380,6 +473,19 @@ func (s *userService) completeSSOLogin(
 		RefreshToken: refreshToken,
 		IsNewUser:    isNewUser,
 	}, nil
+}
+
+// ensureTenantMembership 保证用户是租户的活跃成员，缺失时以 contributor 加入
+// （租户 SSO 入口登录即视为受邀使用；已是成员则不动）。
+func (s *userService) ensureTenantMembership(ctx context.Context, userID string, tenantID uint64) error {
+	if s.memberService == nil {
+		return fmt.Errorf("member service unavailable")
+	}
+	_, err := s.memberService.AddMember(ctx, userID, tenantID, types.TenantRoleContributor, nil)
+	if err == nil || err == ErrMembershipAlreadyExists {
+		return nil
+	}
+	return fmt.Errorf("failed to join workspace via SSO: %w", err)
 }
 
 // provisionSSOUser 为首次登录的平台用户创建本地访客账号：
