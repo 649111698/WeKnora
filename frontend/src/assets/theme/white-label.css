@@ -1,0 +1,10 @@
+/*
+ * White-label overrides (custom/white-label branch).
+ * 隐藏指向上游仓库与官方网站的外链，仅此一个文件集中管理，
+ * 便于跟随上游升级时减少合并冲突。新增需要隐藏的地址在此追加选择器即可。
+ * 注意：登录页 header-links 内还挂有语言切换按钮（非 <a>），不受影响。
+ */
+a[href^="https://github.com/Tencent/WeKnora"]:not(.header-logo),
+a[href^="https://weknora.weixin.qq.com"] {
+  display: none !important;
+}

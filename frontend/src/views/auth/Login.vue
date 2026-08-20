@@ -95,10 +95,10 @@
       </svg>
     </div>
 
-    <!-- Logo - Top Left -->
-    <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" :title="$t('common.github')">
+    <!-- Logo - Top Left（白标：去掉外链，仅展示图片） -->
+    <div class="header-logo">
       <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
-    </a>
+    </div>
 
     <!-- Header Links - Top Right -->
     <div class="header-links">
