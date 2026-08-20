@@ -8,3 +8,15 @@ a[href^="https://github.com/Tencent/WeKnora"]:not(.header-logo),
 a[href^="https://weknora.weixin.qq.com"] {
   display: none !important;
 }
+
+/*
+ * 移动端（<960px）：右侧抽屉（设置 760px / 引用 420px / 附件预览 654px）
+ * 均为固定宽度且无小屏适配，窄屏下遮罩盖住页面而面板错位不可用。
+ * 统一压成全宽抽屉（移动端标准形态）。
+ */
+@media (max-width: 959.98px) {
+  .t-drawer .t-drawer__content-wrapper {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+}
