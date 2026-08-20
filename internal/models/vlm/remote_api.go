@@ -45,6 +45,7 @@ type RemoteAPIVLM struct {
 	client      *openai.Client
 	baseURL     string
 	temperature float32
+	maxTokens   int
 }
 
 // NewRemoteAPIVLM creates a remote-API backed VLM instance.
@@ -97,12 +98,27 @@ func NewRemoteAPIVLM(config *Config) (*RemoteAPIVLM, error) {
 		}
 	}
 
+	// 部分视觉模型对单次请求的 max_tokens 有低于默认值(5000)的硬上限
+	//（如智谱 glm-4v-flash 限制 [1,1024]），允许经 extra_config.max_tokens
+	// 按模型覆盖；非法或未配置时回退默认。
+	maxToks := defaultMaxToks
+	if config.Extra != nil {
+		if v, ok := config.Extra["max_tokens"]; ok {
+			if vs, ok := v.(string); ok {
+				if n, err := strconv.Atoi(strings.TrimSpace(vs)); err == nil && n > 0 {
+					maxToks = n
+				}
+			}
+		}
+	}
+
 	return &RemoteAPIVLM{
 		modelName:   config.ModelName,
 		modelID:     config.ModelID,
 		client:      openai.NewClientWithConfig(apiCfg),
 		baseURL:     config.BaseURL,
 		temperature: temp,
+		maxTokens:   maxToks,
 	}, nil
 }
 
@@ -140,7 +156,7 @@ func (v *RemoteAPIVLM) Predict(ctx context.Context, imgBytesList [][]byte, promp
 				MultiContent: parts,
 			},
 		},
-		MaxTokens:   defaultMaxToks,
+		MaxTokens:   v.maxTokens,
 		Temperature: v.temperature,
 	}
 	shapeReasoningVLMRequest(&req)
@@ -169,7 +185,7 @@ func (v *RemoteAPIVLM) Predict(ctx context.Context, imgBytesList [][]byte, promp
 		// "no_extracted_content" and look identical to an image with no text.
 		return "", fmt.Errorf(
 			"OpenAI VLM returned no content: completion truncated at %d tokens (finish_reason=length)",
-			defaultMaxToks,
+			v.maxTokens,
 		)
 	}
 	logger.Infof(ctx, "[VLM] OpenAI response received, len=%d", len(content))
