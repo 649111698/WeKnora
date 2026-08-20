@@ -409,22 +409,40 @@ const handleKBEditorSuccess = (kbId: string) => {
 }
 
 /*
- * 移动端（<960px）：侧栏已改为覆盖式抽屉，不再占据布局宽度，
- * 上面的负向偏移与固定宽度全部失效，恢复居中 + 全宽。
- * 另外 .dialogue-answers 的 align-items: center 会让子项收缩自适应，
- * 推荐问题卡片自然宽度可能超出视口（实测 422px > 390px）触发浏览器
- * shrink-to-fit 整页缩小（"内容缩在中间"）——移动端强制拉伸满宽。
+ * 移动端（<960px）：与聊天页（/platform/chat/:id）的布局语言对齐——
+ * 顶部浮动胶囊头（汉堡 + 标题，同 ChatHeader 样式）、56px 头部净空、
+ * 中间推荐问题、输入框钉底。桌面的垂直居中 hero 布局保持不变。
  */
 @media (max-width: 959.98px) {
-    // 桌面的"内容垂直居中"hero 布局不符合手机习惯；移动端改为标准聊天布局：
-    // 标题/问候在顶部，输入框钉在屏幕最底部，中间留白。
     .dialogue-wrap {
+        position: relative;
         display: flex;
         flex-direction: column;
-        justify-content: flex-start;
         align-items: stretch;
-        padding-top: 10vh;
+        padding: 56px 8px 12px;
         box-sizing: border-box;
+    }
+
+    // 标题行改为与 ChatHeader 一致的顶部浮层胶囊
+    .dialogue-title {
+        position: absolute;
+        top: 10px;
+        left: 12px;
+        right: 12px;
+        justify-content: flex-start;
+        font-size: 16px;
+        font-weight: 600;
+        padding: 6px 10px;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--td-bg-color-container) 88%, transparent);
+        backdrop-filter: blur(8px);
+        white-space: nowrap;
+        overflow: hidden;
+
+        span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
     }
 
     .dialogue-answers {
@@ -455,11 +473,6 @@ const handleKBEditorSuccess = (kbId: string) => {
 
     :deep(.t-textarea__inner) {
         width: 100% !important;
-    }
-
-    .dialogue-title {
-        padding: 0 16px;
-        box-sizing: border-box;
     }
 }
 
