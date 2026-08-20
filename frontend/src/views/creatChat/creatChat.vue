@@ -416,6 +416,17 @@ const handleKBEditorSuccess = (kbId: string) => {
  * shrink-to-fit 整页缩小（"内容缩在中间"）——移动端强制拉伸满宽。
  */
 @media (max-width: 959.98px) {
+    // 桌面的"内容垂直居中"hero 布局在手机竖屏上会上下留大片空白
+    // （内容悬在屏幕中间）；移动端改为顶部对齐 + 少量上边距。
+    .dialogue-wrap {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: stretch;
+        padding-top: 10vh;
+        box-sizing: border-box;
+    }
+
     .dialogue-answers {
         align-items: stretch;
         width: 100%;
