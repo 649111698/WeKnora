@@ -3049,6 +3049,21 @@ export default {
           title: '기타 설정',
           description: '표준 제품 그룹에 포함되지 않은 현재 배포의 설정입니다.'
         },
+        watermark: {
+          tab: '워터마크 {count}',
+          title: '사이트 워터마크',
+          description: '모든 페이지에 유출 추적용 워터마크를 표시합니다. 텍스트는 {username} 플레이스홀더를 지원하며 새 세션부터 재시작 없이 즉시 적용됩니다.'
+        },
+        ssoWecom: {
+          tab: 'WeCom SSO {count}',
+          title: 'WeCom SSO',
+          description: 'WeCom 자체 개발 앱 자격 증명(CorpID / Secret / AgentId)을 설정합니다. 설정하면 로그인 페이지에 WeCom 로그인 버튼이 표시되며, 저장 후 재시작 없이 즉시 적용됩니다.'
+        },
+        ssoFeishu: {
+          tab: 'Feishu SSO {count}',
+          title: 'Feishu SSO',
+          description: 'Feishu 자체 개발 앱 자격 증명(App ID / App Secret)을 설정합니다. 설정하면 로그인 페이지에 Feishu 로그인 버튼이 표시되며, 저장 후 재시작 없이 즉시 적용됩니다.'
+        },
         security: {
           tab: '네트워크 보안 {count}',
           title: '네트워크 보안',

@@ -3051,6 +3051,21 @@ export default {
           title: '其他配置',
           description: '当前部署中未归入标准分组的配置项。'
         },
+        watermark: {
+          tab: '水印 {count}',
+          title: '全站水印',
+          description: '开启后所有页面叠加防泄密水印；文案支持 {username} 占位符替换当前用户名，新会话即时生效。'
+        },
+        ssoWecom: {
+          tab: '企业微信 SSO {count}',
+          title: '企业微信单点登录',
+          description: '配置企业微信自建应用凭证（CorpID / Secret / AgentId）。配置完成后登录页即出现企业微信登录入口，保存后立即生效，无需重启。'
+        },
+        ssoFeishu: {
+          tab: '飞书 SSO {count}',
+          title: '飞书单点登录',
+          description: '配置飞书自建应用凭证（App ID / App Secret）。配置完成后登录页即出现飞书登录入口，保存后立即生效，无需重启。'
+        },
         security: {
           tab: '网络安全 {count}',
           title: '网络安全',

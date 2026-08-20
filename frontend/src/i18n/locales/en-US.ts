@@ -3359,6 +3359,21 @@ export default {
           description: 'Configure concurrency capacity for background worker pools and model services.',
           restartHint: 'Worker settings require restart'
         },
+        watermark: {
+          tab: 'Watermark {count}',
+          title: 'Site watermark',
+          description: 'Overlay a leak-tracing watermark on every page. Text supports the {username} placeholder; applies to new sessions immediately without restart.'
+        },
+        ssoWecom: {
+          tab: 'WeCom SSO {count}',
+          title: 'WeCom single sign-on',
+          description: 'Credentials for your WeCom self-built app (CorpID / Secret / AgentId). Once configured, the WeCom login button appears on the login page; saves apply immediately without restart.'
+        },
+        ssoFeishu: {
+          tab: 'Feishu SSO {count}',
+          title: 'Feishu single sign-on',
+          description: 'Credentials for your Feishu self-built app (App ID / App Secret). Once configured, the Feishu login button appears on the login page; saves apply immediately without restart.'
+        },
         security: {
           tab: 'Network security {count}',
           title: 'Network security',
