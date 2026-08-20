@@ -3,10 +3,6 @@
         'aside_box--collapsed': sidebarCollapsedUI,
         'aside_box--mobile-open': uiStore.mobileNavOpen,
     }">
-        <!-- 移动端抽屉遮罩：点击关闭 -->
-        <Teleport to="body">
-            <div v-if="uiStore.mobileNavOpen" class="mobile-nav-backdrop" @click="uiStore.closeMobileNav()"></div>
-        </Teleport>
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
         <div class="logo_row" v-if="!sidebarCollapsedUI">
             <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
@@ -83,7 +79,7 @@
                     </div>
                 </t-tooltip>
             </div>
-            <div class="menu_box" :class="{ 'menu_box--sticky': item.children && !sidebarCollapsedUI }"
+            <div class="menu_box" :data-path="item.path" :class="{ 'menu_box--sticky': item.children && !sidebarCollapsedUI }"
                 v-for="(item, index) in topMenuItems" :key="index">
                 <t-tooltip :content="item.title" placement="right" :disabled="!sidebarCollapsedUI">
                     <div @click="handleMenuClick(item.path)" @mouseenter="mouseenteMenu(item.path)"
@@ -201,6 +197,12 @@
         </div>
 
     </div>
+    <!-- 移动端抽屉遮罩：点击关闭。必须作为 .aside_box 的兄弟节点渲染，不能 Teleport 到 body：
+         #app 上有 isolation: isolate + transform（独立层叠上下文），Teleport 到 body 后遮罩
+         (z-index 1100) 与整个 #app 比较，会盖住抽屉（z-index 1200 只在 #app 上下文内生效），
+         导致抽屉里所有按钮都点不到。同上下文渲染后两者才能正确比较。
+         也不能放进 .aside_box 内部——抽屉的 transform 会成为 fixed 元素的包含块。 -->
+    <div v-if="uiStore.mobileNavOpen" class="mobile-nav-backdrop" @click="uiStore.closeMobileNav()"></div>
 </template>
 
 <script setup lang="ts">
@@ -1941,11 +1943,29 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         .logo_actions .sidebar-toggle {
             display: none;
         }
+
+        // 移动端抽屉只保留：logo、新对话、历史会话。
+        // 其余按钮（搜索、空间选择器、知识库/智能体/共享空间导航、用户菜单）全部隐藏，
+        // 这些入口移动端走聊天页顶部工具栏/我的页面，抽屉保持轻量。
+        .logo_actions .header-icon-btn,
+        .tenant-selector,
+        .menu_bottom {
+            display: none;
+        }
+
+        .menu_box {
+            display: none;
+
+            &[data-path='creatChat'] {
+                display: block;
+            }
+        }
     }
 }
 </style>
 <style lang="less">
-// 移动端抽屉遮罩：Teleport 到 body，scoped 样式作用不到，放在非 scoped 块；
+// 移动端抽屉遮罩：渲染在 .aside_box 之后的兄弟节点（见 template 注释），
+// 必须与其同处 #app 的层叠上下文才能正确比较 z-index。
 // 桌面端（≥960px）不渲染也不显示。
 .mobile-nav-backdrop {
     display: none;

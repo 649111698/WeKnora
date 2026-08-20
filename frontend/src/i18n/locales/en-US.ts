@@ -1,4 +1,60 @@
 export default {
+  tenantSSO: {
+      navLabel: 'SSO & Watermark',
+      loginDomain: {
+        title: 'Dedicated login domain',
+        description: 'Bind a dedicated login domain to this workspace (required). The domain is the only way workspaces are distinguished: visitors from this domain automatically get this workspace\'s SSO and watermark. Point DNS for the domain at this server and provision a TLS certificate. Domains must be unique per workspace.',
+        label: 'Login domain',
+        placeholder: 'e.g. sso.your-company.com (port allowed)',
+        entryHint: 'Workspace login entry',
+      },
+      guide: {
+        wecom: {
+          title: 'WeCom admin console URLs',
+          description: 'Fill the generated values below into the matching fields of the WeCom admin console to finish the app login setup.',
+          homeUrl: 'Workbench app home URL (App Management → Self-built app → Home)',
+          trustedDomain: 'Trusted domain (Web authorization & JS-SDK)',
+          verifyNote: 'When WeCom asks to verify the trusted domain, choose file verification and paste the downloaded WW_verify_*.txt content into "Domain verification text" above — this site then answers WeCom\'s fetch automatically.',
+        },
+        feishu: {
+          redirectUrl: 'Web-authorization redirect URL (Feishu open platform → Security settings)',
+        },
+      },
+      wecom: {
+        title: 'WeCom single sign-on',
+        description: 'Credentials of this workspace\'s WeCom self-built app. Once CorpID and Secret are set, members opening the login entry inside the WeCom browser are signed in automatically; first-time users get a guest account joined to this workspace. Prerequisites: the app\'s web-authorization trusted domain covers this site and members are in the app\'s visible range.',
+        corpId: 'Corp ID',
+        corpIdPlaceholder: 'My Company → Company Info → Corp ID',
+        corpSecret: 'App Secret',
+        corpSecretPlaceholder: 'Secret of the WeCom self-built app',
+        agentId: 'AgentId',
+        agentIdPlaceholder: 'AgentId of the self-built app (optional, recommended)',
+        domainVerifyText: 'Domain verification text',
+        domainVerifyPlaceholder: 'Content of the WW_verify_*.txt file from the WeCom admin console',
+        domainVerifyHint: 'The site will serve /WW_verify_*.txt requests with this text — no need to drop the file manually.',
+      },
+      feishu: {
+        title: 'Feishu single sign-on',
+        description: 'Credentials of this workspace\'s Feishu self-built app. Once App ID and App Secret are set, members in the Feishu in-app browser are signed in automatically. Prerequisites: enable the web authorization capability and set the redirect URL to https://<domain>/login.',
+        appId: 'App ID',
+        appIdPlaceholder: 'App ID from the Feishu open platform',
+        appSecret: 'App Secret',
+        appSecretPlaceholder: 'App Secret from the Feishu open platform',
+      },
+      watermark: {
+        title: 'Workspace watermark',
+        description: 'Leak-tracing watermark scoped to this workspace only: when enabled, every page in this workspace gets a tiled text overlay. Other workspaces are unaffected.',
+        enabled: 'Enable watermark',
+        text: 'Watermark text',
+        textPlaceholder: 'Supports the {username} placeholder; empty shows the username only',
+        textHint: '{username} is replaced with the signed-in username.',
+      },
+      keepSecretPlaceholder: 'Configured (leave empty to keep)',
+      loadFailed: 'Failed to load SSO configuration',
+      saveSuccess: 'SSO and watermark configuration saved',
+      saveFailed: 'Save failed, please retry',
+    },
+
   menu: {
     knowledgeBase: 'Knowledge Base',
     agents: 'Agents',
@@ -3585,19 +3641,6 @@ export default {
         auth: {
           registration_mode: 'Self-service registration mode',
           default_tenant_mode: 'Default workspace provisioning',
-          watermark_enabled: 'Site-wide page watermark',
-          watermark_text: 'Watermark text'
-        },
-                sso: {
-          wecom: {
-            corp_id: 'WeCom SSO · Corp ID',
-            corp_secret: 'WeCom SSO · Secret',
-            agent_id: 'WeCom SSO · AgentId'
-          },
-          feishu: {
-            app_id: 'Feishu SSO · App ID',
-            app_secret: 'Feishu SSO · App Secret'
-          }
         },
         ssrf: {
           whitelist: 'SSRF protection allowlist'
@@ -3624,8 +3667,6 @@ export default {
         auth: {
           registration_mode: 'Self-service registration mode. self_serve = anyone can register an account; invite_only = public registration is disabled and only Owners/Admins can invite. Takes effect immediately after saving, but use self_serve with care (the public internet will send spam sign-ups).',
           default_tenant_mode: 'Workspace provisioning after public registration. create_personal creates an Owner workspace; tenantless creates only the account until the user accepts an invitation or creates a workspace. Applies to new users only.',
-          watermark_enabled: 'When enabled, a non-interactive tiled text watermark overlays every page (login, chat, settings; desktop and mobile) to deter and trace screenshot leaks. Takes effect for new sessions without restart.',
-          watermark_text: 'Watermark text. Supports the {username} placeholder, replaced with the logged-in username; falls back to {username} when empty.'
         },
         ssrf: {
           whitelist: 'SSRF protection allowlist. Accepts entries such as example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1. Takes effect immediately after saving. The SSRF_WHITELIST_EXTRA environment variable is still maintained by the deployer and is not overridden here.'

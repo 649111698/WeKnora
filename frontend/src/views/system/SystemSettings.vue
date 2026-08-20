@@ -637,14 +637,9 @@ const SETTINGS_SECTION_KEYS: Record<Exclude<SettingsSection, 'other'>, readonly 
     'asynq.wiki_concurrency',
     'model.max_concurrency',
   ],
+  // 水印与企微/飞书 SSO 已迁移为租户级配置（租户设置 → 单点登录/水印，
+  // 存 tenants.sso_config / tenants.watermark_config），不再出现在系统设置。
   security: [
-    'auth.watermark_enabled',
-    'auth.watermark_text',
-    'sso.wecom.corp_id',
-    'sso.wecom.corp_secret',
-    'sso.wecom.agent_id',
-    'sso.feishu.app_id',
-    'sso.feishu.app_secret',
     'ssrf.whitelist',
   ],
 }

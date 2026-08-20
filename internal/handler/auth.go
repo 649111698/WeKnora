@@ -780,18 +780,12 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 		"success":           true,
 		"registration_mode": mode,
 	}
-	// 全站水印配置：DB system_settings > ENV > 默认，管理端「全局设置」
-	// 修改后新会话立即生效，无需重启。
-	if h.systemSettingSvc != nil {
-		resp["watermark"] = gin.H{
-			"enabled": h.systemSettingSvc.GetBool(c.Request.Context(), "auth.watermark_enabled", "WATERMARK_ENABLED", false),
-			"text":    h.systemSettingSvc.GetString(c.Request.Context(), "auth.watermark_text", "WATERMARK_TEXT", "{username}"),
-		}
-	} else if h.configInfo != nil && h.configInfo.Auth != nil {
-		resp["watermark"] = gin.H{
-			"enabled": h.configInfo.Auth.WatermarkEnabled,
-			"text":    h.configInfo.Auth.WatermarkText,
-		}
+	// 水印配置为租户级（tenants.watermark_config），按请求 Host 匹配
+	// 租户专属登录域名解析；登录后的页面由前端从
+	// /tenants/kv/watermark-config 按当前租户拉取。
+	if h.userService != nil {
+		wm := h.userService.GetSSOWatermark(c.Request.Context(), c.Request.Host)
+		resp["watermark"] = gin.H{"enabled": wm.Enabled, "text": wm.Text}
 	}
 	c.JSON(http.StatusOK, resp)
 }

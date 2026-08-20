@@ -8,6 +8,7 @@ import UploadConfirmHost from '@/components/UploadConfirmHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { getCurrentUser, userInfoFromApi, getAuthConfig } from '@/api/auth'
+import { get } from '@/utils/request'
 import SiteWatermark from '@/components/SiteWatermark.vue'
 import { consumePendingTenantSwitchToast } from '@/utils/tenantSwitch'
 import { useRoleLabel } from '@/composables/useRoleLabel'
@@ -26,24 +27,37 @@ const router = useRouter()
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 
-// 全站水印：启动时拉取一次配置；文案中的 {username} 用当前登录用户名替换，
-// 登录/切换账号后自动更新。
+// 租户级水印：文案中的 {username} 用当前登录用户名替换。
+// 未登录（登录页）：后端按请求 Host 匹配租户专属登录域名解析；
+// 已登录：从 /tenants/kv/watermark-config 按当前租户拉取（切换租户会整页刷新）。
 const watermarkEnabled = ref(false)
 const watermarkRawText = ref('{username}')
 const watermarkText = computed(() =>
   watermarkRawText.value.replaceAll('{username}', authStore.user?.username || '')
 )
+const applyWatermark = (cfg?: { enabled: boolean; text: string } | null) => {
+  if (cfg?.enabled) {
+    watermarkRawText.value = cfg.text || '{username}'
+    watermarkEnabled.value = true
+  } else {
+    watermarkEnabled.value = false
+  }
+}
 const loadWatermarkConfig = async () => {
+  if (authStore.user) {
+    try {
+      const resp = await get('/api/v1/tenants/kv/watermark-config')
+      applyWatermark(resp?.data)
+    } catch {
+      applyWatermark(null)
+    }
+    return
+  }
   try {
     const cfg = await getAuthConfig()
-    if (cfg.watermark?.enabled) {
-      watermarkRawText.value = cfg.watermark.text || '{username}'
-      watermarkEnabled.value = true
-    } else {
-      watermarkEnabled.value = false
-    }
+    applyWatermark(cfg.watermark)
   } catch {
-    watermarkEnabled.value = false
+    applyWatermark(null)
   }
 }
 
@@ -225,6 +239,8 @@ watch(
   (logged) => {
     if (logged) startInvitationPolling()
     else stopInvitationPolling()
+    // 登录态变化后水印按当前租户重新解析（未登录走 ?t=/Host，已登录走租户配置）
+    loadWatermarkConfig()
   },
   { immediate: true },
 )
@@ -260,7 +276,6 @@ const showPendingTenantSwitchToast = () => {
 onMounted(() => {
   handleGlobalOIDCCallback()
   showPendingTenantSwitchToast()
-  loadWatermarkConfig()
 
   // Auto check for updates on startup
   setTimeout(() => {

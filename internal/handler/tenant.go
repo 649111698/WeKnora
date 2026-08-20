@@ -1306,7 +1306,7 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 	key := secutils.SanitizeForLog(c.Param("key"))
 
 	switch key {
-	case "web-search-config", "parser-engine-config", "storage-engine-config":
+	case "web-search-config", "parser-engine-config", "storage-engine-config", "sso-config":
 		if !dto.CanViewIntegrationSecrets(ctx) {
 			c.Error(errors.NewForbiddenError("integration configuration requires admin access"))
 			return
@@ -1335,6 +1335,12 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 	case "memory-config":
 		h.GetTenantMemoryConfig(c)
 		return
+	case "sso-config":
+		h.GetTenantSSOConfig(c)
+		return
+	case "watermark-config":
+		h.GetTenantWatermarkConfig(c)
+		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
 		c.Error(errors.NewBadRequestError("unsupported key"))
@@ -1360,7 +1366,7 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 	key := secutils.SanitizeForLog(c.Param("key"))
 
 	switch key {
-	case "web-search-config", "parser-engine-config", "storage-engine-config":
+	case "web-search-config", "parser-engine-config", "storage-engine-config", "sso-config":
 		if !dto.CanViewIntegrationSecrets(ctx) {
 			c.Error(errors.NewForbiddenError("integration configuration requires admin access"))
 			return
@@ -1385,6 +1391,12 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 		return
 	case "memory-config":
 		h.updateTenantMemoryConfigInternal(c)
+		return
+	case "sso-config":
+		h.updateTenantSSOConfigInternal(c)
+		return
+	case "watermark-config":
+		h.updateTenantWatermarkConfigInternal(c)
 		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
@@ -1898,6 +1910,167 @@ func (h *TenantHandler) updateTenantMemoryConfigInternal(c *gin.Context) {
 		"success": true,
 		"data":    updatedTenant.MemoryConfig,
 		"message": "Memory configuration updated successfully",
+	})
+}
+
+// GetTenantSSOConfig godoc
+// @Summary      获取空间 SSO 配置
+// @Description  返回空间的企微/飞书 SSO 凭证（Secret 打码为 ***）与专属登录域名
+// @Tags         空间管理
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /tenants/kv/sso-config [get]
+func (h *TenantHandler) GetTenantSSOConfig(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    types.TenantSSOConfigForResponse(tenant.SSOConfig),
+	})
+}
+
+// updateTenantSSOConfigInternal updates tenant-level SSO credentials.
+// Submitting the literal "***" for a secret keeps the stored value.
+func (h *TenantHandler) updateTenantSSOConfigInternal(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var cfg types.TenantSSOConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		logger.Error(ctx, "Failed to parse request parameters", err)
+		c.Error(errors.NewValidationError("Invalid request data").WithDetails(err.Error()))
+		return
+	}
+	if len(cfg.LoginDomain) > 255 {
+		c.Error(errors.NewBadRequestError("login_domain is too long"))
+		return
+	}
+	if cfg.WeCom != nil {
+		if len(cfg.WeCom.CorpID) > 64 || len(cfg.WeCom.AgentID) > 64 ||
+			len(cfg.WeCom.CorpSecret) > 256 || len(cfg.WeCom.DomainVerifyText) > 512 {
+			c.Error(errors.NewBadRequestError("WeCom SSO field exceeds length limit"))
+			return
+		}
+	}
+	if cfg.Feishu != nil {
+		if len(cfg.Feishu.AppID) > 64 || len(cfg.Feishu.AppSecret) > 256 {
+			c.Error(errors.NewBadRequestError("Feishu SSO field exceeds length limit"))
+			return
+		}
+	}
+
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		logger.Error(ctx, "Workspace is empty")
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+
+	// 域名是唯一的租户区分方式：配了任一 SSO 凭证就必须绑定域名。
+	merged := types.MergeTenantSSOConfigForUpdate(&cfg, tenant.SSOConfig)
+	hasCredentials := merged.WeComEnabled() || merged.FeishuEnabled() ||
+		(merged.WeCom != nil && (merged.WeCom.CorpID != "" || merged.WeCom.CorpSecret != "")) ||
+		(merged.Feishu != nil && (merged.Feishu.AppID != "" || merged.Feishu.AppSecret != ""))
+	if hasCredentials && merged.LoginDomain == "" {
+		c.Error(errors.NewBadRequestError("login_domain is required when SSO credentials are configured"))
+		return
+	}
+	if merged.LoginDomain != "" {
+		domain := strings.ToLower(strings.TrimSpace(merged.LoginDomain))
+		existing, err := h.service.ListAllTenants(ctx)
+		if err == nil {
+			for _, t := range existing {
+				if t.ID != tenant.ID && t.SSOConfig != nil &&
+					strings.EqualFold(strings.TrimSpace(t.SSOConfig.LoginDomain), domain) {
+					c.Error(errors.NewBadRequestError("login_domain is already used by another workspace"))
+					return
+				}
+			}
+		}
+	}
+
+	tenant.SSOConfig = merged
+	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+		} else {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to update SSO config").WithDetails(err.Error()))
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    types.TenantSSOConfigForResponse(updatedTenant.SSOConfig),
+		"message": "SSO configuration updated successfully",
+	})
+}
+
+// GetTenantWatermarkConfig godoc
+// @Summary      获取空间水印配置
+// @Tags         空间管理
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /tenants/kv/watermark-config [get]
+func (h *TenantHandler) GetTenantWatermarkConfig(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    tenant.WatermarkConfig.Resolved(),
+	})
+}
+
+// updateTenantWatermarkConfigInternal updates tenant-wide page watermark.
+func (h *TenantHandler) updateTenantWatermarkConfigInternal(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var cfg types.WatermarkConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		logger.Error(ctx, "Failed to parse request parameters", err)
+		c.Error(errors.NewValidationError("Invalid request data").WithDetails(err.Error()))
+		return
+	}
+	if len([]rune(cfg.Text)) > 128 {
+		c.Error(errors.NewBadRequestError("watermark text must be at most 128 characters"))
+		return
+	}
+
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		logger.Error(ctx, "Workspace is empty")
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+
+	if !cfg.Enabled {
+		cfg.Text = ""
+	}
+	tenant.WatermarkConfig = &cfg
+	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+		} else {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to update watermark config").WithDetails(err.Error()))
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    updatedTenant.WatermarkConfig.Resolved(),
+		"message": "Watermark configuration updated successfully",
 	})
 }
 

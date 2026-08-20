@@ -1,4 +1,60 @@
 export default {
+  tenantSSO: {
+      navLabel: 'SSO 및 워터마크',
+      loginDomain: {
+        title: '전용 로그인 도메인',
+        description: '이 워크스페이스에 전용 로그인 도메인을 바인딩합니다(필수). 도메인이 워크스페이스를 구분하는 유일한 방식입니다: 해당 도메인으로 접속하면 이 워크스페이스의 SSO와 워터마크가 자동 적용됩니다. 도메인의 DNS를 이 서버로 지정하고 TLS 인증서를 구성하세요. 도메인은 워크스페이스별로 고유해야 합니다.',
+        label: '로그인 도메인',
+        placeholder: '예: sso.your-company.com (포트 허용)',
+        entryHint: '워크스페이스 로그인 진입점',
+      },
+      guide: {
+        wecom: {
+          title: 'WeCom 관리 콘솔 URL',
+          description: '아래 생성된 주소를 WeCom 관리 콘솔의 해당 위치에 입력하면 앱 로그인 구성이 완료됩니다.',
+          homeUrl: '워크벤치 앱 홈 URL(앱 관리 → 자체 개발 앱 → 홈)',
+          trustedDomain: '신뢰 도메인(웹 인증 및 JS-SDK)',
+          verifyNote: 'WeCom이 신뢰 도메인 확인을 요구하면 파일 검증을 선택하고, 다운로드한 WW_verify_*.txt 내용을 위의 "도메인 인증 텍스트"에 붙여넣어 저장하세요. 사이트가 WeCom의 요청에 자동 응답합니다.',
+        },
+        feishu: {
+          redirectUrl: '웹 인증 리디렉션 URL(Feishu 오픈 플랫폼 → 보안 설정)',
+        },
+      },
+      wecom: {
+        title: 'WeCom SSO',
+        description: '이 워크스페이스의 WeCom 자체 개발 앱 자격 증명입니다. CorpID와 Secret을 모두 설정하면 WeCom 내장 브라우저에서 로그인 진입점을 열 때 자동 로그인되며, 첫 로그인 시 게스트 계정이 생성되어 이 워크스페이스에 추가됩니다.전제 조건: 앱의 웹 인증 신뢰 도메인에 사이트 도메인이 포함되고 구성원이 앱 표시 범위에 있어야 합니다.',
+        corpId: 'Corp ID',
+        corpIdPlaceholder: '내 기업 → 기업 정보 → Corp ID',
+        corpSecret: '앱 Secret',
+        corpSecretPlaceholder: 'WeCom 자체 개발 앱의 Secret',
+        agentId: 'AgentId',
+        agentIdPlaceholder: '자체 개발 앱의 AgentId(선택, 권장)',
+        domainVerifyText: '도메인 인증 텍스트',
+        domainVerifyPlaceholder: 'WeCom 관리 콘솔에서 다운로드한 WW_verify_*.txt 파일 내용',
+        domainVerifyHint: '입력하면 사이트가 /WW_verify_*.txt 요청에 이 텍스트로 응답합니다. 파일을 수동으로 둘 필요가 없습니다.',
+      },
+      feishu: {
+        title: 'Feishu SSO',
+        description: '이 워크스페이스의 Feishu 자체 개발 앱 자격 증명입니다. App ID와 App Secret을 모두 설정하면 Feishu 내장 브라우저에서 자동 로그인됩니다.전제 조건: 앱의 웹 인증 기능을 켜고 리디렉션 URL을 https://<도메인>/login 으로 설정하세요.',
+        appId: 'App ID',
+        appIdPlaceholder: 'Feishu 오픈 플랫폼 앱의 App ID',
+        appSecret: 'App Secret',
+        appSecretPlaceholder: 'Feishu 오픈 플랫폼 앱의 App Secret',
+      },
+      watermark: {
+        title: '워크스페이스 워터마크',
+        description: '이 워크스페이스에만 적용되는 유출 추적 워터마크입니다. 켜면 이 워크스페이스의 모든 페이지에 타일형 텍스트 워터마크가 표시되며 다른 워크스페이스는 영향을 받지 않습니다.',
+        enabled: '워터마크 사용',
+        text: '워터마크 텍스트',
+        textPlaceholder: '{username} 플레이스홀더 지원, 비우면 사용자 이름만 표시',
+        textHint: '{username}은 로그인한 사용자 이름으로 대체됩니다.',
+      },
+      keepSecretPlaceholder: '구성됨(비우면 유지)',
+      loadFailed: 'SSO 구성을 불러오지 못했습니다',
+      saveSuccess: 'SSO 및 워터마크 구성이 저장되었습니다',
+      saveFailed: '저장에 실패했습니다. 다시 시도하세요',
+    },
+
   platformApiKeys: {
     title: '플랫폼 API 키',
     description: '워크스페이스 간 자동화를 위한 플랫폼 자격 증명입니다. 워크스페이스 API에는 X-Tenant-ID를 사용하세요.',
@@ -2789,8 +2845,6 @@ export default {
         auth: {
           registration_mode: '셀프 가입 모드입니다. self_serve = 누구나 계정을 만들 수 있음; invite_only = 공개 가입을 끄고 Owner/Admin만 초대 가능. 저장 즉시 적용되며, self_serve는 스팸 가입이 들어올 수 있으니 신중히 사용하세요.',
           default_tenant_mode: '공개 가입 후 공간 초기화 정책입니다. create_personal은 개인 공간을 만들고 Owner를 부여하며, tenantless는 초대 수락 또는 직접 공간 생성 전까지 계정만 만듭니다.',
-          watermark_enabled: '활성화하면 모든 페이지(로그인, 채팅, 설정, 데스크톱 및 모바일)에 상호작용을 방해하지 않는 타일형 텍스트 워터마크가 표시되어 스크린샷 유출 추적에 도움입니다. 재시작 없이 새 세션부터 적용됩니다.',
-          watermark_text: '워터마크 텍스트입니다. {username} 플레이스홀더를 지원하며 로그인한 사용자 이름으로 대체됩니다. 비어 있으면 {username}로 대체됩니다.'
         }
       },
       keyLabels: {
@@ -2811,25 +2865,12 @@ export default {
           default_storage_quota_gb: '신규 워크스페이스 기본 저장 용량 (GB)',
           auto_create_api_key: '신규 워크스페이스 API Key 자동 생성'
         },
-                sso: {
-          wecom: {
-            corp_id: 'WeCom SSO · Corp ID',
-            corp_secret: 'WeCom SSO · Secret',
-            agent_id: 'WeCom SSO · AgentId'
-          },
-          feishu: {
-            app_id: 'Feishu SSO · App ID',
-            app_secret: 'Feishu SSO · App Secret'
-          }
-        },
         ssrf: {
           whitelist: 'SSRF 보호 허용 목록'
         },
         auth: {
           registration_mode: '셀프 가입 모드',
           default_tenant_mode: '기본 공간 프로비저닝',
-          watermark_enabled: '사이트 전체 페이지 워터마크',
-          watermark_text: '워터마크 텍스트'
         }
       },
       runtime: {

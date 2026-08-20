@@ -200,6 +200,8 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 	r.GET("/auth/sso/config", handler.GetSSOConfig)
 	r.GET("/auth/sso/wecom/callback", handler.SSOWeComCallback)
 	r.GET("/auth/sso/feishu/callback", handler.SSOFeishuCallback)
+	// 企微可信域名归属验证：nginx 把根路径 /WW_verify_*.txt 代理到该接口
+	r.GET("/auth/sso/wecom/domain-verify", handler.SSOWeComDomainVerify)
 	r.POST("/auth/refresh", handler.RefreshToken)
 	r.GET("/auth/validate", handler.ValidateToken)
 	r.POST("/auth/logout", handler.Logout)

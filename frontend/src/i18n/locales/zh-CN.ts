@@ -1,4 +1,60 @@
 export default {
+  tenantSSO: {
+      navLabel: '单点登录与水印',
+      loginDomain: {
+        title: '专属登录域名',
+        description: '为本空间绑定一个专属登录域名（必填）。域名是区分空间的唯一方式：员工通过该域名访问时，自动使用本空间的 SSO 登录与水印；DNS 请将该域名解析到本站点服务器，并配置 HTTPS 证书。各空间域名不可重复。',
+        label: '登录域名',
+        placeholder: '例如 sso.your-company.com（可含端口）',
+        entryHint: '空间专属登录入口',
+      },
+      guide: {
+        wecom: {
+          title: '企业微信后台配置 URL',
+          description: '把下面生成的地址填到企微管理后台对应位置，即可完成应用的登录配置。',
+          homeUrl: '工作台应用主页 URL（应用管理 → 自建应用 → 主页）',
+          trustedDomain: '可信域名（网页授权及JS-SDK）',
+          verifyNote: '企微验证可信域名时选择「文件验证」，把下载的 WW_verify_*.txt 的内容粘贴到上方「域名验证文字」并保存，本站会自动响应企微的抓取。',
+        },
+        feishu: {
+          redirectUrl: '网页授权重定向 URL（飞书开放平台 → 安全设置）',
+        },
+      },
+      wecom: {
+        title: '企业微信单点登录',
+        description: '配置本空间的企业微信自建应用凭证。配齐 CorpID 与 Secret 后，员工在企微内置浏览器打开登录入口即自动登录；首次登录自动创建访客账号并加入本空间。前置条件：自建应用「网页授权及JS-SDK」可信域名包含站点域名，且成员在应用可见范围内。',
+        corpId: '企业 ID（CorpID）',
+        corpIdPlaceholder: '我的企业 → 企业信息 → 企业 ID',
+        corpSecret: '应用 Secret',
+        corpSecretPlaceholder: '企业微信自建应用的 Secret',
+        agentId: 'AgentId',
+        agentIdPlaceholder: '自建应用的 AgentId（可选，建议填写）',
+        domainVerifyText: '域名验证文字',
+        domainVerifyPlaceholder: '企微后台下载的 WW_verify_*.txt 文件内容',
+        domainVerifyHint: '填写后站点直接响应企微对 /WW_verify_*.txt 的抓取，无需手动放置验证文件。',
+      },
+      feishu: {
+        title: '飞书单点登录',
+        description: '配置本空间的飞书自建应用凭证。配齐 App ID 与 App Secret 后，飞书内置浏览器打开登录入口即自动登录。前置条件：应用开启「网页授权」能力，重定向 URL 配置为 https://<域名>/login。',
+        appId: 'App ID',
+        appIdPlaceholder: '飞书开放平台应用的 App ID',
+        appSecret: 'App Secret',
+        appSecretPlaceholder: '飞书开放平台应用的 App Secret',
+      },
+      watermark: {
+        title: '空间水印',
+        description: '仅对本空间生效的防泄密水印：开启后本空间所有页面叠加平铺文本水印，其他空间不受影响。',
+        enabled: '启用水印',
+        text: '水印文案',
+        textPlaceholder: '支持 {username} 占位符，留空则只显示用户名',
+        textHint: '{username} 会替换为当前登录用户名。',
+      },
+      keepSecretPlaceholder: '已配置（留空保持不变）',
+      loadFailed: '加载单点登录配置失败',
+      saveSuccess: '单点登录与水印配置已保存',
+      saveFailed: '保存失败，请重试',
+    },
+
   platformApiKeys: {
     title: '平台 API Key',
     description: '为跨空间自动化创建平台级凭据；调用空间接口时通过 X-Tenant-ID 指定目标空间。',
@@ -2791,8 +2847,6 @@ export default {
         auth: {
           registration_mode: '自助注册模式。self_serve = 任何人可注册账号；invite_only = 关闭公网注册，仅 Owner/Admin 可邀请。修改后立即生效，但谨慎对待 self_serve（公网会接受 spam）。',
           default_tenant_mode: '公开注册后的空间初始化策略。create_personal 会自动创建个人空间并授予 Owner；tenantless 仅创建账户，用户需要接受邀请或主动创建空间。只影响之后注册的用户。',
-          watermark_enabled: '开启后所有界面（登录页、问答、设置，PC 与移动端）叠加不可交互的平铺文本水印，用于防截图外泄溯源。修改后新会话生效，无需重启。',
-          watermark_text: '水印显示的文字。支持 {username} 占位符，登录后自动替换为当前用户名；留空回退为 {username}。'
         }
       },
       keyLabels: {
@@ -2813,25 +2867,12 @@ export default {
           default_storage_quota_gb: '新空间默认存储配额 (GB)',
           auto_create_api_key: '创建空间时自动生成 API Key'
         },
-                sso: {
-          wecom: {
-            corp_id: '企微 SSO·企业 ID',
-            corp_secret: '企微 SSO·应用 Secret',
-            agent_id: '企微 SSO·AgentId'
-          },
-          feishu: {
-            app_id: '飞书 SSO·App ID',
-            app_secret: '飞书 SSO·App Secret'
-          }
-        },
         ssrf: {
           whitelist: 'SSRF 防护白名单'
         },
         auth: {
           registration_mode: '自助注册模式',
           default_tenant_mode: '注册默认空间策略',
-          watermark_enabled: '全站页面水印',
-          watermark_text: '水印文案'
         }
       },
       runtime: {

@@ -262,7 +262,7 @@ export async function getOIDCConfig(): Promise<OIDCConfigResponse> {
 export interface AuthConfigResponse {
   success: boolean
   registration_mode: 'self_serve' | 'invite_only' | string
-  /** 全站水印配置（WATERMARK_ENABLED / WATERMARK_TEXT） */
+  /** 当前租户的水印配置（租户级，后端按 Host 匹配租户登录域名解析） */
   watermark?: {
     enabled: boolean
     text: string
