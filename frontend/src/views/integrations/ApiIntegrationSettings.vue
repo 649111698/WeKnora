@@ -80,10 +80,6 @@
             <label>{{ $t('tenant.api.docLabel') }}</label>
             <p>
               {{ $t('tenant.api.docDescription') }}
-              <a class="doc-link" @click="openApiDoc">
-                {{ $t('tenant.api.openDoc') }}
-                <t-icon name="link" class="link-icon" />
-              </a>
             </p>
           </div>
         </div>
@@ -1428,10 +1424,6 @@ const saveDesktopPort = async () => {
   } catch (err: unknown) {
     MessagePlugin.error(err instanceof Error ? err.message : t('tenant.api.desktopPortSaveFailed'))
   }
-}
-
-function openApiDoc() {
-  window.open('https://github.com/Tencent/WeKnora/blob/main/docs/api/README.md', '_blank')
 }
 
 function openCreateAPIKeyDialog() {

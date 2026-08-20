@@ -119,10 +119,6 @@
                   ? $t('settings.sandbox.secretConfigured')
                   : $t('settings.sandbox.cubeApiKeyOptional') }}
               </p>
-              <a class="inline-guide-link" :href="clusterGuideUrl" target="_blank" rel="noopener noreferrer">
-                <t-icon name="link" />
-                {{ $t('settings.sandbox.cubeApiKeyWhere') }}
-              </a>
             </div>
           </t-form-item>
         </template>
@@ -264,10 +260,6 @@
         <p v-else-if="!templatesLoaded" class="section-help">
           {{ $t('settings.sandbox.templateLoadHint') }}
         </p>
-        <a class="inline-guide-link" :href="clusterGuideUrl" target="_blank" rel="noopener noreferrer">
-          <t-icon name="link" />
-          {{ $t('settings.sandbox.howToBuildTemplate') }}
-        </a>
       </section>
 
       <section v-if="currentStepKey === 'runtime'" class="setting-drawer__section">
@@ -431,7 +423,6 @@ const { t } = useI18n()
 const secretPlaceholder = '***'
 const isMaskedSecret = (value?: string) => value === secretPlaceholder
 
-const clusterGuideUrl = 'https://github.com/Tencent/WeKnora/blob/main/docs/sandbox-cluster.md'
 const e2bApiKeysUrl = 'https://e2b.dev/dashboard?tab=keys'
 
 const backendOptions = [...NAMED_SANDBOX_BACKEND_TYPES]
