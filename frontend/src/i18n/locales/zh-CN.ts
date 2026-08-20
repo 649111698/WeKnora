@@ -2817,7 +2817,8 @@ export default {
           wecom: {
             corp_id: '企微 SSO·企业 ID',
             corp_secret: '企微 SSO·应用 Secret',
-            agent_id: '企微 SSO·AgentId'
+            agent_id: '企微 SSO·AgentId',
+            domain_verify_text: '企微 SSO·域名验证文字'
           },
           feishu: {
             app_id: '飞书 SSO·App ID',

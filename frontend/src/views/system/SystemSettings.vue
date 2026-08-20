@@ -650,6 +650,7 @@ const SETTINGS_SECTION_KEYS: Record<Exclude<SettingsSection, 'other'>, readonly 
     'sso.wecom.corp_id',
     'sso.wecom.corp_secret',
     'sso.wecom.agent_id',
+    'sso.wecom.domain_verify_text',
   ],
   ssoFeishu: [
     'sso.feishu.app_id',

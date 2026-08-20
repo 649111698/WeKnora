@@ -36,6 +36,29 @@ func (h *AuthHandler) GetSSOConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// SSOWeComDomainVerify godoc
+// @Summary      企微可信域名归属验证
+// @Description  返回管理端配置的企微域名验证文字（WW_verify_*.txt 内容）。nginx 将根路径的
+// @Description  /WW_verify_*.txt 代理到本接口，企微抓取比对通过即可完成可信域名验证。
+// @Tags         认证
+// @Produce      text/plain
+// @Success      200  {string}  验证文字
+// @Failure      404  未配置验证文字
+// @Router       /auth/sso/wecom/domain-verify [get]
+func (h *AuthHandler) SSOWeComDomainVerify(c *gin.Context) {
+	if h.systemSettingSvc == nil {
+		c.String(http.StatusNotFound, "not found")
+		return
+	}
+	text := strings.TrimSpace(h.systemSettingSvc.GetString(
+		c.Request.Context(), "sso.wecom.domain_verify_text", "WECOM_SSO_DOMAIN_VERIFY_TEXT", ""))
+	if text == "" {
+		c.String(http.StatusNotFound, "not found")
+		return
+	}
+	c.String(http.StatusOK, text)
+}
+
 func (h *AuthHandler) ssoRedirectCallback(c *gin.Context, platform string, login func() (*types.OIDCCallbackResponse, error)) {
 	ctx := c.Request.Context()
 	frontendRedirectURI := "/"

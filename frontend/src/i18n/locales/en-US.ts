@@ -3607,7 +3607,8 @@ export default {
           wecom: {
             corp_id: 'WeCom SSO · Corp ID',
             corp_secret: 'WeCom SSO · Secret',
-            agent_id: 'WeCom SSO · AgentId'
+            agent_id: 'WeCom SSO · AgentId',
+            domain_verify_text: 'WeCom SSO · Domain verify text'
           },
           feishu: {
             app_id: 'Feishu SSO · App ID',

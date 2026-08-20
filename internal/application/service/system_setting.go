@@ -188,6 +188,14 @@ var registry = map[string]settingSpec{
 		Category: "security",
 		Description: "企微自建应用的 AgentId（用于网页授权构造，可选但建议填写）。",
 	},
+	"sso.wecom.domain_verify_text": {
+		Type:    "string",
+		EnvName: "WECOM_SSO_DOMAIN_VERIFY_TEXT",
+		Category: "security",
+		Description: "企微「网页授权及JS-SDK」可信域名的归属验证文字（企微后台下载的 " +
+			"WW_verify_*.txt 文件内容）。填写后站点直接响应企微对 /WW_verify_*.txt 的抓取，" +
+			"无需手动放置验证文件；留空则不响应（404）。",
+	},
 	"sso.feishu.app_id": {
 		Type:     "string",
 		EnvName:  "FEISHU_SSO_APP_ID",
