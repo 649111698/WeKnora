@@ -336,6 +336,10 @@
                   :title="$t('chat.screenshot')">
                   <t-icon name="camera" />
                 </t-button>
+                <t-button size="small" variant="outline" shape="round" @click.stop="handleExportPDFAnswer"
+                  :title="$t('chat.exportPdf')">
+                  <t-icon name="file-pdf" />
+                </t-button>
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)"
                   :title="$t('agent.addToKnowledgeBase')">
                   <t-icon name="bookmark-add" />
@@ -573,7 +577,7 @@ import {
   injectCachedMermaidSvg,
 } from '@/utils/chatMessageShared';
 import { copyWithToast } from '@/utils/clipboard';
-import { exportAnswerScreenshot } from '@/utils/answerScreenshot';
+import { exportAnswerScreenshot, exportAnswerPDF } from '@/utils/answerScreenshot';
 import {
   configureMarkedForChatMarkdown,
   renderChatMarkdown,
@@ -2817,6 +2821,17 @@ const handleCopyAnswer = async (answerEvent: any) => {
   }
 
   await copyWithToast(content, 'agentStream.copy.success', 'agentStream.copy.failed');
+};
+
+// 回答内容导出为 A4 分页 PDF：定位同截图
+const handleExportPDFAnswer = async (clickEvent: MouseEvent) => {
+  const trigger = clickEvent.currentTarget as HTMLElement | null;
+  const node = trigger?.closest('.answer-event')?.querySelector('.answer-content');
+  if (!node) {
+    MessagePlugin.warning(t('agentStream.copy.emptyContent'));
+    return;
+  }
+  await exportAnswerPDF(node as HTMLElement);
 };
 
 // 回答内容导出为图片：捕获同一条 answer 事件的渲染区（含 Markdown/表格/代码高亮）

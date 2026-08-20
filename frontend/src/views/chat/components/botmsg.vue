@@ -52,6 +52,10 @@
                     :title="$t('chat.screenshot')" :loading="screenshotLoading">
                     <t-icon name="camera" />
                 </t-button>
+                <t-button size="small" variant="outline" shape="round" @click.stop="handleExportPDF"
+                    :title="$t('chat.exportPdf')">
+                    <t-icon name="file-pdf" />
+                </t-button>
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge"
                     :title="$t('agent.addToKnowledgeBase')">
                     <t-icon name="bookmark-add" />
@@ -125,7 +129,7 @@ import {
     formatManualTitle,
 } from '@/utils/chatMessageShared';
 import { copyWithToast } from '@/utils/clipboard';
-import { exportAnswerScreenshot } from '@/utils/answerScreenshot';
+import { exportAnswerScreenshot, exportAnswerPDF } from '@/utils/answerScreenshot';
 import {
     createChatMarkdownRenderer,
     renderChatMarkdown,
@@ -335,6 +339,16 @@ const handleScreenshot = async () => {
     } finally {
         screenshotLoading.value = false;
     }
+};
+
+// 回答内容导出为 A4 分页 PDF
+const handleExportPDF = async () => {
+    const node = contentWrapperRef.value;
+    if (!node) {
+        MessagePlugin.warning(t('chat.emptyContentWarning'));
+        return;
+    }
+    await exportAnswerPDF(node);
 };
 
 // 添加到知识库

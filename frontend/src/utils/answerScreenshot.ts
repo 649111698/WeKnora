@@ -78,9 +78,8 @@ function triggerDownload(dataUrl: string) {
   link.click()
 }
 
-export async function exportAnswerScreenshot(node: HTMLElement): Promise<void> {
-  const t = i18n.global.t
-  // 导出图四周留白（px），避免内容贴边
+// 渲染节点为带留白的 PNG（截图与 PDF 导出共用；字体嵌入失败时降级重试）
+async function renderNodeToPng(node: HTMLElement): Promise<string | null> {
   const PAD = 24
   const options = {
     backgroundColor: pageBackground(),
@@ -89,23 +88,23 @@ export async function exportAnswerScreenshot(node: HTMLElement): Promise<void> {
     style: { padding: `${PAD}px` },
     width: node.offsetWidth + PAD * 2,
     height: node.offsetHeight + PAD * 2,
-  } as const
-
-  let dataUrl: string
+  }
   try {
-    dataUrl = await toPng(node, options)
+    return await toPng(node, options)
   } catch (error) {
-    console.error('[answerScreenshot] export failed, retrying without font embedding:', error)
-    // 字体嵌入失败是最常见的降级场景（跨域字体 / 移动端内置浏览器）
+    console.error('[answerExport] render failed, retrying without font embedding:', error)
     try {
-      dataUrl = await toPng(node, { ...options, skipFonts: true })
+      return await toPng(node, { ...options, skipFonts: true })
     } catch (retryError) {
-      console.error('[answerScreenshot] export failed:', retryError)
-      MessagePlugin.error(t('chat.screenshotFailed') as string)
-      return
+      console.error('[answerExport] render failed:', retryError)
+      return null
     }
   }
+}
 
+export async function exportAnswerScreenshot(node: HTMLElement): Promise<void> {
+  const t = i18n.global.t
+  const dataUrl = await renderNodeToPng(node)
   if (!dataUrl || !dataUrl.startsWith('data:image/png')) {
     MessagePlugin.error(t('chat.screenshotFailed') as string)
     return
@@ -117,4 +116,61 @@ export async function exportAnswerScreenshot(node: HTMLElement): Promise<void> {
     triggerDownload(dataUrl)
   }
   MessagePlugin.success(t('chat.screenshotSuccess') as string)
+}
+
+/**
+ * 导出为 A4 分页 PDF：复用 PNG 渲染管线（同主题背景/留白），
+ * 按 A4 内容区切片逐页写入 jsPDF。blob: 下载在移动端浏览器兼容性
+ * 远好于 data:（微信内核除外，那里可用截图预览替代）。
+ */
+export async function exportAnswerPDF(node: HTMLElement): Promise<void> {
+  const t = i18n.global.t
+  const dataUrl = await renderNodeToPng(node)
+  if (!dataUrl || !dataUrl.startsWith('data:image/png')) {
+    MessagePlugin.error(t('chat.exportPdfFailed') as string)
+    return
+  }
+
+  try {
+    const { jsPDF } = await import('jspdf')
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = reject
+      el.src = dataUrl
+    })
+
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true })
+    const pageW = pdf.internal.pageSize.getWidth()
+    const pageH = pdf.internal.pageSize.getHeight()
+    const margin = 24
+    const contentW = pageW - margin * 2
+    const contentH = pageH - margin * 2
+    const scale = contentW / img.width
+    const fullH = img.height * scale
+    const pages = Math.max(1, Math.ceil(fullH / contentH))
+    const bg = pageBackground()
+
+    for (let i = 0; i < pages; i++) {
+      if (i > 0) pdf.addPage()
+      const sliceH = Math.min(contentH, fullH - i * contentH)
+      const srcY = (i * contentH) / scale
+      const srcH = sliceH / scale
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = Math.max(1, Math.round(srcH))
+      const ctx = canvas.getContext('2d')
+      if (!ctx) break
+      ctx.fillStyle = bg
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, srcY, img.width, srcH, 0, 0, img.width, srcH)
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, margin, contentW, sliceH)
+    }
+
+    pdf.save(`weknora-answer-${Date.now()}.pdf`)
+    MessagePlugin.success(t('chat.exportPdfSuccess') as string)
+  } catch (error) {
+    console.error('[answerExport] PDF export failed:', error)
+    MessagePlugin.error(t('chat.exportPdfFailed') as string)
+  }
 }
