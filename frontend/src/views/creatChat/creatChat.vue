@@ -411,8 +411,23 @@ const handleKBEditorSuccess = (kbId: string) => {
 /*
  * 移动端（<960px）：侧栏已改为覆盖式抽屉，不再占据布局宽度，
  * 上面的负向偏移与固定宽度全部失效，恢复居中 + 全宽。
+ * 另外 .dialogue-answers 的 align-items: center 会让子项收缩自适应，
+ * 推荐问题卡片自然宽度可能超出视口（实测 422px > 390px）触发浏览器
+ * shrink-to-fit 整页缩小（"内容缩在中间"）——移动端强制拉伸满宽。
  */
 @media (max-width: 959.98px) {
+    .dialogue-answers {
+        align-items: stretch;
+        width: 100%;
+    }
+
+    .suggested-questions-container,
+    .suggested-questions-inner {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
     .answers-input {
         transform: translateX(0);
         left: auto;
