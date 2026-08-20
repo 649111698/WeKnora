@@ -416,8 +416,8 @@ const handleKBEditorSuccess = (kbId: string) => {
  * shrink-to-fit 整页缩小（"内容缩在中间"）——移动端强制拉伸满宽。
  */
 @media (max-width: 959.98px) {
-    // 桌面的"内容垂直居中"hero 布局在手机竖屏上会上下留大片空白
-    // （内容悬在屏幕中间）；移动端改为顶部对齐 + 少量上边距。
+    // 桌面的"内容垂直居中"hero 布局不符合手机习惯；移动端改为标准聊天布局：
+    // 标题/问候在顶部，输入框钉在屏幕最底部，中间留白。
     .dialogue-wrap {
         display: flex;
         flex-direction: column;
@@ -428,8 +428,16 @@ const handleKBEditorSuccess = (kbId: string) => {
     }
 
     .dialogue-answers {
+        display: flex;
+        flex-direction: column;
         align-items: stretch;
         width: 100%;
+        flex: 1;
+        min-height: 0;
+    }
+
+    :deep(.answers-input) {
+        margin-top: auto;
     }
 
     .suggested-questions-container,
