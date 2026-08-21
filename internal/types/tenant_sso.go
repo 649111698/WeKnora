@@ -84,7 +84,8 @@ func TenantSSOConfigForResponse(c *TenantSSOConfig) *TenantSSOConfig {
 }
 
 // MergeTenantSSOConfigForUpdate 将提交值合并到已存配置：
-// 提交 "***" 的 secret 表示保留原值；提交空串表示清除。
+// secret 提交 "***"（掩码）或空串均表示保留原值——前端表单加载后密钥
+// 输入框为空、占位符提示"保持原密钥"，直接保存不应误清已配置的密钥。
 func MergeTenantSSOConfigForUpdate(submitted, existing *TenantSSOConfig) *TenantSSOConfig {
 	merged := &TenantSSOConfig{}
 	if existing != nil {
@@ -100,7 +101,7 @@ func MergeTenantSSOConfigForUpdate(submitted, existing *TenantSSOConfig) *Tenant
 			prev = existing.WeCom
 		}
 		w := *submitted.WeCom
-		if w.CorpSecret == ssoSecretMask {
+		if w.CorpSecret == ssoSecretMask || w.CorpSecret == "" {
 			w.CorpSecret = prev.CorpSecret
 		}
 		merged.WeCom = &w
@@ -111,7 +112,7 @@ func MergeTenantSSOConfigForUpdate(submitted, existing *TenantSSOConfig) *Tenant
 			prev = existing.Feishu
 		}
 		f := *submitted.Feishu
-		if f.AppSecret == ssoSecretMask {
+		if f.AppSecret == ssoSecretMask || f.AppSecret == "" {
 			f.AppSecret = prev.AppSecret
 		}
 		merged.Feishu = &f
