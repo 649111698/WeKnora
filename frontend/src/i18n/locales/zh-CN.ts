@@ -1994,6 +1994,14 @@ export default {
   modelSettings: {
     title: '模型配置',
     description: '管理不同类型的 AI 模型，支持 Ollama 本地模型和远程 API',
+    modelLock: {
+      title: '锁定对话模型',
+      description: '隐藏问答输入框的模型选择器，全员统一使用下方锁定的对话模型',
+      selectModel: '选择模型',
+      noChatModels: '暂无对话模型，请先添加对话模型再开启锁定',
+      saved: '对话模型锁定设置已保存',
+      saveFailed: '保存失败，请重试',
+    },
     copySuffix: ' 副本',
     builtinTag: '内置',
     confirmDelete: '确定删除模型「{name}」吗？',

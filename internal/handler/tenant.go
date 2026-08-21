@@ -36,6 +36,8 @@ type TenantHandler struct {
 	// in-code default, so a SystemAdmin's UI override applies on the
 	// very next CreateTenant call.
 	systemSettingSvc interfaces.SystemSettingService
+	// modelService validates the pinned chat model in conversation config.
+	modelService interfaces.ModelService
 }
 
 // NewTenantHandler creates a new tenant handler instance with the provided service
@@ -63,6 +65,7 @@ func NewTenantHandler(
 	kbService interfaces.KnowledgeBaseService,
 	config *config.Config,
 	systemSettingSvc interfaces.SystemSettingService,
+	modelService interfaces.ModelService,
 ) *TenantHandler {
 	return &TenantHandler{
 		service:          service,
@@ -72,6 +75,7 @@ func NewTenantHandler(
 		kbService:        kbService,
 		config:           config,
 		systemSettingSvc: systemSettingSvc,
+		modelService:     modelService,
 	}
 }
 
@@ -1341,6 +1345,9 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 	case "watermark-config":
 		h.GetTenantWatermarkConfig(c)
 		return
+	case "conversation-config":
+		h.GetTenantConversationConfig(c)
+		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
 		c.Error(errors.NewBadRequestError("unsupported key"))
@@ -1397,6 +1404,9 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 		return
 	case "watermark-config":
 		h.updateTenantWatermarkConfigInternal(c)
+		return
+	case "conversation-config":
+		h.updateTenantConversationConfigInternal(c)
 		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
@@ -2071,6 +2081,76 @@ func (h *TenantHandler) updateTenantWatermarkConfigInternal(c *gin.Context) {
 		"success": true,
 		"data":    updatedTenant.WatermarkConfig.Resolved(),
 		"message": "Watermark configuration updated successfully",
+	})
+}
+
+func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    tenant.ConversationConfig.ResolvedConversation(),
+	})
+}
+
+// updateTenantConversationConfigInternal updates the tenant chat UX lock
+// (hide the input-box model dropdown and pin the chat model).
+func (h *TenantHandler) updateTenantConversationConfigInternal(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var cfg types.ConversationConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		logger.Error(ctx, "Failed to parse request parameters", err)
+		c.Error(errors.NewValidationError("Invalid request data").WithDetails(err.Error()))
+		return
+	}
+	cfg.DefaultModelID = strings.TrimSpace(cfg.DefaultModelID)
+	if cfg.ModelSelectorHidden {
+		if cfg.DefaultModelID == "" {
+			c.Error(errors.NewBadRequestError("default_model_id is required when the model selector is hidden"))
+			return
+		}
+		// 锁定的必须是本租户可用的对话模型，防止把成员钉在已删除/别的
+		// 类型的模型上（保存时校验一次，前端选择器也只列 KnowledgeQA）。
+		model, err := h.modelService.GetModelByID(ctx, cfg.DefaultModelID)
+		if err != nil || model == nil {
+			c.Error(errors.NewBadRequestError("default model not found"))
+			return
+		}
+		if model.Type != types.ModelTypeKnowledgeQA {
+			c.Error(errors.NewBadRequestError("default model must be a KnowledgeQA (chat) model"))
+			return
+		}
+	} else {
+		cfg.DefaultModelID = ""
+	}
+
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		logger.Error(ctx, "Workspace is empty")
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+
+	tenant.ConversationConfig = &cfg
+	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+		} else {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to update conversation config").WithDetails(err.Error()))
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    updatedTenant.ConversationConfig.ResolvedConversation(),
+		"message": "Conversation configuration updated successfully",
 	})
 }
 

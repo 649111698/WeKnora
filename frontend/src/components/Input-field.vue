@@ -18,6 +18,7 @@ import { getCaretCoordinates } from '@/utils/caret';
 import { getRootZoom, rectToCssPx, cssViewportSize } from '@/utils/zoom';
 import { type ModelConfig } from '@/api/model';
 import { type CustomAgent, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
+import { get } from '@/utils/request';
 import { useChatResourcesStore } from '@/stores/chatResources';
 import { useEditorResourcesStore } from '@/stores/editorResources';
 import { useI18n } from 'vue-i18n';
@@ -460,6 +461,30 @@ const showImageUploadButton = computed(() => isImageUploadEnabledByAgent.value);
 const isModelLockedByAgent = computed(() => {
   return false;
 });
+
+// 租户级对话模型锁定：管理端隐藏模型下拉并钉住对话模型。
+// 隐藏时无视 localStorage 上次选择与智能体默认模型，统一用锁定模型。
+const conversationLock = ref<{ model_selector_hidden?: boolean; default_model_id?: string } | null>(null);
+let conversationLockLoaded: Promise<void> | null = null;
+const loadConversationLock = () => {
+  if (!conversationLockLoaded) {
+    conversationLockLoaded = (async () => {
+      try {
+        const resp: any = await get('/api/v1/tenants/kv/conversation-config');
+        conversationLock.value = resp?.data || null;
+      } catch {
+        conversationLock.value = null;
+      }
+    })();
+  }
+  return conversationLockLoaded;
+};
+const isModelSelectorHidden = computed(() =>
+  !!(conversationLock.value?.model_selector_hidden && conversationLock.value?.default_model_id)
+);
+const lockedModelId = computed(() =>
+  isModelSelectorHidden.value ? conversationLock.value!.default_model_id! : ''
+);
 
 // Mention related state
 const showMention = ref(false);
@@ -958,6 +983,11 @@ const ensureModelSelection = () => {
   if (selectedModelId.value) {
     return;
   }
+  // 租户锁定模型优先于上次选择/列表第一个
+  if (isModelSelectorHidden.value && availableModels.value.some(m => m.id === lockedModelId.value)) {
+    selectedModelId.value = lockedModelId.value;
+    return;
+  }
   const lastPick = readLastChatModelID();
   if (lastPick) {
     selectedModelId.value = lastPick;
@@ -976,6 +1006,8 @@ const ensureModelSelection = () => {
 watch(
   [selectedAgentId, () => settingsStore.selectedAgentSourceTenantId, agentModelId],
   ([, sourceTenantId, newModelId]) => {
+    // 租户锁定模型时智能体默认模型不生效（租户策略优先）
+    if (isModelSelectorHidden.value) return;
     if (!newModelId || newModelId.trim() === '') return;
 
     const lastPick = readLastChatModelID();
@@ -993,6 +1025,19 @@ watch(
 
     if (newModelId !== selectedModelId.value) {
       selectedModelId.value = newModelId;
+    }
+  },
+  { immediate: true }
+);
+
+// 租户锁定模型：配置或模型列表到位后强制覆盖任何既有选择（含 localStorage
+// 上次选择），确保全员实际请求都用锁定模型——晚于上述 watch 生效即胜出。
+watch(
+  [isModelSelectorHidden, lockedModelId, availableModels],
+  () => {
+    if (!isModelSelectorHidden.value) return;
+    if (availableModels.value.some(m => m.id === lockedModelId.value)) {
+      selectedModelId.value = lockedModelId.value;
     }
   },
   { immediate: true }
@@ -1769,6 +1814,7 @@ onMounted(() => {
     loadChatModels(),
     loadAgents(),
     loadMCPServices(),
+    loadConversationLock(),
   ]);
   window.addEventListener(CHAT_FILE_DROP_EVENT, handleChatFileDrop as EventListener);
 
@@ -2651,8 +2697,8 @@ defineExpose({
             </div>
           </t-tooltip>
 
-          <!-- 模型显示 -->
-          <t-tooltip :content="isModelLockedByAgent ? $t('input.modelLockedByAgent') : ''"
+          <!-- 模型显示（租户锁定模型时整体隐藏） -->
+          <t-tooltip v-if="!isModelSelectorHidden" :content="isModelLockedByAgent ? $t('input.modelLockedByAgent') : ''"
             :disabled="!isModelLockedByAgent">
             <div class="model-display" :class="{ 'agent-controlled': isModelLockedByAgent }">
               <div ref="modelButtonRef" class="model-selector-trigger" @click.stop="toggleModelSelector">

@@ -125,6 +125,9 @@ type Tenant struct {
 	SSOConfig *TenantSSOConfig `yaml:"sso_config" json:"sso_config,omitempty" gorm:"type:jsonb"`
 	// WatermarkConfig tenant-wide page watermark. nil = disabled.
 	WatermarkConfig *WatermarkConfig `yaml:"watermark_config" json:"watermark_config,omitempty" gorm:"type:jsonb"`
+	// ConversationConfig tenant-wide chat UX lock: hide the input-box model
+	// dropdown and pin the chat model for all members. nil = selector shown.
+	ConversationConfig *ConversationConfig `yaml:"conversation_config" json:"conversation_config,omitempty" gorm:"type:jsonb"`
 	// Creation time
 	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`
 	// Last updated time

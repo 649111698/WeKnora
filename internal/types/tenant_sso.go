@@ -173,3 +173,40 @@ func (c *WatermarkConfig) Scan(value interface{}) error {
 	}
 	return json.Unmarshal(b, c)
 }
+
+// ConversationConfig 租户级对话体验配置：隐藏输入框模型下拉并锁定对话模型。
+// 未配置（nil）视为不隐藏，成员可自由选择模型。
+type ConversationConfig struct {
+	// ModelSelectorHidden 隐藏问答输入框的模型选择器。
+	ModelSelectorHidden bool `json:"model_selector_hidden"`
+	// DefaultModelID 隐藏选择器时锁定的对话模型（KnowledgeQA 类型）。
+	DefaultModelID string `json:"default_model_id,omitempty"`
+}
+
+// ResolvedConversation 返回生效的对话配置；nil 回退为不隐藏。
+func (c *ConversationConfig) ResolvedConversation() ConversationConfig {
+	if c == nil {
+		return ConversationConfig{}
+	}
+	return ConversationConfig{
+		ModelSelectorHidden: c.ModelSelectorHidden,
+		DefaultModelID:      strings.TrimSpace(c.DefaultModelID),
+	}
+}
+
+// Value implements driver.Valuer for tenants.conversation_config.
+func (c ConversationConfig) Value() (driver.Value, error) {
+	return json.Marshal(c)
+}
+
+// Scan implements sql.Scanner for tenants.conversation_config.
+func (c *ConversationConfig) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(b, c)
+}

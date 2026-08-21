@@ -1992,6 +1992,14 @@ export default {
   modelSettings: {
     title: '모델 설정',
     description: '다양한 유형의 AI 모델을 관리합니다. Ollama 로컬 모델과 원격 API를 지원합니다',
+    modelLock: {
+      title: '대화 모델 잠금',
+      description: '채팅 입력창의 모델 선택기를 숨기고 모든 구성원이 잠긴 모델을 사용합니다',
+      selectModel: '모델 선택',
+      noChatModels: '대화 모델이 없습니다. 잠금을 켜기 전에 대화 모델을 추가하세요',
+      saved: '대화 모델 잠금 설정이 저장되었습니다',
+      saveFailed: '저장에 실패했습니다. 다시 시도하세요',
+    },
     copySuffix: ' 사본',
     builtinTag: '기본제공',
     confirmDelete: '모델 "{name}"을(를) 삭제하시겠습니까?',

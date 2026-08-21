@@ -30,6 +30,25 @@
       </div>
     </div>
 
+    <!-- 对话模型锁定：隐藏问答框模型下拉，全员使用锁定模型（Admin） -->
+    <div v-if="authStore.hasRole('admin') && !loading" class="model-lock-card">
+      <div class="model-lock-card__main">
+        <div class="model-lock-card__text">
+          <div class="model-lock-card__title">{{ $t('modelSettings.modelLock.title') }}</div>
+          <div class="model-lock-card__desc">{{ $t('modelSettings.modelLock.description') }}</div>
+        </div>
+        <div class="model-lock-card__controls">
+          <t-select v-if="lockEnabled" v-model="lockModelId" :options="chatModelOptions"
+            class="model-lock-card__select" :placeholder="$t('modelSettings.modelLock.selectModel')"
+            @change="saveLockConfig" />
+          <t-switch v-model="lockEnabled" :loading="lockSaving" @change="saveLockConfig" />
+        </div>
+      </div>
+      <p v-if="lockEnabled && chatModelOptions.length === 0" class="model-lock-card__empty">
+        {{ $t('modelSettings.modelLock.noChatModels') }}
+      </p>
+    </div>
+
     <t-tabs v-model="activeTypeFilter" class="model-type-tabs" data-guide="settings-models">
       <t-tab-panel value="all" :label="`${$t('common.all')}(${allLegacyModels.length})`" />
       <t-tab-panel value="chat" :label="`${$t('modelSettings.typeShort.chat')}(${countByType('chat')})`" />
@@ -143,6 +162,7 @@ import { useI18n } from 'vue-i18n'
 import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
 import ModelDebugDrawer from '@/components/ModelDebugDrawer.vue'
 import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, type ModelConfig } from '@/api/model'
+import { get, put } from '@/utils/request'
 import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
 
@@ -610,12 +630,106 @@ function getModelType(type: ModelType): 'KnowledgeQA' | 'Embedding' | 'Rerank' |
 
 onMounted(() => {
   loadModels()
+  loadLockConfig()
 })
+
+// ---- 对话模型锁定（隐藏问答框模型下拉，全员使用锁定模型）----
+const lockEnabled = ref(false)
+const lockModelId = ref('')
+const lockSaving = ref(false)
+
+const chatModelOptions = computed(() =>
+  allLegacyModels.value
+    .filter(m => m._modelType === 'chat')
+    .map(m => ({ label: m.displayName || m.name, value: m.id }))
+)
+
+const loadLockConfig = async () => {
+  if (!authStore.hasRole('admin')) return
+  try {
+    const resp: any = await get('/api/v1/tenants/kv/conversation-config')
+    const cfg = resp?.data
+    lockEnabled.value = !!cfg?.model_selector_hidden
+    lockModelId.value = cfg?.default_model_id || ''
+  } catch {
+    // 读取失败按未配置处理，不打断页面
+  }
+}
+
+const saveLockConfig = async () => {
+  if (lockSaving.value) return
+  if (lockEnabled.value && !lockModelId.value) {
+    const first = chatModelOptions.value[0]?.value || ''
+    if (!first) {
+      MessagePlugin.warning(t('modelSettings.modelLock.noChatModels'))
+      lockEnabled.value = false
+      return
+    }
+    lockModelId.value = first
+  }
+  lockSaving.value = true
+  try {
+    await put('/api/v1/tenants/kv/conversation-config', {
+      model_selector_hidden: lockEnabled.value,
+      default_model_id: lockEnabled.value ? lockModelId.value : '',
+    })
+    MessagePlugin.success(t('modelSettings.modelLock.saved'))
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('modelSettings.modelLock.saveFailed'))
+    await loadLockConfig()
+  } finally {
+    lockSaving.value = false
+  }
+}
 </script>
 
 <style lang="less" scoped>
 .model-settings {
   width: 100%;
+}
+
+.model-lock-card {
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--td-radius-large, 8px);
+  background: var(--td-bg-color-container);
+
+  &__main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  &__title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+  }
+
+  &__desc {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--td-text-color-secondary);
+  }
+
+  &__controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  &__select {
+    width: 220px;
+  }
+
+  &__empty {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--td-error-color);
+  }
 }
 
 .section-header {

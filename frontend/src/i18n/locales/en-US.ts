@@ -4358,6 +4358,14 @@ export default {
   modelSettings: {
     title: 'Model Settings',
     description: 'Manage different types of AI models, including local Ollama and remote APIs',
+    modelLock: {
+      title: 'Lock chat model',
+      description: 'Hide the model selector in the chat input and use the locked chat model for everyone',
+      selectModel: 'Select a model',
+      noChatModels: 'No chat models yet. Add a chat model before enabling the lock',
+      saved: 'Chat model lock saved',
+      saveFailed: 'Save failed, please retry',
+    },
     typeShort: {
       chat: 'Chat',
       embedding: 'Embedding',
