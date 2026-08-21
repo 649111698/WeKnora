@@ -78,8 +78,49 @@ function triggerDownload(dataUrl: string) {
   link.click()
 }
 
+// 导出前强制加载节点内的所有图片：移动端懒加载或尚未滚入视口的图片
+// 可能从未加载，html-to-image 克隆 DOM 时只能拿到空位（表现为导出的
+// PDF/截图里图片消失）。等待 load/error，单图 5s 兜底防卡死导出。
+async function preloadNodeImages(node: HTMLElement): Promise<void> {
+  const imgs = Array.from(node.querySelectorAll('img'));
+  if (!imgs.length) return;
+  await Promise.all(
+    imgs.map(img => {
+      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+      if (img.getAttribute('loading') === 'lazy') {
+        img.setAttribute('loading', 'eager');
+      }
+      return new Promise<void>(resolve => {
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+        setTimeout(done, 5000);
+        // 重赋 src 触发个别浏览器改 loading 属性后不自动重试的加载
+        if (img.src) {
+          const src = img.src;
+          img.src = src;
+        }
+      });
+    })
+  );
+  // 等待解码，避免 canvas 绘制时图像尚未就绪
+  await Promise.all(
+    imgs.map(img =>
+      img.complete && img.naturalWidth > 0
+        ? img.decode?.().catch(() => undefined)
+        : Promise.resolve()
+    )
+  );
+}
+
 // 渲染节点为带留白的 PNG（截图与 PDF 导出共用；字体嵌入失败时降级重试）
 async function renderNodeToPng(node: HTMLElement): Promise<string | null> {
+  await preloadNodeImages(node);
   const PAD = 24
   const options = {
     backgroundColor: pageBackground(),
@@ -165,10 +206,33 @@ export async function exportAnswerPDF(node: HTMLElement): Promise<void> {
       ctx.fillStyle = bg
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.drawImage(img, 0, srcY, img.width, srcH, 0, 0, img.width, srcH)
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, margin, contentW, sliceH)
+      // JPEG 而非 PNG：带图回答的 PNG 每页可到数 MB，接收方（微信预览等）
+      // 常打不开；JPEG 体积小一个数量级，白底文本在 0.92 质量下无可见损失
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, contentW, sliceH)
     }
 
-    pdf.save(`weknora-answer-${Date.now()}.pdf`)
+    const fileName = `weknora-answer-${Date.now()}.pdf`
+    // 移动端优先走系统分享：jsPDF 的 a[download]+blob 在企微/微信内置浏览器
+    // 只会打开一个临时预览，用户"看到了"但从未真正落盘，转发出去的自然
+    // 不是文件本体（接收方打不开）。Web Share API 直接以 PDF 文件唤起
+    // 分享面板，转发出去的是真实文件；不支持时回退原有保存行为。
+    if (isTouchDevice() && typeof navigator.share === 'function' && typeof navigator.canShare === 'function') {
+      try {
+        const file = new File([pdf.output('blob')], fileName, { type: 'application/pdf' })
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: fileName })
+          MessagePlugin.success(t('chat.exportPdfSuccess') as string)
+          return
+        }
+      } catch (error: any) {
+        // AbortError = 用户收起分享面板，视为完成；其余错误回退到保存
+        if (error?.name === 'AbortError') {
+          return
+        }
+        console.warn('[answerExport] navigator.share failed, falling back to save:', error)
+      }
+    }
+    pdf.save(fileName)
     MessagePlugin.success(t('chat.exportPdfSuccess') as string)
   } catch (error) {
     console.error('[answerExport] PDF export failed:', error)
