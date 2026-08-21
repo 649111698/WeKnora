@@ -84,7 +84,8 @@ async function renderNodeToPng(node: HTMLElement): Promise<string | null> {
   const options = {
     backgroundColor: pageBackground(),
     pixelRatio: 2,
-    cacheBust: true,
+    // 不开 cacheBust：它会给资源 URL 追加查询参数，回答内联的上传图片
+    // 是 blob: URL，加参数后变成非法地址加载失败，整个导出随之报错。
     style: { padding: `${PAD}px` },
     width: node.offsetWidth + PAD * 2,
     height: node.offsetHeight + PAD * 2,
