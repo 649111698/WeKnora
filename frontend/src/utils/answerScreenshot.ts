@@ -8,6 +8,8 @@
 import { toPng } from 'html-to-image'
 import { MessagePlugin } from 'tdesign-vue-next'
 import i18n from '@/i18n'
+import { get } from '@/utils/request'
+import { useAuthStore } from '@/stores/auth'
 
 // 预览层样式（纯 DOM 实现，一次性注入）
 let previewStylesInjected = false
@@ -22,6 +24,69 @@ function injectPreviewStyles() {
 .answer-screenshot-preview__close{position:absolute;top:16px;right:18px;color:#fff;font-size:26px;line-height:1;cursor:pointer;opacity:.8;padding:6px}
 `
   document.head.appendChild(style)
+}
+
+// 导出水印：页面水印(SiteWatermark)是盖在全站上的独立图层，不在被导出
+// 的回答节点内，截图/PDF 天然不带。这里把租户水印文案取来直接绘制到
+// 导出图上（截图与 PDF 共用 renderNodeToPng，一处生效）。失败/未开启时
+// 不打断导出。
+let exportWatermarkCache: string | null | undefined
+async function getExportWatermarkText(): Promise<string | null> {
+  if (exportWatermarkCache !== undefined) return exportWatermarkCache
+  exportWatermarkCache = null
+  try {
+    const resp: any = await get('/api/v1/tenants/kv/watermark-config')
+    if (resp?.data?.enabled) {
+      let text = String(resp.data.text || '{username}')
+      try {
+        text = text.replaceAll('{username}', useAuthStore().user?.username || '')
+      } catch {
+        // pinia 未就绪等场景保留原文
+      }
+      if (text.trim()) exportWatermarkCache = text
+    }
+  } catch {
+    // 未登录/接口失败：无水印导出
+  }
+  return exportWatermarkCache
+}
+
+// 与页面水印同款式样（双排错位 -20° 平铺）。导出图会经历 JPEG 压缩与
+// 缩放，透明度略高于页面水印（0.06/0.09）以保证压缩后仍可见。
+function stampWatermark(canvas: HTMLCanvasElement, text: string, dark: boolean, cssWidth: number) {
+  const ctx = canvas.getContext('2d')
+  if (!ctx || !cssWidth) return
+  const s = canvas.width / cssWidth // canvas 像素相对 CSS 像素的倍率
+  const font = 14
+  const tileW = Math.max(180, text.length * font + 90) * s
+  const tileH = 110 * s
+  ctx.fillStyle = dark ? 'rgba(255, 255, 255, 0.13)' : 'rgba(0, 0, 0, 0.09)'
+  ctx.font = `${Math.round(font * s)}px sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const rad = (-20 * Math.PI) / 180
+  const drawOne = (x: number, y: number) => {
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(rad)
+    ctx.fillText(text, 0, 0)
+    ctx.restore()
+  }
+  for (let y = 0; y < canvas.height + tileH; y += tileH) {
+    for (let x = 0; x < canvas.width + tileW; x += tileW) {
+      drawOne(x + tileW / 2, y + tileH * 0.3)
+      drawOne(x + tileW / 4, y + tileH * 0.85)
+    }
+  }
+}
+
+async function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = reject
+    el.src = src
+  })
 }
 
 function pageBackground(): string {
@@ -118,7 +183,8 @@ async function preloadNodeImages(node: HTMLElement): Promise<void> {
   );
 }
 
-// 渲染节点为带留白的 PNG（截图与 PDF 导出共用；字体嵌入失败时降级重试）
+// 渲染节点为带留白的 PNG（截图与 PDF 导出共用；字体嵌入失败时降级重试），
+// 末尾按租户配置叠加全图水印
 async function renderNodeToPng(node: HTMLElement): Promise<string | null> {
   await preloadNodeImages(node);
   const PAD = 24
@@ -131,17 +197,39 @@ async function renderNodeToPng(node: HTMLElement): Promise<string | null> {
     width: node.offsetWidth + PAD * 2,
     height: node.offsetHeight + PAD * 2,
   }
+  let dataUrl: string | null
   try {
-    return await toPng(node, options)
+    dataUrl = await toPng(node, options)
   } catch (error) {
     console.error('[answerExport] render failed, retrying without font embedding:', error)
     try {
-      return await toPng(node, { ...options, skipFonts: true })
+      dataUrl = await toPng(node, { ...options, skipFonts: true })
     } catch (retryError) {
       console.error('[answerExport] render failed:', retryError)
       return null
     }
   }
+  if (!dataUrl) return null
+
+  const watermarkText = await getExportWatermarkText()
+  if (watermarkText) {
+    try {
+      const img = await loadImage(dataUrl)
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = img.height
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(img, 0, 0)
+        const dark = document.documentElement.getAttribute('theme-mode') === 'dark'
+        stampWatermark(canvas, watermarkText, dark, node.offsetWidth + PAD * 2)
+        return canvas.toDataURL('image/png')
+      }
+    } catch (error) {
+      console.warn('[answerExport] watermark stamp failed, exporting without it:', error)
+    }
+  }
+  return dataUrl
 }
 
 export async function exportAnswerScreenshot(node: HTMLElement): Promise<void> {
