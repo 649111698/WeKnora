@@ -237,6 +237,49 @@
             <!-- Share-link generator. Sits next to the invite-by-email
                  popup so the two flows live side-by-side: "I know who"
                  (email input) vs "I don't" (one link, group chat). -->
+            <!-- 直建成员：注册关闭的部署里由管理员统一开账号直接入空间 -->
+            <t-popup v-if="canManage" v-model="createPopupVisible" trigger="click" placement="bottom-end"
+              destroy-on-close overlay-class-name="member-invite-popup-overlay">
+              <t-button theme="primary" variant="outline" shape="square" size="small" class="members-list-add-btn"
+                :title="$t('tenantMember.directCreate.button')"
+                :aria-label="$t('tenantMember.directCreate.button')">
+                <template #icon><t-icon name="add" /></template>
+              </t-button>
+              <template #content>
+                <div class="member-invite-popup-inner" @click.stop>
+                  <div class="member-invite-popup-title">
+                    {{ $t('tenantMember.directCreate.dialogTitle') }}
+                  </div>
+                  <t-form ref="createFormRef" :data="createForm" :rules="createFormRules"
+                    :label-width="80" class="member-invite-form">
+                    <t-form-item :label="$t('tenantMember.directCreate.usernameLabel')" name="username">
+                      <t-input v-model="createForm.username"
+                        :placeholder="$t('tenantMember.directCreate.usernamePlaceholder')" clearable />
+                    </t-form-item>
+                    <t-form-item :label="$t('tenantMember.add.emailLabel')" name="email">
+                      <t-input v-model="createForm.email"
+                        :placeholder="$t('tenantMember.add.emailPlaceholder')" clearable />
+                    </t-form-item>
+                    <t-form-item :label="$t('tenantMember.directCreate.passwordLabel')" name="password">
+                      <t-input v-model="createForm.password" type="password"
+                        :placeholder="$t('tenantMember.directCreate.passwordPlaceholder')" clearable />
+                    </t-form-item>
+                    <t-form-item :label="$t('tenantMember.add.roleLabel')" name="role">
+                      <t-select v-model="createForm.role" :options="createRoleOptions"
+                        :popup-props="roleSelectPopupProps" />
+                    </t-form-item>
+                  </t-form>
+                  <div class="invite-popup-footer">
+                    <t-button variant="outline" :disabled="creating" @click="createPopupVisible = false">
+                      {{ $t('common.cancel') }}
+                    </t-button>
+                    <t-button theme="primary" :loading="creating" @click="submitCreateMember">
+                      {{ $t('tenantMember.directCreate.submit') }}
+                    </t-button>
+                  </div>
+                </div>
+              </template>
+            </t-popup>
             <t-popup v-if="canManage" v-model="shareLinkPopupVisible" trigger="click" placement="bottom-end"
               destroy-on-close overlay-class-name="member-invite-popup-overlay">
               <t-button theme="default" variant="outline" shape="square" size="small" class="members-list-add-btn"
@@ -513,6 +556,7 @@ import {
   listMembers,
   updateMemberRole,
   removeMember,
+  createMember,
   type TenantMember,
   type TenantRole,
 } from '@/api/tenant/members'
@@ -1305,6 +1349,85 @@ async function submitAdd() {
 // goBackToForm un-advances from confirm to form inside the popup.
 function goBackToForm() {
   addDialogStep.value = 'form'
+}
+
+// ---- 直接新增成员（管理员开账号） ---------------------------------------
+
+const createPopupVisible = ref(false)
+const creating = ref(false)
+const createFormRef = ref<any>(null)
+const createForm = reactive({
+  username: '',
+  email: '',
+  password: '',
+  role: 'viewer' as TenantRole,
+})
+
+// 直建不提供 owner：误开 Owner 影响最大，需要时先建低角色再显式提权。
+const createRoleOptions = computed(() =>
+  roleOptions.value.filter(o => o.value !== 'owner'),
+)
+
+const createFormRules = {
+  username: [
+    { required: true, message: t('tenantMember.directCreate.usernameRequired'), trigger: 'blur' },
+    { min: 2, max: 50, message: t('tenantMember.directCreate.usernameRequired'), trigger: 'blur' },
+  ],
+  email: [
+    { required: true, message: t('tenantMember.errors.emailRequired'), trigger: 'blur' },
+    { email: true, message: t('tenantMember.errors.emailFormat'), trigger: 'blur' },
+  ],
+  password: [
+    { required: true, message: t('tenantMember.directCreate.passwordPolicy'), trigger: 'blur' },
+    { min: 8, max: 32, message: t('tenantMember.directCreate.passwordPolicy'), trigger: 'blur' },
+    {
+      validator: (val: string) => /[a-zA-Z]/.test(val) && /\d/.test(val),
+      message: t('tenantMember.directCreate.passwordPolicy'),
+      trigger: 'blur',
+    },
+  ],
+  role: [{ required: true, message: t('tenantMember.errors.roleRequired'), trigger: 'change' }],
+}
+
+watch(createPopupVisible, (open) => {
+  if (open) {
+    createForm.username = ''
+    createForm.email = ''
+    createForm.password = ''
+    createForm.role = 'viewer'
+  }
+})
+
+async function submitCreateMember() {
+  const valid = await createFormRef.value?.validate?.()
+  if (valid !== true) return
+  creating.value = true
+  try {
+    const resp = await createMember(activeTenantId.value, {
+      username: createForm.username.trim(),
+      email: createForm.email.trim(),
+      password: createForm.password,
+      role: createForm.role,
+    })
+    if (resp.success) {
+      createPopupVisible.value = false
+      await loadMembers()
+      MessagePlugin.success(t('tenantMember.directCreate.success'))
+    } else {
+      MessagePlugin.error(resp.message || t('tenantMember.directCreate.failed'))
+    }
+  } catch (err: any) {
+    const status = err?.status
+    if (status === 409) {
+      MessagePlugin.error(err?.message || t('tenantMember.directCreate.emailExists'))
+    } else if (status === 400) {
+      MessagePlugin.error(err?.message || t('tenantMember.directCreate.passwordPolicy'))
+    } else {
+      MessagePlugin.error(err?.message || t('tenantMember.directCreate.failed'))
+    }
+  } finally {
+    creating.value = false
+  }
 }
 
 // dialogConfirmLabel: "Send" on the confirm step, or when auto-accept makes

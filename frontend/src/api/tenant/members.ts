@@ -59,6 +59,13 @@ export interface AddMemberResponse {
   message?: string
 }
 
+export interface CreateMemberRequest {
+  email: string
+  username: string
+  password: string
+  role: TenantRole
+}
+
 export interface SimpleResponse {
   success: boolean
   message?: string
@@ -113,6 +120,23 @@ export async function addMember(
   body: AddMemberRequest,
 ): Promise<AddMemberResponse> {
   return (await post(`/api/v1/tenants/${tenantId}/members`, body)) as unknown as AddMemberResponse
+}
+
+/**
+ * 直接新增成员：为未注册邮箱创建账号（tenantless）并以指定角色加入空间。
+ * Backend: POST /api/v1/tenants/:id/members/create (Owner+)。
+ *
+ * 邮箱已注册时返回 409（改用 addMember 或邀请）；密码须满足 8-32 位
+ * 含字母和数字的强度策略。
+ */
+export async function createMember(
+  tenantId: number,
+  body: CreateMemberRequest,
+): Promise<AddMemberResponse> {
+  return (await post(
+    `/api/v1/tenants/${tenantId}/members/create`,
+    body,
+  )) as unknown as AddMemberResponse
 }
 
 /**

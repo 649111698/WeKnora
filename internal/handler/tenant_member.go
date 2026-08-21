@@ -284,7 +284,7 @@ func writeAddMemberSuccess(c *gin.Context, user *types.User, member *types.Tenan
 
 // addMemberAndRespond calls TenantMemberService.AddMember and writes the
 // HTTP response: 201 with a TenantMemberResponse on success, or the service
-// sentinel mapped to its HTTP status (400 / 403 / 409 / 500) on error. It
+// sentinel mapped to its HTTP status (400 / 403 / 409 / 500) on failure. It
 // always writes exactly one response, so the caller MUST return right after.
 // Shared by TenantMemberHandler.AddMember and the auto-accept branch of
 // TenantInvitationHandler.CreateInvitation so the mapping never drifts.
@@ -439,4 +439,91 @@ func (h *TenantMemberHandler) LeaveTenant(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// createMemberRequest 直建成员：账号不存在时由管理员代为创建并直接入空间。
+type createMemberRequest struct {
+	Email    string           `json:"email" binding:"required,email"`
+	Username string           `json:"username" binding:"required,min=2,max=50"`
+	Password string           `json:"password" binding:"required"`
+	Role     types.TenantRole `json:"role"`
+}
+
+// CreateMember godoc
+// @Summary      新增成员（创建账号并加入空间）
+// @Description
+//
+//	Owner 为尚未注册的邮箱直接创建账号（tenantless，不建个人空间）并以
+//	指定角色加入当前空间。适用于关闭自助注册、由管理员统一开账号的
+//	部署。邮箱已注册时返回 409，提示改用直接添加或邀请。
+//
+// @Tags         空间成员
+// @Accept       json
+// @Produce      json
+// @Param        id        path  string              true  "空间 ID"
+// @Param        request   body  createMemberRequest true  "新增成员请求"
+// @Success      201  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /tenants/{id}/members/create [post]
+func (h *TenantMemberHandler) CreateMember(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID, ok := parseTenantIDFromPath(c)
+	if !ok {
+		return
+	}
+
+	var req createMemberRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
+		return
+	}
+	req.Email = strings.TrimSpace(req.Email)
+	req.Username = strings.TrimSpace(req.Username)
+	req.Password = strings.TrimSpace(req.Password)
+
+	if !req.Role.IsValid() {
+		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
+		return
+	}
+	// 新增不直接建 Owner：误开 Owner 影响最大，需要时应先建低角色再在
+	// 成员列表里显式提权（那里有二次确认）。
+	if req.Role == types.TenantRoleOwner {
+		c.Error(apperrors.NewValidationError("cannot create a member as owner; adjust the role after creation"))
+		return
+	}
+	if err := service.ValidatePasswordPolicy(req.Password); err != nil {
+		c.Error(apperrors.NewValidationError(err.Error()))
+		return
+	}
+
+	if existing, _ := h.userService.GetUserByEmail(ctx, req.Email); existing != nil {
+		c.Error(apperrors.NewConflictError(
+			"this email is already registered; use direct add or invitation instead"))
+		return
+	}
+
+	caller, _ := types.UserIDFromContext(ctx)
+	var invitedBy *string
+	if caller != "" && !types.IsSyntheticUserID(caller) {
+		invitedBy = &caller
+	}
+
+	user, err := h.userService.Register(ctx, &types.RegisterRequest{
+		Username:           req.Username,
+		Email:              req.Email,
+		Password:           req.Password,
+		TenantProvisioning: types.TenantProvisioningTenantless,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrUserEmailExists), errors.Is(err, service.ErrUserUsernameExists):
+			c.Error(apperrors.NewConflictError(err.Error()))
+		default:
+			logger.Errorf(ctx, "CreateMember register failed: err=%v", err)
+			c.Error(apperrors.NewInternalServerError("failed to create user").WithDetails(err.Error()))
+		}
+		return
+	}
+
+	addMemberAndRespond(c, ctx, h.memberService, user, tenantID, req.Role, invitedBy)
 }
