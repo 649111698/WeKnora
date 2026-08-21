@@ -344,7 +344,7 @@ import {
   type InviteLookup,
 } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
-import { maybeStartIMSSOLogin } from '@/composables/useIMSSOLogin'
+import { maybeStartIMSSOLogin, sanitizeRedirectTarget } from '@/composables/useIMSSOLogin'
 import { useI18n } from 'vue-i18n'
 
 // Import screenshot images
@@ -583,7 +583,9 @@ const persistLoginResponse = async (response: any, skipRedirect = false) => {
   await authStore.refreshFromAuthMe()
   await nextTick()
   if (skipRedirect) return
-  router.replace(authStore.hasValidTenant ? '/platform/knowledge-bases' : '/onboarding/workspace')
+  // 守卫送来 /login?redirect=<原目标> 时，登录成功后回到原页面
+  const redirect = sanitizeRedirectTarget(route.query.redirect as string)
+  router.replace(authStore.hasValidTenant ? (redirect ?? '/platform/knowledge-bases') : '/onboarding/workspace')
 }
 
 const getBackendOIDCRedirectURI = () => `${window.location.origin}/api/v1/auth/oidc/callback`
@@ -807,7 +809,8 @@ onMounted(async () => {
   }
 
   if (authStore.isLoggedIn) {
-    router.replace('/platform/knowledge-bases')
+    const redirect = sanitizeRedirectTarget(route.query.redirect as string)
+    router.replace(redirect ?? '/platform/knowledge-bases')
     return
   }
 

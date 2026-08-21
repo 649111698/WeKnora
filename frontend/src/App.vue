@@ -11,6 +11,7 @@ import { getCurrentUser, userInfoFromApi, getAuthConfig } from '@/api/auth'
 import { get } from '@/utils/request'
 import SiteWatermark from '@/components/SiteWatermark.vue'
 import { consumePendingTenantSwitchToast } from '@/utils/tenantSwitch'
+import { consumeSSORedirectTarget } from '@/composables/useIMSSOLogin'
 import { useRoleLabel } from '@/composables/useRoleLabel'
 import { notifyLoginSuccess } from '@/utils/loginNotify'
 import { renderWorkspaceNotifyContent } from '@/utils/workspaceNotifyContent'
@@ -155,7 +156,14 @@ const persistOIDCLoginResponse = async (response: any) => {
   }
 
   await nextTick()
-  router.replace(authStore.hasValidTenant ? '/platform/knowledge-bases' : '/onboarding/workspace')
+  // 企微/飞书免登：跳过守卫前暂存的深链目标（如 /platform/creatChat），
+  // 无暂存时回落到默认首页。无论跳哪里都要清掉，避免残留到下次登录。
+  const ssoRedirect = consumeSSORedirectTarget()
+  router.replace(
+    authStore.hasValidTenant
+      ? (ssoRedirect ?? '/platform/knowledge-bases')
+      : '/onboarding/workspace'
+  )
 }
 
 const handleGlobalOIDCCallback = async () => {

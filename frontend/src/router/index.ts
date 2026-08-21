@@ -3,6 +3,7 @@ import type { RouteLocationNormalized } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import { autoSetup, getCurrentUser, userInfoFromApi } from '@/api/auth'
+import { sanitizeRedirectTarget } from '@/composables/useIMSSOLogin'
 import type { DeploymentCapabilityKey } from '@/config/deploymentCapabilities'
 import { MessagePlugin } from 'tdesign-vue-next'
 import i18n from '@/i18n'
@@ -343,9 +344,11 @@ router.beforeEach(async (to, from, next) => {
 
   // 如果访问的是登录页面或初始化页面，直接放行
   if (to.meta.requiresAuth === false || to.meta.requiresInit === false) {
-    // 如果已登录用户访问登录页面，重定向到知识库列表页面
+    // 如果已登录用户访问登录页面，重定向到知识库列表页面；
+    // 带 ?redirect= 时优先回到原目标（深链被守卫送到 /login 的场景）
     if (to.path === '/login' && authStore.isLoggedIn) {
-      next(authStore.hasValidTenant ? '/platform/knowledge-bases' : '/onboarding/workspace')
+      const redirect = sanitizeRedirectTarget(to.query.redirect as string)
+      next(redirect ?? (authStore.hasValidTenant ? '/platform/knowledge-bases' : '/onboarding/workspace'))
       return
     }
     next()
@@ -381,7 +384,9 @@ router.beforeEach(async (to, from, next) => {
           markAutoSetupFailed()
         }
       }
-      next('/login')
+      // 未登录：带到 /login 并把原目标放进 ?redirect=，登录成功后回跳；
+      // 企微/飞书免登由 useIMSSOLogin 把它暂存到 sessionStorage 带过 OAuth 往返
+      next({ path: '/login', query: { redirect: to.fullPath } })
       return
     }
   }

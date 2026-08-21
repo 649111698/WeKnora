@@ -16,6 +16,26 @@
  */
 
 const SSO_STATE_KEY = 'im_sso_state'
+// 免登前用户想去的页面（?redirect=）。OAuth 往返 + 后端 302 回根路径都会
+// 丢掉原 URL，用 sessionStorage 在同一标签页内把目标带到 App.vue 兑换处。
+const SSO_REDIRECT_KEY = 'im_sso_redirect'
+
+// 仅接受站内路径，拒绝 //host、javascript: 等开放跳转
+export function sanitizeRedirectTarget(target: string | null | undefined): string | null {
+  if (!target || !target.startsWith('/') || target.startsWith('//')) return null
+  return target
+}
+
+function stashSSORedirectTarget(target: string | null | undefined) {
+  const safe = sanitizeRedirectTarget(target)
+  if (safe) sessionStorage.setItem(SSO_REDIRECT_KEY, safe)
+}
+
+export function consumeSSORedirectTarget(): string | null {
+  const raw = sessionStorage.getItem(SSO_REDIRECT_KEY)
+  sessionStorage.removeItem(SSO_REDIRECT_KEY)
+  return sanitizeRedirectTarget(raw)
+}
 
 export type IMSSOPlatform = 'wecom' | 'feishu'
 
@@ -105,6 +125,7 @@ export async function maybeStartIMSSOLogin(): Promise<IMSSOOutcome> {
   if (!url) return { action: 'none' }
 
   sessionStorage.setItem(SSO_STATE_KEY, state)
+  stashSSORedirectTarget(params.get('redirect'))
   window.location.href = url
   return { action: 'redirecting' }
 }
