@@ -439,13 +439,14 @@ func (s *userService) completeSSOLogin(
 	}, nil
 }
 
-// ensureTenantMembership 保证用户是租户的活跃成员，缺失时以 contributor 加入
-// （租户 SSO 入口登录即视为受邀使用；已是成员则不动）。
+// ensureTenantMembership 保证用户是租户的活跃成员，缺失时以 viewer 加入
+// （租户 SSO 免登的同事只需聊天问答，读+会话均为 viewer 可用；已是成员则不动，
+// 需要更高角色由租户管理员在成员管理里单独提权）。
 func (s *userService) ensureTenantMembership(ctx context.Context, userID string, tenantID uint64) error {
 	if s.memberService == nil {
 		return fmt.Errorf("member service unavailable")
 	}
-	_, err := s.memberService.AddMember(ctx, userID, tenantID, types.TenantRoleContributor, nil)
+	_, err := s.memberService.AddMember(ctx, userID, tenantID, types.TenantRoleViewer, nil)
 	if err == nil || err == ErrMembershipAlreadyExists {
 		return nil
 	}
