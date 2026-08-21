@@ -3,8 +3,13 @@
     全站水印 overlay：canvas 平铺文本，pointer-events:none 不影响任何交互。
     z-index 覆盖抽屉/弹层（TDesign 弹层 < 3000）。根节点被移除时由
     MutationObserver 自愈重新挂载（防审查元素删除）。
+    Teleport 到 body：#app 带 transform:translateZ(0)（GPU 合成层），
+    fixed 后代会以 #app 为包含块，动画/滚动偏移时水印只盖住部分屏幕；
+    body 无变换，水印始终钉在视口上。
   -->
-  <div ref="watermarkRef" class="site-watermark" aria-hidden="true"></div>
+  <Teleport to="body">
+    <div ref="watermarkRef" class="site-watermark" aria-hidden="true"></div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
