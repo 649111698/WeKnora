@@ -5,11 +5,15 @@
  * 内置浏览器）普遍拦截 data: 链接下载，改为弹出预览层让用户长按保存。
  * 字体嵌入是 html-to-image 最常见的失败源，失败时自动以 skipFonts 降级重试。
  */
-import { toPng } from 'html-to-image'
+import { toCanvas } from 'html-to-image'
 import { MessagePlugin } from 'tdesign-vue-next'
 import i18n from '@/i18n'
 import { get } from '@/utils/request'
 import { useAuthStore } from '@/stores/auth'
+import { isUniformRowData, planPageCuts } from '@/utils/answerPdfPagination'
+
+// 导出图四周留白（CSS 像素），截图与 PDF 共用
+const EXPORT_PAD = 24
 
 // 预览层样式（纯 DOM 实现，一次性注入）
 let previewStylesInjected = false
@@ -78,15 +82,6 @@ function stampWatermark(canvas: HTMLCanvasElement, text: string, dark: boolean, 
       drawOne(x + tileW / 4, y + tileH * 0.85)
     }
   }
-}
-
-async function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const el = new Image()
-    el.onload = () => resolve(el)
-    el.onerror = reject
-    el.src = src
-  })
 }
 
 function pageBackground(): string {
@@ -183,53 +178,48 @@ async function preloadNodeImages(node: HTMLElement): Promise<void> {
   );
 }
 
-// 渲染节点为带留白的 PNG（截图与 PDF 导出共用；字体嵌入失败时降级重试），
-// 末尾按租户配置叠加全图水印
-async function renderNodeToPng(node: HTMLElement): Promise<string | null> {
+// 渲染节点为 canvas（截图与 PDF 导出共用；字体嵌入失败时降级重试）。
+// 返回的是未盖水印的原始图，水印由各导出路径自行叠加。
+async function renderNodeToCanvas(node: HTMLElement): Promise<HTMLCanvasElement | null> {
   await preloadNodeImages(node);
-  const PAD = 24
   const options = {
     backgroundColor: pageBackground(),
     pixelRatio: 2,
     // 不开 cacheBust：它会给资源 URL 追加查询参数，回答内联的上传图片
     // 是 blob: URL，加参数后变成非法地址加载失败，整个导出随之报错。
-    style: { padding: `${PAD}px` },
-    width: node.offsetWidth + PAD * 2,
-    height: node.offsetHeight + PAD * 2,
+    style: { padding: `${EXPORT_PAD}px` },
+    width: node.offsetWidth + EXPORT_PAD * 2,
+    height: node.offsetHeight + EXPORT_PAD * 2,
   }
-  let dataUrl: string | null
   try {
-    dataUrl = await toPng(node, options)
+    return await toCanvas(node, options)
   } catch (error) {
     console.error('[answerExport] render failed, retrying without font embedding:', error)
     try {
-      dataUrl = await toPng(node, { ...options, skipFonts: true })
+      return await toCanvas(node, { ...options, skipFonts: true })
     } catch (retryError) {
       console.error('[answerExport] render failed:', retryError)
       return null
     }
   }
-  if (!dataUrl) return null
+}
+
+// 渲染节点为带留白的 PNG（字体嵌入失败时降级重试），
+// 末尾按租户配置叠加全图水印
+async function renderNodeToPng(node: HTMLElement): Promise<string | null> {
+  const canvas = await renderNodeToCanvas(node)
+  if (!canvas) return null
 
   const watermarkText = await getExportWatermarkText()
   if (watermarkText) {
     try {
-      const img = await loadImage(dataUrl)
-      const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = img.height
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.drawImage(img, 0, 0)
-        const dark = document.documentElement.getAttribute('theme-mode') === 'dark'
-        stampWatermark(canvas, watermarkText, dark, node.offsetWidth + PAD * 2)
-        return canvas.toDataURL('image/png')
-      }
+      const dark = document.documentElement.getAttribute('theme-mode') === 'dark'
+      stampWatermark(canvas, watermarkText, dark, node.offsetWidth + EXPORT_PAD * 2)
     } catch (error) {
       console.warn('[answerExport] watermark stamp failed, exporting without it:', error)
     }
   }
-  return dataUrl
+  return canvas.toDataURL('image/png')
 }
 
 export async function exportAnswerScreenshot(node: HTMLElement): Promise<void> {
@@ -253,22 +243,22 @@ export async function exportAnswerScreenshot(node: HTMLElement): Promise<void> {
  * 按 A4 内容区切片逐页写入 jsPDF。blob: 下载在移动端浏览器兼容性
  * 远好于 data:（微信内核除外，那里可用截图预览替代）。
  */
+
+// 读取源图某一像素行，判定其是否整行同色（切页安全）
+function makeSafeRowProbe(ctx: CanvasRenderingContext2D, width: number): (y: number) => boolean {
+  return (y: number) => isUniformRowData(ctx.getImageData(0, y, width, 1).data)
+}
+
 export async function exportAnswerPDF(node: HTMLElement): Promise<void> {
   const t = i18n.global.t
-  const dataUrl = await renderNodeToPng(node)
-  if (!dataUrl || !dataUrl.startsWith('data:image/png')) {
+  const canvas = await renderNodeToCanvas(node)
+  if (!canvas) {
     MessagePlugin.error(t('chat.exportPdfFailed') as string)
     return
   }
 
   try {
     const { jsPDF } = await import('jspdf')
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image()
-      el.onload = () => resolve(el)
-      el.onerror = reject
-      el.src = dataUrl
-    })
 
     const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true })
     const pageW = pdf.internal.pageSize.getWidth()
@@ -276,27 +266,59 @@ export async function exportAnswerPDF(node: HTMLElement): Promise<void> {
     const margin = 24
     const contentW = pageW - margin * 2
     const contentH = pageH - margin * 2
-    const scale = contentW / img.width
-    const fullH = img.height * scale
-    const pages = Math.max(1, Math.ceil(fullH / contentH))
+    const scale = contentW / canvas.width
+    const imgH = canvas.height
     const bg = pageBackground()
+    const cssWidth = node.offsetWidth + EXPORT_PAD * 2
 
-    for (let i = 0; i < pages; i++) {
+    const watermarkText = await getExportWatermarkText()
+    const dark = document.documentElement.getAttribute('theme-mode') === 'dark'
+
+    // 智能分页：切点优先落在整行同色的像素上（行间/段落间隙），避免把
+    // 文字行切成上下两半；超过一页仍找不到安全切点（超长图片/代码块）
+    // 才退回硬切。算法与容差见 answerPdfPagination.ts。
+    const src = canvas.getContext('2d')
+    const pageSrcH = contentH / scale
+    const cuts = src
+      ? planPageCuts(
+          imgH,
+          pageSrcH,
+          {
+            lookback: Math.floor(pageSrcH * 0.22),
+            minAdvance: Math.max(8, Math.floor(pageSrcH * 0.3)),
+            band: 2,
+          },
+          makeSafeRowProbe(src, canvas.width)
+        )
+      : [imgH]
+
+    let prev = 0
+    for (let i = 0; i < cuts.length; i++) {
+      const cut = cuts[i]
       if (i > 0) pdf.addPage()
-      const sliceH = Math.min(contentH, fullH - i * contentH)
-      const srcY = (i * contentH) / scale
-      const srcH = sliceH / scale
-      const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = Math.max(1, Math.round(srcH))
-      const ctx = canvas.getContext('2d')
+      const sliceH = (cut - prev) * scale
+
+      const slice = document.createElement('canvas')
+      slice.width = canvas.width
+      slice.height = Math.max(1, Math.round(cut - prev))
+      const ctx = slice.getContext('2d')
       if (!ctx) break
       ctx.fillStyle = bg
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.drawImage(img, 0, srcY, img.width, srcH, 0, 0, img.width, srcH)
+      ctx.fillRect(0, 0, slice.width, slice.height)
+      ctx.drawImage(canvas, 0, prev, canvas.width, cut - prev, 0, 0, canvas.width, cut - prev)
+      // 每页单独盖水印：整图盖完再切会把水印文字一并切开，且各页平铺
+      // 位置一致，观感与页面水印更接近
+      if (watermarkText) {
+        try {
+          stampWatermark(slice, watermarkText, dark, cssWidth)
+        } catch (error) {
+          console.warn('[answerExport] watermark stamp failed on page, skipping:', error)
+        }
+      }
       // JPEG 而非 PNG：带图回答的 PNG 每页可到数 MB，接收方（微信预览等）
       // 常打不开；JPEG 体积小一个数量级，白底文本在 0.92 质量下无可见损失
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, contentW, sliceH)
+      pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, contentW, sliceH)
+      prev = cut
     }
 
     const fileName = `weknora-answer-${Date.now()}.pdf`
