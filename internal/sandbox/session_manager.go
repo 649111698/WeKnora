@@ -23,10 +23,8 @@
 //     Every session-scoped capability (shell exec, file staging, session
 //     filesystem inspection) then refuses to run on the host: those calls
 //     require a real remote provider.
-//   - Sandboxes are never reaped from inside WeKnora. Idle-timeout / pause /
-//     kill is the provider's responsibility (Cube's on_timeout + Cube's
-//     sweeper; E2B's built-in TTL). Multi-instance deployments must not race
-//     on this decision.
+//   - Cube and E2B reap idle sandboxes themselves. Docker has no provider TTL,
+//     so that backend runs its own idle sweep against activity-marker mtimes.
 package sandbox
 
 import (
@@ -162,6 +160,8 @@ func NewSessionBoundManager(deps SessionBoundManagerConfig) (*SessionBoundManage
 		applyCubeRuntimeDefaults(cfg)
 	case SandboxTypeE2B:
 		applyE2BRuntimeDefaults(cfg)
+	case SandboxTypeDocker:
+		applyDockerRuntimeDefaults(cfg)
 	}
 
 	// Build the provider-specific neutral create request using the
@@ -304,11 +304,18 @@ func (m *SessionBoundManager) Execute(ctx context.Context, cfg *ExecuteConfig) (
 	return m.ephemeral.ExecuteOnHandle(ctx, handle, cfg)
 }
 
-// ensureExecutionOutputDir creates the skill artifact directory and grants
-// DefaultSandboxExecUser write access before script execution. envd MakeDir
-// often leaves the path root-owned on Cube; the follow-up chown/chmod runs as
-// root via envd (empty User). Best-effort: failures are logged and do not
-// abort the upcoming script execution.
+// ensureExecutionOutputDir creates the skill artifact directory and makes sure
+// DefaultSandboxExecUser can write to it before script execution.
+//
+// This runs AS that account, never as root. The directory sits inside the
+// session's own writable workspace, and chown/chmod follow symlinks, so a
+// root-run bootstrap can be aimed at any directory in the container: a session
+// that swaps its artifact directory for a link to /etc gets handed ownership of
+// /etc, and from there uid 0 by rewriting passwd. Running as the sandbox
+// account makes that a no-op — chown succeeds on the directory MakeDir just
+// created for it and is refused by the kernel on anything else.
+//
+// Best-effort: failures are logged and do not abort the upcoming execution.
 func (m *SessionBoundManager) ensureExecutionOutputDir(
 	ctx context.Context,
 	handle RemoteSandboxHandle,
@@ -334,6 +341,7 @@ func (m *SessionBoundManager) ensureExecutionOutputDir(
 	result, err := m.client.Exec(ctx, handle, RemoteExecRequest{
 		Shell:   true,
 		Command: line,
+		User:    execUser,
 		Timeout: sessionArtifactDirBootstrapTimeout,
 	})
 	if err != nil {
@@ -559,6 +567,11 @@ func (m *SessionBoundManager) ExecShellCommand(
 		Shell:   true,
 		Env:     env,
 		WorkDir: workDir,
+		// Named explicitly rather than left to each adapter's default. This
+		// command line comes from the model, so it is the one exec path an
+		// injected prompt reaches directly, and the account it runs as must
+		// not depend on which backend the workspace happens to have selected.
+		User:    DefaultSandboxExecUser,
 		Timeout: timeout,
 	})
 	duration := time.Since(start)
@@ -818,6 +831,26 @@ func buildSessionCreateRequest(provider RemoteProvider, cfg *Config) (RemoteCrea
 			},
 		}, nil
 
+	case SandboxTypeDocker:
+		ttl := cfg.DockerIdleTTL
+		if ttl <= 0 {
+			ttl = DefaultDockerIdleTTL
+		}
+		return RemoteCreateRequest{
+			TemplateID: cfg.DockerImage,
+			EnvVars:    envVars,
+			Timeout: RemoteTimeoutPolicy{
+				Mode:  RemoteTimeoutExplicit,
+				Value: ttl,
+				// Docker's pause keeps the container's memory resident on the
+				// host, so pausing an abandoned sandbox would reclaim nothing.
+				// Idle containers are deleted; the lifecycle rebinds the
+				// session exactly as it does for a provider-reaped sandbox.
+				Action:     RemoteOnTimeoutKill,
+				AutoResume: false,
+			},
+		}, nil
+
 	default:
 		return RemoteCreateRequest{}, fmt.Errorf(
 			"sandbox: unsupported remote provider %q for session create request",
@@ -842,6 +875,11 @@ func effectiveHTTPTimeout(provider RemoteProvider, cfg *Config) time.Duration {
 			return cfg.E2BHTTPTimeout
 		}
 		return DefaultE2BHTTPTimeout
+	case SandboxTypeDocker:
+		if cfg.DockerHTTPTimeout > 0 {
+			return cfg.DockerHTTPTimeout
+		}
+		return DefaultDockerHTTPTimeout
 	default:
 		return DefaultCubeHTTPTimeout
 	}
