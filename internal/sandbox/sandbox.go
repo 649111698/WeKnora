@@ -179,6 +179,14 @@ type ExecuteConfig struct {
 	// backend ignores it. When empty, those backends fall back to an ephemeral
 	// (one-shot) sandbox created and torn down inside the single Execute call.
 	SessionID string
+
+	// RemoteScriptPath is an absolute path to a script that already exists
+	// inside the sandbox image (installed skills). When set, the executor
+	// skips the upload step and runs it in place. Only paths under a valid
+	// skill directory in SkillsImageRoot are accepted; script-content
+	// validation is skipped because the file is already on the image, so
+	// callers must have vetted the bundle at install time.
+	RemoteScriptPath string
 }
 
 // ExecuteResult contains the result of script execution
