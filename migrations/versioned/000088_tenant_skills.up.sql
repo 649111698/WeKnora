@@ -1,7 +1,7 @@
 -- Description: Skills installed onto a sandbox config, plus the snapshot chain
 -- ledger. Skills live inside the config's snapshot image; these tables are the
 -- metadata projection and the audit trail for the provider-side snapshots.
-DO $$ BEGIN RAISE NOTICE '[Migration 000086] Creating tenant_skills'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000088] Creating tenant_skills'; END $$;
 
 CREATE TABLE IF NOT EXISTS tenant_skills (
     id                    VARCHAR(36)  PRIMARY KEY,
