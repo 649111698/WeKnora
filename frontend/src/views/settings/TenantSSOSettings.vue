@@ -118,6 +118,16 @@
           </div>
           <p class="sso-field__hint">{{ t('tenantSSO.kingdee.callbackUrlHint') }}</p>
         </div>
+        <div v-if="kingdeeMenuUrl" class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.kingdee.menuUrl') }}</label>
+          <div class="sso-copy-row">
+            <code class="sso-code sso-code--block">{{ kingdeeMenuUrl }}</code>
+            <t-button size="small" variant="outline" @click="copyText(kingdeeMenuUrl)">
+              {{ t('common.copy') }}
+            </t-button>
+          </div>
+          <p class="sso-field__hint">{{ t('tenantSSO.kingdee.menuUrlHint') }}</p>
+        </div>
       </div>
     </section>
 
@@ -190,6 +200,16 @@ const kingdeeCallbackUrl = computed(() => {
   if (!form.login_domain || !form.kingdee.app_client_id.trim()) return ''
   const host = form.login_domain.trim().replace(/^https?:\/\//, '')
   return `https://${host}/api/v1/auth/sso/kingdee/callback?app_client_id=${form.kingdee.app_client_id.trim()}&response_code=code`
+})
+
+// 苍穹门户菜单/快速发起配置的「免登链接」：已登录苍穹的用户点击即带
+// 授权码跳转本系统，无需二次登录。
+const kingdeeMenuUrl = computed(() => {
+  const base = form.kingdee.base_url.trim().replace(/\/+$/, '')
+  if (!base || !kingdeeCallbackUrl.value) return ''
+  const clientId = encodeURIComponent(form.kingdee.app_client_id.trim())
+  const redirectUri = encodeURIComponent(kingdeeCallbackUrl.value)
+  return `${base}/auth/authorize.do?app_client_id=${clientId}&response_code=code&redirect_uri=${redirectUri}`
 })
 
 const loginUrl = computed(() => {

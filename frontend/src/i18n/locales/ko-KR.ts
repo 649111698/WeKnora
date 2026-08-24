@@ -52,6 +52,8 @@ export default {
         appSecretPlaceholder: 'Cosmic 인증 증명의 사용자 지정 appSecret',
         appSecretHint: '토큰 교환 모드에만 필요하며 getUserInfo 직连 모드에는 필요하지 않습니다.',
         callbackUrl: 'SSO 신뢰 화이트리스트 콜백 주소',
+        menuUrl: 'Cosmic 포털 자동 로그인 링크',
+        menuUrlHint: 'Cosmic 메뉴 / 빠른 실행 / 외부 링크에 구성하세요. Cosmic에 로그인한 사용자는 재로그인 없이 진입합니다.',
         callbackUrlHint: '이 전체 주소(쿼리 매개변수 포함)를 Cosmic 제3자 애플리케이션 접근 정책 SSO 화이트리스트에 추가하세요.',
       },
       watermark: {

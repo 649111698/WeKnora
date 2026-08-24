@@ -52,6 +52,8 @@ export default {
         appSecretPlaceholder: 'Пользовательский appSecret из учётных данных Cosmic',
         appSecretHint: 'Нужен только для режима обмена токенов; для прямого режима getUserInfo не требуется.',
         callbackUrl: 'Callback-адрес для SSO-белого списка',
+        menuUrl: 'Ссылка автологина портала Cosmic',
+        menuUrlHint: 'Настройте в Cosmic Меню / Быстрый запуск / Внешняя ссылка; вошедшие в Cosmic пользователи попадают в систему без повторного входа.',
         callbackUrlHint: 'Добавьте этот полный адрес (включая параметры запроса) в SSO-белый список политики доступа стороннего приложения Cosmic.',
       },
       watermark: {
