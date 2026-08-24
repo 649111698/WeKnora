@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS tenants (
     storage_used BIGINT NOT NULL DEFAULT 0,
     agent_config TEXT DEFAULT NULL,
     context_config TEXT,
-    conversation_config TEXT,
     web_search_config TEXT DEFAULT NULL,
     parser_engine_config TEXT DEFAULT NULL,
     storage_engine_config TEXT DEFAULT NULL,
