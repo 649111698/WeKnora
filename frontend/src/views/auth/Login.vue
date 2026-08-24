@@ -215,6 +215,15 @@
                 class="oidc-button" @click="handleOIDCLogin">
                 {{ oidcLoading ? $t('auth.redirectingToOIDC') : oidcLoginText }}
               </t-button>
+
+              <div v-if="kingdeeEnabled" class="oidc-divider">
+                <span>{{ $t('auth.orContinueWith') }}</span>
+              </div>
+
+              <t-button v-if="kingdeeEnabled" theme="default" size="large" block :loading="kingdeeLoading"
+                :disabled="loading" class="oidc-button" @click="handleKingdeeLogin">
+                {{ $t('auth.kingdeeLogin') }}
+              </t-button>
             </t-form>
 
             <!-- Features list -->
@@ -344,7 +353,7 @@ import {
   type InviteLookup,
 } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
-import { maybeStartIMSSOLogin, sanitizeRedirectTarget } from '@/composables/useIMSSOLogin'
+import { maybeStartIMSSOLogin, sanitizeRedirectTarget, getKingdeeLoginURL } from '@/composables/useIMSSOLogin'
 import { useI18n } from 'vue-i18n'
 
 // Import screenshot images
@@ -397,6 +406,8 @@ const isRegisterMode = ref(false)
 const showLanguageMenu = ref(false)
 const oidcEnabled = ref(false)
 const oidcProviderName = ref('')
+const kingdeeEnabled = ref(false)
+const kingdeeLoading = ref(false)
 // registrationEnabled defaults to true so that on first paint the Register
 // link is visible; the actual mode is fetched from /auth/config in onMounted.
 // In invite_only mode the link/card are hidden.
@@ -613,6 +624,34 @@ const loadAuthConfig = async () => {
   }
 }
 
+const loadKingdeeStatus = async () => {
+  try {
+    const url = await getKingdeeLoginURL()
+    kingdeeEnabled.value = url !== null
+  } catch {
+    kingdeeEnabled.value = false
+  }
+}
+
+const handleKingdeeLogin = async () => {
+  try {
+    kingdeeLoading.value = true
+    const url = await getKingdeeLoginURL()
+    if (!url) {
+      MessagePlugin.error(t('auth.kingdeeLoginFailed'))
+      return
+    }
+    if (inviteToken.value) {
+      sessionStorage.setItem('weknora_pending_invite_token', inviteToken.value)
+    }
+    window.location.href = url
+  } catch (error: any) {
+    MessagePlugin.error(error.message || t('auth.kingdeeLoginFailed'))
+  } finally {
+    kingdeeLoading.value = false
+  }
+}
+
 const handleOIDCLogin = async () => {
   try {
     oidcLoading.value = true
@@ -807,6 +846,10 @@ onMounted(async () => {
   } catch (err) {
     console.warn('[SSO] auto login skipped:', err)
   }
+
+  // 金蝶苍穹 SSO：启用时登录页展示「苍穹登录」按钮（入口也可由苍穹
+  // 门户菜单免登链接直达回调地址，按钮只是补充入口）。
+  loadKingdeeStatus()
 
   if (authStore.isLoggedIn) {
     const redirect = sanitizeRedirectTarget(route.query.redirect as string)

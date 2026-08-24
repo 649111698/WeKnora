@@ -123,3 +123,17 @@ func (h *AuthHandler) SSOFeishuCallback(c *gin.Context) {
 		return h.userService.LoginWithFeishuCode(c.Request.Context(), code, ssoHost(c), h.resolveDefaultTenantMode(c.Request.Context()))
 	})
 }
+
+// SSOKingdeeCallback godoc
+// @Summary      金蝶苍穹 SSO 免登回调
+// @Description  用苍穹统一门户授权码完成登录（首次自动创建访客账号），成功后 302 回前端。苍穹侧「第三方应用」的 SSO 可信白名单需登记本回调地址（含 app_client_id 与 response_code 查询参数）
+// @Tags         认证
+// @Param        code  query  string  true  "苍穹授权码"
+// @Success      302
+// @Router       /auth/sso/kingdee/callback [get]
+func (h *AuthHandler) SSOKingdeeCallback(c *gin.Context) {
+	code := strings.TrimSpace(c.Query("code"))
+	h.ssoRedirectCallback(c, "kingdee", func() (*types.OIDCCallbackResponse, error) {
+		return h.userService.LoginWithKingdeeCode(c.Request.Context(), code, ssoHost(c), h.resolveDefaultTenantMode(c.Request.Context()))
+	})
+}

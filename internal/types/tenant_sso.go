@@ -36,6 +36,18 @@ type FeishuTenantSSO struct {
 	AppSecret string `json:"app_secret,omitempty"`
 }
 
+// KingdeeTenantSSO 金蝶苍穹统一门户 SSO 凭证（苍穹 V6.0.015+，
+// OAuth2.0 授权码模式，苍穹作为 IdP）。
+type KingdeeTenantSSO struct {
+	// BaseURL 苍穹站点地址（如 https://kde.erp.com），不带末尾斜杠。
+	BaseURL string `json:"base_url,omitempty"`
+	// AppClientID 苍穹「系统服务云 → OpenAPI → 第三方应用」的系统编码。
+	AppClientID string `json:"app_client_id,omitempty"`
+	// AppSecret 苍穹「认证凭证」里自定义的 appSecret（可选，仅
+	// token 换取模式需要；getUserInfo?code= 直连模式不使用）。
+	AppSecret string `json:"app_secret,omitempty"`
+}
+
 // TenantSSOConfig 租户 SSO 总配置。
 type TenantSSOConfig struct {
 	// LoginDomain 租户专属登录域名（可选）。配置后按 Host 精确匹配
@@ -44,6 +56,7 @@ type TenantSSOConfig struct {
 	LoginDomain string           `json:"login_domain,omitempty"`
 	WeCom       *WeComTenantSSO  `json:"wecom,omitempty"`
 	Feishu      *FeishuTenantSSO `json:"feishu,omitempty"`
+	Kingdee     *KingdeeTenantSSO `json:"kingdee,omitempty"`
 }
 
 // WeComEnabled 企微凭证是否齐备（CorpID + Secret）。
@@ -58,6 +71,13 @@ func (c *TenantSSOConfig) FeishuEnabled() bool {
 	return c != nil && c.Feishu != nil &&
 		strings.TrimSpace(c.Feishu.AppID) != "" &&
 		strings.TrimSpace(c.Feishu.AppSecret) != ""
+}
+
+// KingdeeEnabled 苍穹凭证是否齐备（BaseURL + AppClientID）。
+func (c *TenantSSOConfig) KingdeeEnabled() bool {
+	return c != nil && c.Kingdee != nil &&
+		strings.TrimSpace(c.Kingdee.BaseURL) != "" &&
+		strings.TrimSpace(c.Kingdee.AppClientID) != ""
 }
 
 // TenantSSOConfigForResponse 返回打码后的配置（secret → "***"）。
@@ -80,6 +100,13 @@ func TenantSSOConfigForResponse(c *TenantSSOConfig) *TenantSSOConfig {
 		}
 		out.Feishu = &f
 	}
+	if c.Kingdee != nil {
+		k := *c.Kingdee
+		if k.AppSecret != "" {
+			k.AppSecret = ssoSecretMask
+		}
+		out.Kingdee = &k
+	}
 	return out
 }
 
@@ -89,7 +116,12 @@ func TenantSSOConfigForResponse(c *TenantSSOConfig) *TenantSSOConfig {
 func MergeTenantSSOConfigForUpdate(submitted, existing *TenantSSOConfig) *TenantSSOConfig {
 	merged := &TenantSSOConfig{}
 	if existing != nil {
-		merged = &TenantSSOConfig{LoginDomain: existing.LoginDomain, WeCom: existing.WeCom, Feishu: existing.Feishu}
+		merged = &TenantSSOConfig{
+			LoginDomain: existing.LoginDomain,
+			WeCom:       existing.WeCom,
+			Feishu:      existing.Feishu,
+			Kingdee:     existing.Kingdee,
+		}
 	}
 	if submitted == nil {
 		return merged
@@ -116,6 +148,17 @@ func MergeTenantSSOConfigForUpdate(submitted, existing *TenantSSOConfig) *Tenant
 			f.AppSecret = prev.AppSecret
 		}
 		merged.Feishu = &f
+	}
+	if submitted.Kingdee != nil {
+		prev := &KingdeeTenantSSO{}
+		if existing != nil && existing.Kingdee != nil {
+			prev = existing.Kingdee
+		}
+		k := *submitted.Kingdee
+		if k.AppSecret == ssoSecretMask || k.AppSecret == "" {
+			k.AppSecret = prev.AppSecret
+		}
+		merged.Kingdee = &k
 	}
 	return merged
 }

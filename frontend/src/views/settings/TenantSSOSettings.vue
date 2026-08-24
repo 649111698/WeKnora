@@ -87,6 +87,40 @@
       </div>
     </section>
 
+    <!-- 金蝶苍穹 SSO -->
+    <section class="sso-card">
+      <h3 class="sso-card__title">{{ t('tenantSSO.kingdee.title') }}</h3>
+      <p class="sso-card__desc">{{ t('tenantSSO.kingdee.description') }}</p>
+      <div class="sso-form">
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.kingdee.baseUrl') }}</label>
+          <t-input v-model="form.kingdee.base_url" :placeholder="t('tenantSSO.kingdee.baseUrlPlaceholder')"
+            :disabled="saving" />
+        </div>
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.kingdee.appClientId') }}</label>
+          <t-input v-model="form.kingdee.app_client_id" :placeholder="t('tenantSSO.kingdee.appClientIdPlaceholder')"
+            :disabled="saving" />
+        </div>
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.kingdee.appSecret') }}</label>
+          <t-input v-model="form.kingdee.app_secret" type="password"
+            :placeholder="kingdeeSecretPlaceholder" :disabled="saving" />
+          <p class="sso-field__hint">{{ t('tenantSSO.kingdee.appSecretHint') }}</p>
+        </div>
+        <div v-if="kingdeeCallbackUrl" class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.kingdee.callbackUrl') }}</label>
+          <div class="sso-copy-row">
+            <code class="sso-code sso-code--block">{{ kingdeeCallbackUrl }}</code>
+            <t-button size="small" variant="outline" @click="copyText(kingdeeCallbackUrl)">
+              {{ t('common.copy') }}
+            </t-button>
+          </div>
+          <p class="sso-field__hint">{{ t('tenantSSO.kingdee.callbackUrlHint') }}</p>
+        </div>
+      </div>
+    </section>
+
     <!-- 水印（租户级） -->
     <section class="sso-card">
       <h3 class="sso-card__title">{{ t('tenantSSO.watermark.title') }}</h3>
@@ -126,23 +160,37 @@ type SSOForm = {
   login_domain: string
   wecom: { corp_id: string; corp_secret: string; agent_id: string; domain_verify_text: string }
   feishu: { app_id: string; app_secret: string }
+  kingdee: { base_url: string; app_client_id: string; app_secret: string }
 }
 
 const form = reactive<SSOForm>({
   login_domain: '',
   wecom: { corp_id: '', corp_secret: '', agent_id: '', domain_verify_text: '' },
   feishu: { app_id: '', app_secret: '' },
+  kingdee: { base_url: '', app_client_id: '', app_secret: '' },
 })
 const watermark = reactive({ enabled: false, text: '' })
 
 const wecomSecretConfigured = ref(false)
 const feishuSecretConfigured = ref(false)
+const kingdeeSecretConfigured = ref(false)
 const saving = ref(false)
 
 const wecomSecretPlaceholder = computed(() =>
   wecomSecretConfigured.value ? t('tenantSSO.keepSecretPlaceholder') : t('tenantSSO.wecom.corpSecretPlaceholder'))
 const feishuSecretPlaceholder = computed(() =>
   feishuSecretConfigured.value ? t('tenantSSO.keepSecretPlaceholder') : t('tenantSSO.feishu.appSecretPlaceholder'))
+
+const kingdeeSecretPlaceholder = computed(() =>
+  kingdeeSecretConfigured.value ? t('tenantSSO.keepSecretPlaceholder') : t('tenantSSO.kingdee.appSecretPlaceholder'))
+
+// 苍穹「第三方应用 → 访问策略 → SSO 可信白名单」需登记的完整回调地址：
+// 苍穹回跳时按该地址追加 code 参数，登记值必须与其逐字符一致。
+const kingdeeCallbackUrl = computed(() => {
+  if (!form.login_domain || !form.kingdee.app_client_id.trim()) return ''
+  const host = form.login_domain.trim().replace(/^https?:\/\//, '')
+  return `https://${host}/api/v1/auth/sso/kingdee/callback?app_client_id=${form.kingdee.app_client_id.trim()}&response_code=code`
+})
 
 const loginUrl = computed(() => {
   if (!form.login_domain) return ''
@@ -184,6 +232,11 @@ const loadConfig = async () => {
         form.feishu.app_id = cfg.feishu.app_id || ''
         feishuSecretConfigured.value = !!cfg.feishu.app_secret
       }
+      if (cfg.kingdee) {
+        form.kingdee.base_url = cfg.kingdee.base_url || ''
+        form.kingdee.app_client_id = cfg.kingdee.app_client_id || ''
+        kingdeeSecretConfigured.value = !!cfg.kingdee.app_secret
+      }
     }
   } catch {
     MessagePlugin.error(t('tenantSSO.loadFailed'))
@@ -202,7 +255,8 @@ const loadConfig = async () => {
 const saveAll = async () => {
   const hasWecom = !!(form.wecom.corp_id.trim() || form.wecom.corp_secret)
   const hasFeishu = !!(form.feishu.app_id.trim() || form.feishu.app_secret)
-  if ((hasWecom || hasFeishu) && !form.login_domain.trim()) {
+  const hasKingdee = !!(form.kingdee.base_url.trim() || form.kingdee.app_client_id.trim() || form.kingdee.app_secret)
+  if ((hasWecom || hasFeishu || hasKingdee) && !form.login_domain.trim()) {
     MessagePlugin.warning(t('tenantSSO.loginDomain.required'))
     return
   }
@@ -220,14 +274,21 @@ const saveAll = async () => {
         app_id: form.feishu.app_id.trim(),
         app_secret: form.feishu.app_secret,
       },
+      kingdee: {
+        base_url: form.kingdee.base_url.trim().replace(/\/+$/, ''),
+        app_client_id: form.kingdee.app_client_id.trim(),
+        app_secret: form.kingdee.app_secret,
+      },
     }
     const resp: any = await put('/api/v1/tenants/kv/sso-config', payload)
     const cfg = resp?.data
     if (cfg) {
       wecomSecretConfigured.value = !!(cfg.wecom?.corp_secret)
       feishuSecretConfigured.value = !!(cfg.feishu?.app_secret)
+      kingdeeSecretConfigured.value = !!(cfg.kingdee?.app_secret)
       form.wecom.corp_secret = ''
       form.feishu.app_secret = ''
+      form.kingdee.app_secret = ''
     }
     await put('/api/v1/tenants/kv/watermark-config', {
       enabled: watermark.enabled,

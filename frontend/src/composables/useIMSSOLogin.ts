@@ -50,12 +50,36 @@ export function detectIMSSOPlatform(): IMSSOPlatform | null {
 type SSOConfig = {
   wecom?: { enabled: boolean; corp_id?: string; agent_id?: string }
   feishu?: { enabled: boolean; app_id?: string }
+  kingdee?: { enabled: boolean; base_url?: string; app_client_id?: string }
 }
 
 async function fetchSSOConfig(): Promise<SSOConfig> {
   const res = await fetch('/api/v1/auth/sso/config', { headers: { Accept: 'application/json' } })
   if (!res.ok) return {}
   return (await res.json()) as SSOConfig
+}
+
+/**
+ * 金蝶苍穹统一门户登录入口：返回苍穹 authorize.do 免登链接。
+ *
+ * 与企微/飞书内置浏览器免登不同，苍穹的常规入口是用户在苍穹门户点
+ * 菜单跳转；此函数用于登录页的「苍穹登录」按钮，把同样的授权链接
+ * 暴露给未在苍穹内跳转的用户。redirect_uri 需与苍穹「第三方应用」
+ * SSO 可信白名单登记的完整地址（含 app_client_id 与 response_code
+ * 查询参数）一致，苍穹回跳时会追加 code。
+ */
+export async function getKingdeeLoginURL(): Promise<string | null> {
+  const cfg = await fetchSSOConfig()
+  const k = cfg.kingdee
+  if (!k?.enabled || !k.base_url || !k.app_client_id) return null
+  const base = k.base_url.trim().replace(/\/+$/, '')
+  const clientId = encodeURIComponent(k.app_client_id.trim())
+  // 苍穹要求 redirect_uri 携带 app_client_id 与 response_code=code，
+  // 且与白名单登记值逐字符一致。
+  const redirectUri = encodeURIComponent(
+    `${window.location.origin}/api/v1/auth/sso/kingdee/callback?app_client_id=${k.app_client_id.trim()}&response_code=code`,
+  )
+  return `${base}/auth/authorize.do?app_client_id=${clientId}&response_code=code&redirect_uri=${redirectUri}`
 }
 
 function buildAuthorizeURL(platform: IMSSOPlatform, cfg: SSOConfig, state: string): string | null {

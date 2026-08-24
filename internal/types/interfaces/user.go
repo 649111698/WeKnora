@@ -27,6 +27,10 @@ type UserService interface {
 	LoginWithWeComCode(ctx context.Context, code, host string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
 	// LoginWithFeishuCode completes Feishu in-browser OAuth login (JIT-provisioning guest accounts).
 	LoginWithFeishuCode(ctx context.Context, code, host string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+
+	// LoginWithKingdeeCode completes Kingdee Cosmic portal OAuth login
+	// (JIT-provisioning guest accounts, anchored on Kingdee userName).
+	LoginWithKingdeeCode(ctx context.Context, code, host string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
 	// GetSSOWatermark resolves the watermark for an unauthenticated page
 	// (login screen) using the same tenant resolution as GetSSOStatus.
 	GetSSOWatermark(ctx context.Context, host string) types.WatermarkConfig

@@ -93,6 +93,13 @@ func (s *userService) GetSSOStatus(ctx context.Context, host string) (*types.SSO
 	if cfg.FeishuEnabled() {
 		resp.Feishu = &types.SSOProviderStatus{Enabled: true, AppID: cfg.Feishu.AppID}
 	}
+	if cfg.KingdeeEnabled() {
+		resp.Kingdee = &types.SSOProviderStatus{
+			Enabled:      true,
+			BaseURL:      cfg.Kingdee.BaseURL,
+			AppClientID:  cfg.Kingdee.AppClientID,
+		}
+	}
 	return resp, nil
 }
 
@@ -324,6 +331,51 @@ func (s *userService) getFeishuIdentity(ctx context.Context, cfg *config.FeishuS
 	return data.OpenID, data.Name, nil
 }
 
+// --- 金蝶苍穹 API ---
+
+// kingdeeUserInfoResponse 苍穹 authen/getUserInfo 返回结构。
+type kingdeeUserInfoResponse struct {
+	Data struct {
+		Email    string `json:"email"`
+		Mobile   string `json:"mobile"`
+		Name     string `json:"name"`
+		UserName string `json:"userName"`
+	} `json:"data"`
+	ErrorCode string `json:"errorCode"`
+	Message   string `json:"message"`
+	Status    bool   `json:"status"`
+}
+
+// getKingdeeIdentity 用授权码调苍穹 getUserInfo 换当前登录用户身份。
+// externalID 取 userName（苍穹账号唯一键），displayName 取 name。
+func (s *userService) getKingdeeIdentity(ctx context.Context, cfg *types.KingdeeTenantSSO, code string) (externalID, displayName string, err error) {
+	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	endpoint := fmt.Sprintf(
+		"%s/ierp/kapi/v2/secm/authen/getUserInfo?code=%s",
+		base, url.QueryEscape(code),
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to build Kingdee userinfo request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	var data kingdeeUserInfoResponse
+	if err := ssoDoJSON(ctx, req, &data); err != nil {
+		return "", "", err
+	}
+	if !data.Status || data.ErrorCode != "0" {
+		msg := strings.TrimSpace(data.Message)
+		if msg == "" {
+			msg = data.ErrorCode
+		}
+		return "", "", fmt.Errorf("Kingdee getUserInfo failed: %s", msg)
+	}
+	if strings.TrimSpace(data.Data.UserName) == "" {
+		return "", "", errors.NewUnauthorizedError("Kingdee did not return userName")
+	}
+	return data.Data.UserName, data.Data.Name, nil
+}
+
 // --- 登录与 JIT 建号 ---
 
 // LoginWithWeComCode 用企微网页授权 code 完成登录（首次自动建号）。
@@ -366,6 +418,32 @@ func (s *userService) LoginWithFeishuCode(
 		return nil, err
 	}
 	return s.completeSSOLogin(ctx, "feishu", openID, displayName, provisioning, tenant)
+}
+
+// LoginWithKingdeeCode 用金蝶苍穹授权码完成登录（首次自动建号）。
+// 用户从苍穹统一门户点击免登菜单进入，苍穹回跳本系统回调地址并带
+// code；此处用 code 换苍穹用户身份（userName 为唯一键），后续与
+// 企微/飞书共用 completeSSOLogin。
+func (s *userService) LoginWithKingdeeCode(
+	ctx context.Context,
+	code, host string,
+	provisioning types.TenantProvisioningMode,
+) (*types.OIDCCallbackResponse, error) {
+	tenant, err := s.resolveSSOTenant(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if tenant == nil || !tenant.SSOConfig.KingdeeEnabled() {
+		return nil, errors.NewForbiddenError("Kingdee SSO is not configured for this workspace")
+	}
+	if strings.TrimSpace(code) == "" {
+		return nil, errors.NewValidationError("code is required")
+	}
+	userName, displayName, err := s.getKingdeeIdentity(ctx, tenant.SSOConfig.Kingdee, code)
+	if err != nil {
+		return nil, err
+	}
+	return s.completeSSOLogin(ctx, "kingdee", userName, displayName, provisioning, tenant)
 }
 
 // completeSSOLogin 按平台身份查找本地用户，缺失则自动创建（JIT），
