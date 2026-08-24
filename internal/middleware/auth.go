@@ -56,6 +56,8 @@ var noAuthAPI = map[string][]string{
 	"/api/v1/auth/sso/config":         {"GET"},
 	"/api/v1/auth/sso/wecom/callback": {"GET"},
 	"/api/v1/auth/sso/feishu/callback": {"GET"},
+	// 金蝶苍穹门户免登回跳：同样不带 WeKnora token，由苍穹授权码认证。
+	"/api/v1/auth/sso/kingdee/callback": {"GET"},
 	// 企微可信域名验证：企微服务器抓取 /WW_verify_*.txt 时不可能携带 token。
 	"/api/v1/auth/sso/wecom/domain-verify": {"GET"},
 	// MCP OAuth provider redirect: the third-party authorization server
