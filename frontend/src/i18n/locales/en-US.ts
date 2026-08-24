@@ -53,7 +53,7 @@ export default {
         appSecretHint: 'Only needed for the token-exchange mode; not required for getUserInfo direct mode.',
         callbackUrl: 'SSO trusted whitelist callback URL',
         menuUrl: 'Cosmic portal auto-login URL',
-        menuUrlHint: 'Configure in Cosmic Menu / Quick Launch / External Link; users already signed in to Cosmic enter this system without a second login.',
+        menuUrlHint: 'Configure in Cosmic Menu / Quick Launch / External Link; users already signed in to Cosmic enter this system without a second login, landing on the chat page by default.',
         callbackUrlHint: 'Add this full URL (including query parameters) to the Cosmic third-party app access policy SSO whitelist; the Cosmic portal menu redirect_uri also uses this address.',
       },
       watermark: {

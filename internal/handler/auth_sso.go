@@ -66,6 +66,16 @@ func (h *AuthHandler) SSOWeComDomainVerify(c *gin.Context) {
 	c.String(http.StatusOK, text)
 }
 
+// sanitizeLoginTarget 校验免登后落地页：仅接受站内路径（以 / 开头且
+// 非 //host 形式），拒绝外站跳转；非法值返回空串（回落默认首页）。
+func sanitizeLoginTarget(target string) string {
+	t := strings.TrimSpace(target)
+	if t == "" || !strings.HasPrefix(t, "/") || strings.HasPrefix(t, "//") {
+		return ""
+	}
+	return t
+}
+
 func (h *AuthHandler) ssoRedirectCallback(c *gin.Context, platform string, login func() (*types.OIDCCallbackResponse, error)) {
 	ctx := c.Request.Context()
 	frontendRedirectURI := "/"
@@ -93,7 +103,13 @@ func (h *AuthHandler) ssoRedirectCallback(c *gin.Context, platform string, login
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("payload_encode_failed"))
 		return
 	}
-	c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_result="+urlQueryEscape(payload))
+	// login_target（苍穹门户菜单免登链接携带，如 /platform/creatChat）
+	// 随回调片段透传，App.vue 收到后转存到既有的 SSO 深链机制。
+	fragment := "#oidc_result=" + urlQueryEscape(payload)
+	if target := sanitizeLoginTarget(c.Query("login_target")); target != "" {
+		fragment += "&sso_redirect=" + urlQueryEscape(target)
+	}
+	c.Redirect(http.StatusFound, frontendRedirectURI+fragment)
 }
 
 // SSOWeComCallback godoc

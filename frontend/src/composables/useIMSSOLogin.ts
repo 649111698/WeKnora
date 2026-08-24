@@ -26,7 +26,7 @@ export function sanitizeRedirectTarget(target: string | null | undefined): strin
   return target
 }
 
-function stashSSORedirectTarget(target: string | null | undefined) {
+export function stashSSORedirectTarget(target: string | null | undefined) {
   const safe = sanitizeRedirectTarget(target)
   if (safe) sessionStorage.setItem(SSO_REDIRECT_KEY, safe)
 }
@@ -68,6 +68,10 @@ async function fetchSSOConfig(): Promise<SSOConfig> {
  * SSO 可信白名单登记的完整地址（含 app_client_id 与 response_code
  * 查询参数）一致，苍穹回跳时会追加 code。
  */
+// 苍穹免登后的默认落地页（对话页）；须与租户设置里生成的白名单地址
+// 逐字符一致（login_target 一并登记在白名单内）。
+const KINGDEE_DEFAULT_LOGIN_TARGET = '/platform/creatChat'
+
 export async function getKingdeeLoginURL(): Promise<string | null> {
   const cfg = await fetchSSOConfig()
   const k = cfg.kingdee
@@ -75,9 +79,9 @@ export async function getKingdeeLoginURL(): Promise<string | null> {
   const base = k.base_url.trim().replace(/\/+$/, '')
   const clientId = encodeURIComponent(k.app_client_id.trim())
   // 苍穹要求 redirect_uri 携带 app_client_id 与 response_code=code，
-  // 且与白名单登记值逐字符一致。
+  // 且与白名单登记值逐字符一致（含 login_target）。
   const redirectUri = encodeURIComponent(
-    `${window.location.origin}/api/v1/auth/sso/kingdee/callback?app_client_id=${k.app_client_id.trim()}&response_code=code`,
+    `${window.location.origin}/api/v1/auth/sso/kingdee/callback?app_client_id=${k.app_client_id.trim()}&response_code=code&login_target=${encodeURIComponent(KINGDEE_DEFAULT_LOGIN_TARGET)}`,
   )
   return `${base}/auth/authorize.do?app_client_id=${clientId}&response_code=code&redirect_uri=${redirectUri}`
 }

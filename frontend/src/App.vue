@@ -11,7 +11,7 @@ import { getCurrentUser, userInfoFromApi, getAuthConfig } from '@/api/auth'
 import { get } from '@/utils/request'
 import SiteWatermark from '@/components/SiteWatermark.vue'
 import { consumePendingTenantSwitchToast } from '@/utils/tenantSwitch'
-import { consumeSSORedirectTarget } from '@/composables/useIMSSOLogin'
+import { consumeSSORedirectTarget, stashSSORedirectTarget, sanitizeRedirectTarget } from '@/composables/useIMSSOLogin'
 import { useRoleLabel } from '@/composables/useRoleLabel'
 import { notifyLoginSuccess } from '@/utils/loginNotify'
 import { renderWorkspaceNotifyContent } from '@/utils/workspaceNotifyContent'
@@ -194,6 +194,10 @@ const handleGlobalOIDCCallback = async () => {
 
     const response = decodeOIDCResult(oidcResult)
     if (response.success) {
+      // 苍穹门户菜单免登：后端回调片段携带落地页（login_target 透传），
+      // 转存到既有的 SSO 深链机制，由 persistOIDCLoginResponse 统一消费。
+      const fragmentTarget = sanitizeRedirectTarget(params.get('sso_redirect'))
+      if (fragmentTarget) stashSSORedirectTarget(fragmentTarget)
       clearOIDCCallbackState('/')
       await persistOIDCLoginResponse(response)
       notifyLoginSuccess(response, t, tm, formatRole, roleIcon)

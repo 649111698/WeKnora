@@ -194,12 +194,17 @@ const feishuSecretPlaceholder = computed(() =>
 const kingdeeSecretPlaceholder = computed(() =>
   kingdeeSecretConfigured.value ? t('tenantSSO.keepSecretPlaceholder') : t('tenantSSO.kingdee.appSecretPlaceholder'))
 
+// 苍穹免登后的默认落地页（对话页）；作为 login_target 随 redirect_uri
+// 透传，登录完成后前端跳转到该页而不是默认首页。
+const KINGDEE_DEFAULT_LOGIN_TARGET = '/platform/creatChat'
+
 // 苍穹「第三方应用 → 访问策略 → SSO 可信白名单」需登记的完整回调地址：
-// 苍穹回跳时按该地址追加 code 参数，登记值必须与其逐字符一致。
+// 苍穹回跳时按该地址追加 code 参数，登记值必须与其逐字符一致
+// （含 login_target 参数）。
 const kingdeeCallbackUrl = computed(() => {
   if (!form.login_domain || !form.kingdee.app_client_id.trim()) return ''
   const host = form.login_domain.trim().replace(/^https?:\/\//, '')
-  return `https://${host}/api/v1/auth/sso/kingdee/callback?app_client_id=${form.kingdee.app_client_id.trim()}&response_code=code`
+  return `https://${host}/api/v1/auth/sso/kingdee/callback?app_client_id=${form.kingdee.app_client_id.trim()}&response_code=code&login_target=${encodeURIComponent(KINGDEE_DEFAULT_LOGIN_TARGET)}`
 })
 
 // 苍穹门户菜单/快速发起配置的「免登链接」：已登录苍穹的用户点击即带
