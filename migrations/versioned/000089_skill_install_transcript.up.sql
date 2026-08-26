@@ -1,7 +1,7 @@
 -- Description: Locators for the installer agent's transcript. The install runs
 -- in a maintenance session whose messages are kept for troubleshooting; without
 -- these columns the console has no way to find that conversation.
-DO $$ BEGIN RAISE NOTICE '[Migration 000087] Adding install transcript locators to tenant_skills'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000089] Adding install transcript locators to tenant_skills'; END $$;
 
 ALTER TABLE tenant_skills ADD COLUMN IF NOT EXISTS install_session_id VARCHAR(36);
 ALTER TABLE tenant_skills ADD COLUMN IF NOT EXISTS install_message_id VARCHAR(36);
