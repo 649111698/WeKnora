@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -110,5 +111,55 @@ func TestGetKingdeeIdentityRejectsFailureAndMissingUser(t *testing.T) {
 	defer noUserSrv.Close()
 	if _, _, err := svc.getKingdeeIdentity(context.Background(), &types.KingdeeTenantSSO{BaseURL: noUserSrv.URL}, "c"); err == nil {
 		t.Fatal("expected error when userName missing")
+	}
+}
+
+// 部分私有化网关把 ierp 应用直接挂在上下文根，kapi 没有 /ierp 前缀；
+// 指南路径 404 时应自动退到无前缀路径。
+func TestGetKingdeeIdentityFallsBackToContextRootKapi(t *testing.T) {
+	var hitPaths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitPaths = append(hitPaths, r.URL.Path)
+		if strings.HasSuffix(r.URL.Path, "/ierp/kapi/v2/secm/authen/getUserInfo") {
+			http.NotFound(w, r)
+			return
+		}
+		if !strings.HasSuffix(r.URL.Path, "/kapi/v2/secm/authen/getUserInfo") {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data":      map[string]string{"name": "李四", "userName": "lisi"},
+			"errorCode": "0",
+			"status":    true,
+		})
+	}))
+	defer srv.Close()
+
+	svc := &userService{}
+	id, name, err := svc.getKingdeeIdentity(context.Background(), &types.KingdeeTenantSSO{BaseURL: srv.URL + "/small/"}, "c")
+	if err != nil {
+		t.Fatalf("getKingdeeIdentity fallback: %v", err)
+	}
+	if id != "lisi" || name != "李四" {
+		t.Fatalf("identity = %q/%q, want lisi/李四", id, name)
+	}
+	if len(hitPaths) != 2 ||
+		!strings.HasSuffix(hitPaths[0], "/ierp/kapi/v2/secm/authen/getUserInfo") ||
+		!strings.HasSuffix(hitPaths[1], "/kapi/v2/secm/authen/getUserInfo") {
+		t.Fatalf("expected 404 fallback probe order, got %v", hitPaths)
+	}
+}
+
+// 两个候选路径都不存在时，应返回 404 错误而不是静默成功。
+func TestGetKingdeeIdentityBothPathsMissing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	svc := &userService{}
+	if _, _, err := svc.getKingdeeIdentity(context.Background(), &types.KingdeeTenantSSO{BaseURL: srv.URL}, "c"); err == nil {
+		t.Fatal("expected error when both kapi paths are missing")
 	}
 }

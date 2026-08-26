@@ -348,20 +348,29 @@ type kingdeeUserInfoResponse struct {
 
 // getKingdeeIdentity 用授权码调苍穹 getUserInfo 换当前登录用户身份。
 // externalID 取 userName（苍穹账号唯一键），displayName 取 name。
+// 苍穹 kapi 有两种网关挂载形态：标准形态是 {base}/ierp/kapi/...（集成指南
+// 的默认路径），部分私有化部署把 ierp 应用直接挂在上下文根，接口实际在
+// {base}/kapi/...。指南路径 404 时自动退到无 /ierp 前缀的路径重试。
 func (s *userService) getKingdeeIdentity(ctx context.Context, cfg *types.KingdeeTenantSSO, code string) (externalID, displayName string, err error) {
 	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
-	endpoint := fmt.Sprintf(
-		"%s/ierp/kapi/v2/secm/authen/getUserInfo?code=%s",
-		base, url.QueryEscape(code),
-	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to build Kingdee userinfo request: %w", err)
+	paths := []string{
+		"/ierp/kapi/v2/secm/authen/getUserInfo",
+		"/kapi/v2/secm/authen/getUserInfo",
 	}
-	req.Header.Set("Accept", "application/json")
 	var data kingdeeUserInfoResponse
-	if err := ssoDoJSON(ctx, req, &data); err != nil {
-		return "", "", err
+	for i, path := range paths {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path+"?code="+url.QueryEscape(code), nil)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to build Kingdee userinfo request: %w", err)
+		}
+		req.Header.Set("Accept", "application/json")
+		status, err := ssoDoJSONStatus(ctx, req, &data)
+		if err == nil {
+			break
+		}
+		if status != http.StatusNotFound || i == len(paths)-1 {
+			return "", "", err
+		}
 	}
 	if !data.Status || data.ErrorCode != "0" {
 		msg := strings.TrimSpace(data.Message)
@@ -595,16 +604,23 @@ func ssoSyntheticEmail(platform, externalID string) string {
 }
 
 func ssoDoJSON(ctx context.Context, req *http.Request, out interface{}) error {
+	_, err := ssoDoJSONStatus(ctx, req, out)
+	return err
+}
+
+// ssoDoJSONStatus 同 ssoDoJSON，但把 HTTP 状态码一并返回，供调用方按状态码
+// 决定是否换候选路径重试（如苍穹 kapi 的两种挂载形态）。
+func ssoDoJSONStatus(ctx context.Context, req *http.Request, out interface{}) (int, error) {
 	resp, err := ssoHTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("SSO HTTP request failed: %w", err)
+		return 0, fmt.Errorf("SSO HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("SSO HTTP request returned status %d", resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("SSO HTTP request returned status %d", resp.StatusCode)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("failed to decode SSO response: %w", err)
+		return resp.StatusCode, fmt.Errorf("failed to decode SSO response: %w", err)
 	}
-	return nil
+	return resp.StatusCode, nil
 }
