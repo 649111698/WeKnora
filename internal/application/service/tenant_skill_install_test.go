@@ -1,16 +1,20 @@
 package service
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,7 +47,7 @@ func TestRunInstallHappyPathSwitchesPointerLast(t *testing.T) {
 		"create-session", "prepare-skill-dir", "seed-files", "agent-execute",
 		"chmod", "verify-structure", "verify-smoke", "write-manifest",
 		"cleanup-workspace", "create-snapshot",
-		"switch-pointer", "destroy-sandbox",
+		"switch-pointer", "mark-stale", "destroy-sandbox",
 	}, fx.events, "the pointer must move only after the snapshot exists")
 
 	cfg := fx.configRepo.saved.Config
@@ -79,8 +83,9 @@ func TestRunInstallIssuesExactlyTheseCommands(t *testing.T) {
 	require.Equal(t, []string{
 		installPrepareCommand,
 		"uv --version",
-		"chmod -R 755 " + installSkillDir,
-		"chown -R user " + installSkillDir,
+		seedExtractCommand(installSkillDir),
+		"chmod -R 555 " + installSkillDir,
+		"chown -R root:root " + installSkillDir,
 		"test -f " + installSkillDir + "/SKILL.md",
 		"test -f " + installSkillDir + "/scripts/extract.py",
 		installSmokeCommand,
@@ -278,6 +283,22 @@ func TestFailSkillDoesNotStampANewerBundle(t *testing.T) {
 	require.Empty(t, skill.Error)
 }
 
+func TestInstallSkillRecoversFromNameConflict(t *testing.T) {
+	fx := newInstallFixture(t)
+	fx.skillRepo.getByNameMisses = 1
+	fx.skillRepo.createErr = errors.New("UNIQUE constraint failed: tenant_skills.sandbox_config_id")
+	archive := zipBundle(t, map[string]string{"SKILL.md": validSkillMD})
+
+	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
+
+	require.NoError(t, err)
+	require.Equal(t, "sk-1", id,
+		"the upload that lost the unique index must reuse the row that won")
+	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+	require.NoError(t, getErr)
+	require.Equal(t, types.SkillStatusInstalling, skill.Status)
+}
+
 func TestInstallSkillRefusesWhenBundleCannotBeStored(t *testing.T) {
 	fx := newInstallFixture(t)
 	fx.saveErr = errors.New("object store down")
@@ -292,6 +313,342 @@ func TestInstallSkillRefusesWhenBundleCannotBeStored(t *testing.T) {
 	require.Equal(t, types.SkillStatusFailed, skill.Status,
 		"a skill whose archive never landed must not sit at installing")
 	require.NotContains(t, fx.events, "create-session")
+}
+
+func TestInstallSkillSkipsWhenReadyWithTheSameArchive(t *testing.T) {
+	fx := newInstallFixture(t)
+	archive := zipBundle(t, map[string]string{
+		"SKILL.md":           validSkillMD,
+		"scripts/extract.py": "print('hi')\n",
+	})
+	bundle, err := ParseSkillBundle(archive)
+	require.NoError(t, err)
+	fx.seedReadySkillWithSHA(bundle.SHA256, "snap-live")
+
+	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
+
+	require.NoError(t, err)
+	require.Equal(t, "sk-1", id)
+	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+	require.NoError(t, getErr)
+	require.Equal(t, types.SkillStatusReady, skill.Status,
+		"a ready skill whose archive did not change must not be flipped to installing")
+	require.Empty(t, fx.sessionCalls, "the same bytes must not boot a billed sandbox")
+	require.NotContains(t, fx.events, "create-snapshot")
+	require.Nil(t, fx.configRepo.saved, "the image pointer must stay where it is")
+	require.Equal(t, 1, fx.savedBundles,
+		"a no-op re-upload must still refresh the stored archive for read_skill")
+	require.Equal(t, "file://bundle.zip", skill.BundleRef)
+}
+
+func TestInstallSkillRetriesAFailedSkillWithTheSameArchive(t *testing.T) {
+	fx := newInstallFixture(t)
+	archive := zipBundle(t, map[string]string{
+		"SKILL.md":           validSkillMD,
+		"scripts/extract.py": "print('hi')\n",
+	})
+	bundle, err := ParseSkillBundle(archive)
+	require.NoError(t, err)
+	require.NoError(t, fx.skillRepo.UpdateSkill(context.Background(), &types.TenantSkillEntity{
+		ID: "sk-1", TenantID: 7, SandboxConfigID: "cfg-1",
+		Name: bundle.Name, BundleSHA256: bundle.SHA256,
+		Status: types.SkillStatusFailed, Error: "previous run died",
+	}))
+
+	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
+
+	require.NoError(t, err)
+	require.Equal(t, "sk-1", id)
+	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+	require.NoError(t, getErr)
+	require.Equal(t, types.SkillStatusInstalling, skill.Status,
+		"a failed skill is a retry even when the archive digest is unchanged")
+}
+
+func TestInstallSkillReinstallsWhenTheLiveImageNoLongerCarriesTheSkill(t *testing.T) {
+	fx := newInstallFixture(t)
+	archive := zipBundle(t, map[string]string{
+		"SKILL.md":           validSkillMD,
+		"scripts/extract.py": "print('hi')\n",
+	})
+	bundle, err := ParseSkillBundle(archive)
+	require.NoError(t, err)
+	require.NoError(t, fx.skillRepo.UpdateSkill(context.Background(), &types.TenantSkillEntity{
+		ID: "sk-1", TenantID: 7, SandboxConfigID: "cfg-1",
+		Name: bundle.Name, BundleSHA256: bundle.SHA256,
+		Status: types.SkillStatusReady,
+	}))
+	// The pointer was cleared (last-skill removal, or a rebuild from base).
+	// The row still says ready, but the files are gone from every new session.
+
+	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
+
+	require.NoError(t, err)
+	require.Equal(t, "sk-1", id)
+	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+	require.NoError(t, getErr)
+	require.Equal(t, types.SkillStatusInstalling, skill.Status,
+		"a ready row whose files left the image is a repair, not a skip")
+}
+
+func TestInstallSkillSkipsAnInFlightInstallOfTheSameArchive(t *testing.T) {
+	fx := newInstallFixture(t)
+	archive := zipBundle(t, map[string]string{
+		"SKILL.md":           validSkillMD,
+		"scripts/extract.py": "print('hi')\n",
+	})
+	bundle, err := ParseSkillBundle(archive)
+	require.NoError(t, err)
+	// One heartbeat ago: the first run is slow, not gone.
+	beat := fx.now().Add(-skillInstallHeartbeatInterval)
+	require.NoError(t, fx.skillRepo.UpdateSkill(context.Background(), &types.TenantSkillEntity{
+		ID: "sk-1", TenantID: 7, SandboxConfigID: "cfg-1",
+		Name: bundle.Name, BundleSHA256: bundle.SHA256,
+		Status: types.SkillStatusInstalling, InstallingSince: &beat,
+	}))
+
+	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
+
+	require.NoError(t, err)
+	require.Equal(t, "sk-1", id)
+	require.Empty(t, fx.sessionCalls,
+		"a second upload of the same bytes must not start another billed run")
+}
+
+// A run that keeps beating is left alone however long it takes: a single agent
+// command may take installCommandTimeout, and an install runs several.
+func TestInstallSkillSkipsAnInstallThatIsSlowButStillBeating(t *testing.T) {
+	fx := newInstallFixture(t)
+	archive := zipBundle(t, map[string]string{
+		"SKILL.md":           validSkillMD,
+		"scripts/extract.py": "print('hi')\n",
+	})
+	bundle, err := ParseSkillBundle(archive)
+	require.NoError(t, err)
+	submitted := fx.now().Add(-3 * installCommandTimeout)
+	beat := fx.now().Add(-skillInstallHeartbeatInterval)
+	require.NoError(t, fx.skillRepo.UpdateSkill(context.Background(), &types.TenantSkillEntity{
+		ID: "sk-1", TenantID: 7, SandboxConfigID: "cfg-1",
+		Name: bundle.Name, BundleSHA256: bundle.SHA256,
+		Status: types.SkillStatusInstalling, InstallingSince: &beat,
+		CreatedAt: submitted,
+	}))
+
+	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
+
+	require.NoError(t, err)
+	require.Equal(t, "sk-1", id)
+	require.Empty(t, fx.sessionCalls,
+		"an install that started long ago but is still beating must not be restarted")
+}
+
+func TestInstallSkillRetriesAStaleInFlightInstallOfTheSameArchive(t *testing.T) {
+	fx := newInstallFixture(t)
+	archive := zipBundle(t, map[string]string{
+		"SKILL.md":           validSkillMD,
+		"scripts/extract.py": "print('hi')\n",
+	})
+	bundle, err := ParseSkillBundle(archive)
+	require.NoError(t, err)
+	// The heartbeat stopped: the process that owned this row is gone.
+	stale := fx.now().Add(-skillInstallInFlightSkip - time.Minute)
+	require.NoError(t, fx.skillRepo.UpdateSkill(context.Background(), &types.TenantSkillEntity{
+		ID: "sk-1", TenantID: 7, SandboxConfigID: "cfg-1",
+		Name: bundle.Name, BundleSHA256: bundle.SHA256,
+		Status: types.SkillStatusInstalling, InstallingSince: &stale,
+		Error: "the previous process is gone",
+	}))
+
+	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
+
+	require.NoError(t, err)
+	require.Equal(t, "sk-1", id)
+	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+	require.NoError(t, getErr)
+	require.Equal(t, types.SkillStatusInstalling, skill.Status)
+	require.NotNil(t, skill.InstallingSince)
+	require.Equal(t, fx.now(), *skill.InstallingSince,
+		"a dead in-flight row must be allowed to start a new run, not wait for the reaper")
+	require.Empty(t, skill.Error)
+}
+
+// The ledger records which skill an install snapshotted, not which archive, so
+// an installing row must never be answered from the image: the files there may
+// belong to the previous bundle of the same skill, and skipping would report a
+// success that never happened.
+func TestCanSkipInstallNeverAnswersAnInstallingRowFromTheImage(t *testing.T) {
+	fx := newInstallFixture(t)
+	ctx := context.Background()
+	fx.seedReadySkillWithSHA(fx.bundle.SHA256, "snap-live")
+	existing, err := fx.skillRepo.GetSkill(ctx, 7, "cfg-1", "sk-1")
+	require.NoError(t, err)
+	stale := fx.now().Add(-skillInstallInFlightSkip - time.Minute)
+	existing.Status = types.SkillStatusInstalling
+	existing.InstallingSince = &stale
+
+	require.False(t, fx.svc.canSkipInstall(ctx, existing, fx.bundle),
+		"a dead install must be retried, not declared done from another bundle's snapshot")
+}
+
+// A ready skill is only skipped when the ledger can actually say the files are
+// still in the live image. An unreadable ledger must reinstall rather than
+// report a success nobody verified.
+func TestCanSkipInstallRequiresAReadableLedger(t *testing.T) {
+	fx := newInstallFixture(t)
+	ctx := context.Background()
+	fx.seedReadySkillWithSHA(fx.bundle.SHA256, "snap-live")
+	existing, err := fx.skillRepo.GetSkill(ctx, 7, "cfg-1", "sk-1")
+	require.NoError(t, err)
+	require.True(t, fx.svc.canSkipInstall(ctx, existing, fx.bundle),
+		"the same archive of a ready skill still in the image is a no-op")
+
+	fx.skillRepo.listSnapshotsErr = errors.New("ledger unavailable")
+
+	require.False(t, fx.svc.canSkipInstall(ctx, existing, fx.bundle),
+		"a skip must be earned by a readable ledger, not assumed")
+}
+
+func TestBeatInstallHeartbeatRestampsOnlyAnInstallingRow(t *testing.T) {
+	fx := newInstallFixture(t)
+	ctx := context.Background()
+	stale := fx.now().Add(-time.Hour)
+	require.NoError(t, fx.svc.updateSkillFields(ctx, 7, "cfg-1", "sk-1",
+		func(e *types.TenantSkillEntity) { e.InstallingSince = &stale }))
+
+	fx.svc.beatInstallHeartbeat(ctx, 7, "cfg-1", "sk-1")
+
+	skill, err := fx.skillRepo.GetSkill(ctx, 7, "cfg-1", "sk-1")
+	require.NoError(t, err)
+	require.Equal(t, fx.now(), *skill.InstallingSince,
+		"a live install must keep its liveness timestamp current")
+
+	// A finished run's row is no longer this install's to touch: reviving the
+	// timestamp would hide a ready skill from nothing and a newer upload from
+	// the reaper.
+	require.NoError(t, fx.svc.updateSkillFields(ctx, 7, "cfg-1", "sk-1",
+		func(e *types.TenantSkillEntity) {
+			e.Status = types.SkillStatusReady
+			e.InstallingSince = nil
+		}))
+
+	fx.svc.beatInstallHeartbeat(ctx, 7, "cfg-1", "sk-1")
+
+	skill, err = fx.skillRepo.GetSkill(ctx, 7, "cfg-1", "sk-1")
+	require.NoError(t, err)
+	require.Equal(t, types.SkillStatusReady, skill.Status)
+	require.Nil(t, skill.InstallingSince,
+		"a row that left the installing status must not be stamped alive again")
+}
+
+func TestStartInstallHeartbeatBeatsUntilStopped(t *testing.T) {
+	fx := newInstallFixture(t)
+	ctx := context.Background()
+	fx.svc.installHeartbeat = time.Millisecond
+	stale := fx.now().Add(-time.Hour)
+	require.NoError(t, fx.svc.updateSkillFields(ctx, 7, "cfg-1", "sk-1",
+		func(e *types.TenantSkillEntity) { e.InstallingSince = &stale }))
+
+	stop := fx.svc.startInstallHeartbeat(ctx, 7, "cfg-1", "sk-1")
+	require.Eventually(t, func() bool {
+		skill, err := fx.skillRepo.GetSkill(ctx, 7, "cfg-1", "sk-1")
+		return err == nil && skill.InstallingSince != nil && skill.InstallingSince.Equal(fx.now())
+	}, 2*time.Second, time.Millisecond, "the heartbeat must restamp the row while the run works")
+	stop()
+
+	// Stopping is what lets the terminal write stand: a beat landing after it
+	// would put a serving skill back to installing.
+	require.NoError(t, fx.svc.updateSkillFields(ctx, 7, "cfg-1", "sk-1",
+		func(e *types.TenantSkillEntity) {
+			e.Status = types.SkillStatusReady
+			e.InstallingSince = nil
+		}))
+	time.Sleep(20 * time.Millisecond)
+	skill, err := fx.skillRepo.GetSkill(ctx, 7, "cfg-1", "sk-1")
+	require.NoError(t, err)
+	require.Equal(t, types.SkillStatusReady, skill.Status)
+	require.Nil(t, skill.InstallingSince)
+	stop()
+}
+
+func TestInstallSkillDoesNotSkipARemovalOfTheSameArchive(t *testing.T) {
+	fx := newInstallFixture(t)
+	archive := zipBundle(t, map[string]string{
+		"SKILL.md":           validSkillMD,
+		"scripts/extract.py": "print('hi')\n",
+	})
+	bundle, err := ParseSkillBundle(archive)
+	require.NoError(t, err)
+	require.NoError(t, fx.skillRepo.UpdateSkill(context.Background(), &types.TenantSkillEntity{
+		ID: "sk-1", TenantID: 7, SandboxConfigID: "cfg-1",
+		Name: bundle.Name, BundleSHA256: bundle.SHA256,
+		Status: types.SkillStatusRemoving,
+	}))
+
+	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
+
+	require.NoError(t, err)
+	require.Equal(t, "sk-1", id)
+	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+	require.NoError(t, getErr)
+	require.Equal(t, types.SkillStatusInstalling, skill.Status,
+		"re-uploading during a removal is how the upload cancels it")
+}
+
+func TestInstallSkillSkipRefusesToPretendSuccessWhenBundleCannotBeStored(t *testing.T) {
+	fx := newInstallFixture(t)
+	archive := zipBundle(t, map[string]string{
+		"SKILL.md":           validSkillMD,
+		"scripts/extract.py": "print('hi')\n",
+	})
+	bundle, err := ParseSkillBundle(archive)
+	require.NoError(t, err)
+	fx.seedReadySkillWithSHA(bundle.SHA256, "snap-live")
+	fx.saveErr = errors.New("object store down")
+
+	_, err = fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "store bundle")
+	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+	require.NoError(t, getErr)
+	require.Equal(t, types.SkillStatusReady, skill.Status,
+		"a storage failure on a no-op re-upload must not flip a serving skill to failed")
+	require.Empty(t, fx.sessionCalls)
+}
+
+func TestRunInstallAbortsWhenTheSameArchiveIsAlreadyServing(t *testing.T) {
+	fx := newInstallFixture(t)
+	fx.seedReadySkillWithSHA(fx.bundle.SHA256, "snap-live")
+
+	require.NoError(t, fx.svc.runInstall(context.Background(), 7, "cfg-1", "sk-1", fx.bundle))
+
+	require.NotContains(t, fx.events, "create-snapshot",
+		"a sibling retry that lost the race to the first run must not grow another snapshot")
+	require.Nil(t, fx.configRepo.saved)
+	skill, err := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+	require.NoError(t, err)
+	require.Equal(t, types.SkillStatusReady, skill.Status)
+}
+
+func TestTenantForStoragePrefersMatchingContextTenant(t *testing.T) {
+	svc := &TenantSkillService{}
+	backendID := "backend-1"
+	ctxTenant := &types.Tenant{ID: 7, DefaultStorageBackendID: &backendID}
+	ctx := context.WithValue(context.Background(), types.TenantInfoContextKey, ctxTenant)
+
+	got := svc.tenantForStorage(ctx, 7)
+
+	require.Equal(t, ctxTenant, got)
+}
+
+func TestTenantForStorageIgnoresMismatchedContextTenant(t *testing.T) {
+	svc := &TenantSkillService{}
+	ctx := context.WithValue(context.Background(), types.TenantInfoContextKey, &types.Tenant{ID: 8})
+
+	got := svc.tenantForStorage(ctx, 7)
+
+	require.Equal(t, uint64(7), got.ID)
+	require.Nil(t, got.DefaultStorageBackendID)
 }
 
 func TestRunInstallAbortsWhenANewerBundleOwnsTheRow(t *testing.T) {
@@ -651,6 +1008,89 @@ func TestResolveInstallerModelFallsBackWhenTheAgentNamesNoModel(t *testing.T) {
 	require.Equal(t, "model-1", model.GetModelID())
 }
 
+// The console attaches to a running install through the assistant message, so
+// the locators must be on the skill row before the engine starts — not after
+// the run ends, by which point there is nothing live left to watch.
+func TestRunInstallPublishesTranscriptLocatorsBeforeTheAgentRuns(t *testing.T) {
+	fx := newInstallFixture(t)
+
+	var atExecute *types.TenantSkillEntity
+	fx.beforeExecute = func() {
+		skill, err := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+		require.NoError(t, err)
+		copied := *skill
+		atExecute = &copied
+	}
+
+	require.NoError(t, fx.svc.runInstall(ctxWithTenant(7), 7, "cfg-1", "sk-1", fx.bundle))
+
+	require.NotNil(t, atExecute, "the installer engine never ran")
+	require.NotEmpty(t, atExecute.InstallSessionID)
+	require.NotEmpty(t, atExecute.InstallMessageID)
+}
+
+func TestRunInstallPublishesTranscriptLocatorsBeforeSeedingFiles(t *testing.T) {
+	fx := newInstallFixture(t)
+
+	var atSeed *types.TenantSkillEntity
+	fx.beforeSeed = func() {
+		skill, err := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+		require.NoError(t, err)
+		copied := *skill
+		atSeed = &copied
+	}
+
+	require.NoError(t, fx.svc.runInstall(ctxWithTenant(7), 7, "cfg-1", "sk-1", fx.bundle))
+
+	require.NotNil(t, atSeed, "files were seeded without a hook")
+	require.NotEmpty(t, atSeed.InstallSessionID)
+	require.NotEmpty(t, atSeed.InstallMessageID)
+}
+
+func TestPackSkillTarRoundTrip(t *testing.T) {
+	bundle := &SkillBundle{Files: map[string][]byte{
+		"SKILL.md":           []byte("name: x"),
+		"scripts/extract.py": []byte("print(1)\n"),
+	}}
+	raw, err := packSkillTar(bundle)
+	require.NoError(t, err)
+
+	got := map[string][]byte{}
+	tr := tar.NewReader(bytes.NewReader(raw))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		content, err := io.ReadAll(tr)
+		require.NoError(t, err)
+		got[hdr.Name] = content
+	}
+	require.Equal(t, bundle.Files, got)
+}
+
+func TestPackSkillTarRejectsEscapingNames(t *testing.T) {
+	_, err := packSkillTar(&SkillBundle{Files: map[string][]byte{
+		"../etc/passwd": []byte("x"),
+	}})
+	require.Error(t, err)
+}
+
+// Maintenance sessions are excluded from the console by their description, and
+// scoped to the admin who started the install by their owner. Both are written
+// at creation time; neither has a backfill.
+func TestStartMaintenanceSessionMarksAndScopesTheSession(t *testing.T) {
+	fx := newInstallFixture(t)
+	ctx := context.WithValue(ctxWithTenant(7), types.UserIDContextKey, "admin-1")
+
+	sess, _, err := fx.svc.startMaintenanceSession(ctx, 7, "cfg-1", "install")
+	require.NoError(t, err)
+	require.Equal(t, types.SkillMaintenanceSessionMarker+"install", sess.Description)
+	require.Equal(t, "admin-1", sess.UserID)
+	require.Equal(t, "Skill install", sess.Title)
+}
+
 const installSkillDir = "/opt/weknora/tenant/skills/pdf-tools"
 
 // The install commands are asserted verbatim: an install runs as root with the
@@ -683,6 +1123,14 @@ func indexOfEvent(events []string, needle string) int {
 	return -1
 }
 
+// staleMark is one request to mark a config's bound sandboxes stale. The
+// tenant is part of it because marking the right config of the wrong workspace
+// would rebuild sandboxes that never carried this image.
+type staleMark struct {
+	tenantID uint64
+	configID string
+}
+
 type installFixture struct {
 	t          *testing.T
 	svc        *TenantSkillService
@@ -709,6 +1157,18 @@ type installFixture struct {
 	execResult        *sandbox.ExecuteResult
 	smokeRanAsRoot    bool
 	agentErr          error
+	// beforeExecute runs at the moment the engine would start, so a test can
+	// observe the state an attaching console would see mid-install.
+	beforeExecute func()
+	// beforeSeed runs on the first image file write, so a test can prove the
+	// transcript locators landed before the minutes-long copy begins.
+	beforeSeed func()
+	// staleMarks records every InvalidateConfigSandboxes call, so a test can
+	// state which config was marked rather than only that something was.
+	staleMarks []staleMark
+	// invalidateErr fails the marking the way an unreachable binding store
+	// would, without failing anything else the run does.
+	invalidateErr error
 	// rmExitCode fails the removal's directory wipe, the one image step a
 	// removal has.
 	rmExitCode int
@@ -744,7 +1204,12 @@ type installFixture struct {
 	engineModel     chat.Chat
 	// saveErr fails bundle storage so InstallSkill cannot accept a skill
 	// whose archive will later be unreadable.
-	saveErr error
+	saveErr      error
+	savedBundles int
+	// storedBundles is what GetFile serves back, keyed by the SaveBytes
+	// reference, so ListSkillFiles / ReadSkillFile can open a stored archive.
+	storedBundles map[string][]byte
+	getFileCalls  atomic.Int32
 }
 
 func newInstallFixture(t *testing.T) *installFixture {
@@ -805,6 +1270,8 @@ func newInstallFixture(t *testing.T) *installFixture {
 		&installSessionService{fx: fx},
 		fx.modelSvc,
 		nil,
+		&transcriptStreams{},
+		&transcriptMessages{},
 	)
 	fx.svc.now = func() time.Time { return time.Date(2026, 8, 19, 9, 30, 0, 0, time.UTC) }
 	return fx
@@ -813,6 +1280,10 @@ func newInstallFixture(t *testing.T) *installFixture {
 func (f *installFixture) record(event string) {
 	f.events = append(f.events, event)
 }
+
+// now is the fixture's clock, so a test can express "one heartbeat ago"
+// against the same instant the service reads.
+func (f *installFixture) now() time.Time { return f.svc.now() }
 
 // seedInstalledSkill puts the fixture in the state a removal starts from: the
 // skill is ready inside the config's current image, the ledger holds the active
@@ -852,6 +1323,33 @@ func (f *installFixture) seedInstalledSkill(skillID, snapshotID string, generati
 	payload, err := json.Marshal(f.manifest)
 	require.NoError(f.t, err)
 	f.sandboxMgr.manifest = payload
+}
+
+// seedReadySkillWithSHA puts the fixture in the state a no-op re-upload starts
+// from: the skill is ready, the digest matches the archive about to be posted,
+// and the ledger says those files are still on the live image.
+func (f *installFixture) seedReadySkillWithSHA(sha256, snapshotID string) {
+	f.t.Helper()
+	ctx := context.Background()
+	skill, err := f.skillRepo.GetSkill(ctx, 7, "cfg-1", "sk-1")
+	require.NoError(f.t, err)
+	require.NotNil(f.t, skill)
+	skill.Status = types.SkillStatusReady
+	skill.BundleSHA256 = sha256
+	skill.InstalledSnapshotID = snapshotID
+	skill.Error = ""
+	skill.InstallingSince = nil
+	require.NoError(f.t, f.skillRepo.UpdateSkill(ctx, skill))
+
+	require.NoError(f.t, f.skillRepo.CreateSnapshotRow(ctx, &types.TenantSkillSnapshotEntity{
+		ID: "row-live", TenantID: 7, SandboxConfigID: "cfg-1", SkillID: "sk-1",
+		SnapshotID: snapshotID, Generation: 1,
+		Trigger: types.SkillSnapshotTriggerInstall, State: types.SkillSnapshotStateActive,
+	}))
+	f.configRepo.entity.Config.SkillImage = &types.SkillImageConfig{
+		SnapshotID: snapshotID, Generation: 1,
+		BaseTemplateID: "base-template", OwnerFingerprint: f.fingerprint,
+	}
 }
 
 type installConfigRepo struct {
@@ -908,6 +1406,16 @@ func (r *installConfigRepo) ListByTenant(context.Context, uint64) ([]*types.Tena
 	return nil, nil
 }
 
+// ListAll returns the one config this fixture holds, so a housekeeping scan
+// sees the same config the install and removal tests act on.
+func (r *installConfigRepo) ListAll(context.Context) ([]*types.TenantSandboxConfigEntity, error) {
+	if r.entity == nil {
+		return nil, nil
+	}
+	cp := *r.entity
+	return []*types.TenantSandboxConfigEntity{&cp}, nil
+}
+
 // Update honours the context because the real gorm repository does: the
 // pointer switch is the one write a lost lock must not be able to complete.
 func (r *installConfigRepo) Update(ctx context.Context, e *types.TenantSandboxConfigEntity) error {
@@ -945,11 +1453,20 @@ type installSkillRepo struct {
 	// snapshot failing for one state, leaving the snapshot ID nowhere but a
 	// local variable.
 	markStateFails func(state string) bool
+	// listSnapshotsErr models an unreadable ledger, which is what stands
+	// between "the image still carries this skill" and a guess.
+	listSnapshotsErr error
 	// deleteSkillErr models the row delete failing past the point of no
 	// return.
 	deleteSkillErr      error
+	createErr           error
+	getByNameMisses     int
 	readyWriteAttempts  int
 	deleteSkillAttempts int
+	// listCalls counts attempts, not successes: a caller that gave up before
+	// listing and one whose listing failed are different bugs, and the skill
+	// derivation tests turn on telling them apart.
+	listCalls int
 }
 
 func newInstallSkillRepo() *installSkillRepo {
@@ -966,6 +1483,9 @@ func skillKey(tenantID uint64, configID, skillID string) string {
 func (r *installSkillRepo) CreateSkill(_ context.Context, e *types.TenantSkillEntity) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.createErr != nil {
+		return r.createErr
+	}
 	cp := *e
 	r.skills[skillKey(e.TenantID, e.SandboxConfigID, e.ID)] = &cp
 	return nil
@@ -994,6 +1514,10 @@ func (r *installSkillRepo) GetSkillByName(
 ) (*types.TenantSkillEntity, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.getByNameMisses > 0 {
+		r.getByNameMisses--
+		return nil, nil
+	}
 	for _, e := range r.skills {
 		if e.TenantID == tenantID && e.SandboxConfigID == configID && e.Name == name {
 			cp := *e
@@ -1006,6 +1530,11 @@ func (r *installSkillRepo) GetSkillByName(
 func (r *installSkillRepo) ListSkillsByConfig(
 	ctx context.Context, tenantID uint64, configID string,
 ) ([]*types.TenantSkillEntity, error) {
+	// Counted before the context check so a cancelled listing still registers
+	// as an attempt.
+	r.mu.Lock()
+	r.listCalls++
+	r.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -1096,6 +1625,9 @@ func (r *installSkillRepo) ListSnapshotsByConfig(
 ) ([]*types.TenantSkillSnapshotEntity, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.listSnapshotsErr != nil {
+		return nil, r.listSnapshotsErr
+	}
 	var out []*types.TenantSkillSnapshotEntity
 	for _, e := range r.snapshots {
 		if e.TenantID == tenantID && e.SandboxConfigID == configID {
@@ -1189,9 +1721,57 @@ func (m *installSandboxManager) WriteSessionFile(
 		return nil
 	}
 	if !containsEvent(m.fx.events, "seed-files") {
+		if m.fx.beforeSeed != nil {
+			m.fx.beforeSeed()
+		}
 		m.fx.record("seed-files")
 	}
 	return nil
+}
+
+func (m *installSandboxManager) extractSeedArchive(command string) {
+	archive, ok := m.writeContents[skillSeedArchivePath]
+	if !ok {
+		return
+	}
+	skillDir := installSkillDir
+	if _, after, found := strings.Cut(command, " -C "); found {
+		dir, _, _ := strings.Cut(strings.TrimSpace(after), " ")
+		if dir != "" {
+			skillDir = dir
+		}
+	}
+	tr := tar.NewReader(bytes.NewReader(archive))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return
+		}
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != 0 {
+			continue
+		}
+		content, err := io.ReadAll(tr)
+		if err != nil {
+			return
+		}
+		dest := path.Join(skillDir, hdr.Name)
+		m.writes = append(m.writes, dest)
+		if m.writeContents == nil {
+			m.writeContents = map[string][]byte{}
+		}
+		m.writeContents[dest] = content
+	}
+	delete(m.writeContents, skillSeedArchivePath)
+	kept := m.writes[:0]
+	for _, w := range m.writes {
+		if w != skillSeedArchivePath {
+			kept = append(kept, w)
+		}
+	}
+	m.writes = kept
 }
 
 func (m *installSandboxManager) RemoveSessionInputPath(context.Context, string, string) error {
@@ -1224,6 +1804,8 @@ func (m *installSandboxManager) ExecShellCommandWithOptions(
 	switch {
 	case command == installPrepareCommand:
 		m.fx.record("prepare-skill-dir")
+	case strings.HasPrefix(command, "tar -xf "):
+		m.extractSeedArchive(command)
 	case strings.HasPrefix(command, "test -f "):
 		if !m.structureSeen {
 			m.fx.record("verify-structure")
@@ -1254,7 +1836,7 @@ func (m *installSandboxManager) ExecShellCommandWithOptions(
 		}, nil
 	case command == "rm -rf /workspace/* /workspace/.[!.]* || true":
 		m.fx.record("cleanup-workspace")
-	case strings.HasPrefix(command, "chmod -R 755 "):
+	case strings.HasPrefix(command, "chmod -R 555 "):
 		m.fx.record("chmod")
 	}
 	if m.fx.execResult != nil && command == m.fx.execResultCommand {
@@ -1284,6 +1866,23 @@ func (m *installSandboxManager) DeleteSnapshot(ctx context.Context, snapshotID s
 
 func (m *installSandboxManager) ListSnapshots(context.Context, string) ([]sandbox.RemoteSnapshotRef, error) {
 	return nil, nil
+}
+
+// InvalidateConfigSandboxes refuses a cancelled context exactly as the
+// Redis-backed binding store would, so a caller that forgot to detach the
+// install's context fails here rather than silently marking nothing.
+func (m *installSandboxManager) InvalidateConfigSandboxes(
+	ctx context.Context, tenantID uint64, configID string,
+) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if m.fx.invalidateErr != nil {
+		return 0, m.fx.invalidateErr
+	}
+	m.fx.staleMarks = append(m.fx.staleMarks, staleMark{tenantID: tenantID, configID: configID})
+	m.fx.record("mark-stale")
+	return 1, nil
 }
 
 // DestroySession refuses a cancelled context because the provider call does:
@@ -1412,6 +2011,9 @@ func (e *installAgentEngine) Execute(
 	[]chat.Message,
 	...[]string,
 ) (*types.AgentState, error) {
+	if e.fx.beforeExecute != nil {
+		e.fx.beforeExecute()
+	}
 	e.fx.record("agent-execute")
 	if e.fx.agentDelay > 0 {
 		time.Sleep(e.fx.agentDelay)
@@ -1611,14 +2213,31 @@ func (installFileService) SaveFile(context.Context, *multipart.FileHeader, uint6
 	return "", nil
 }
 
-func (s installFileService) SaveBytes(context.Context, []byte, uint64, string, bool) (string, error) {
-	if s.fx != nil && s.fx.saveErr != nil {
-		return "", s.fx.saveErr
+func (s installFileService) SaveBytes(_ context.Context, data []byte, _ uint64, _ string, _ bool) (string, error) {
+	if s.fx != nil {
+		s.fx.savedBundles++
+		if s.fx.saveErr != nil {
+			return "", s.fx.saveErr
+		}
+		if s.fx.storedBundles == nil {
+			s.fx.storedBundles = map[string][]byte{}
+		}
+		copied := make([]byte, len(data))
+		copy(copied, data)
+		s.fx.storedBundles["file://bundle.zip"] = copied
 	}
 	return "file://bundle.zip", nil
 }
-func (installFileService) GetFile(context.Context, string) (io.ReadCloser, error) { return nil, nil }
-func (installFileService) GetFileURL(context.Context, string) (string, error)     { return "", nil }
+func (s installFileService) GetFile(_ context.Context, ref string) (io.ReadCloser, error) {
+	if s.fx != nil {
+		s.fx.getFileCalls.Add(1)
+		if data, ok := s.fx.storedBundles[ref]; ok {
+			return io.NopCloser(bytes.NewReader(data)), nil
+		}
+	}
+	return nil, errors.New("bundle not found")
+}
+func (installFileService) GetFileURL(context.Context, string) (string, error) { return "", nil }
 func (s installFileService) DeleteFile(_ context.Context, ref string) error {
 	if s.fx != nil {
 		s.fx.deletedBundles = append(s.fx.deletedBundles, ref)

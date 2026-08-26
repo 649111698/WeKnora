@@ -4,7 +4,7 @@
     :visible="visible"
     :title="record ? $t('settings.sandbox.editTitle') : $t('settings.sandbox.createTitle')"
     :description="stepDescription"
-    icon="server"
+    icon="code"
     width="680px"
     :min-width="560"
     :max-width="920"
@@ -20,19 +20,41 @@
       <t-button v-if="wizardStep > 0" variant="outline" @click="previousStep">
         {{ $t('settings.sandbox.back') }}
       </t-button>
+      <t-popconfirm
+        v-if="canDeepCheck"
+        :content="$t('settings.sandbox.deepCheckConfirm')"
+        @confirm="runCheck(true)"
+      >
+        <t-button variant="outline" :loading="checking">
+          {{ lastCheckWasDeep ? $t('settings.sandbox.recheck') : $t('settings.sandbox.deepCheck') }}
+        </t-button>
+      </t-popconfirm>
     </template>
 
-    <nav class="sandbox-steps" :aria-label="$t('settings.sandbox.setupProgress')">
-      <div v-for="(item, index) in wizardSteps" :key="item.key"
-        :class="['sandbox-step', { 'is-active': wizardStep === index, 'is-done': wizardStep > index }]">
-        <span class="sandbox-step__marker">
-          <t-icon v-if="wizardStep > index" name="check" />
-          <template v-else>{{ index + 1 }}</template>
-        </span>
-        <span class="sandbox-step__title">{{ item.title }}</span>
-        <span v-if="index < wizardSteps.length - 1" class="sandbox-step__line" aria-hidden="true" />
-      </div>
-    </nav>
+    <template #header-extra>
+      <nav class="sandbox-steps" :aria-label="$t('settings.sandbox.setupProgress')">
+        <component
+          :is="canJumpTo(index) ? 'button' : 'div'"
+          v-for="(item, index) in wizardSteps"
+          :key="item.key"
+          :type="canJumpTo(index) ? 'button' : undefined"
+          :class="['sandbox-step', {
+            'is-active': wizardStep === index,
+            'is-done': wizardStep > index,
+            'is-clickable': canJumpTo(index),
+          }]"
+          :aria-current="wizardStep === index ? 'step' : undefined"
+          @click="goToStep(index)"
+        >
+          <span class="sandbox-step__marker">
+            <t-icon v-if="wizardStep > index" name="check" />
+            <template v-else>{{ index + 1 }}</template>
+          </span>
+          <span class="sandbox-step__title">{{ item.title }}</span>
+          <span v-if="index < wizardSteps.length - 1" class="sandbox-step__line" aria-hidden="true" />
+        </component>
+      </nav>
+    </template>
 
     <!--
       Identity-change refusals must sit at the top: the form is long and the
@@ -358,18 +380,27 @@
       </section>
     </t-form>
 
-    <div v-if="checkResult && currentStepKey !== 'template'" ref="checkResultRef" class="check-result">
-      <div :class="['check-result__summary', checkResult.ok ? 'is-success' : 'is-error']">
-        <span class="check-result__summary-icon">
-          <t-icon :name="checkResult.ok ? 'check-circle-filled' : 'close-circle-filled'" />
-        </span>
-        <div>
-          <p class="check-result__title">
-            {{ checkResult.ok ? $t('settings.sandbox.checkPassed') : $t('settings.sandbox.checkFailed') }}
-          </p>
-          <p class="check-result__subtitle">{{ checkScopeHint }}</p>
-        </div>
-      </div>
+    <!--
+      Skills need an image to be installed into, so this step is only reachable
+      once the config exists. During creation the wizard walks into it right
+      after the first successful save; the hint covers the one case left, a
+      config whose save was refused.
+    -->
+    <template v-if="currentStepKey === 'skills'">
+      <SandboxSkillsPanel v-if="effectiveRecord" :record="effectiveRecord" @updated="onSkillsConfigUpdated" />
+      <p v-else class="skills-locked">{{ $t('settings.sandbox.stepSkillsLocked') }}</p>
+    </template>
+
+    <div
+      v-if="checkResult && showCheckResult"
+      ref="checkResultRef"
+      class="check-result"
+    >
+      <p :class="['check-result__title', checkResult.ok ? 'is-success' : 'is-error']">
+        <t-icon :name="checkResult.ok ? 'check-circle-filled' : 'close-circle-filled'" />
+        {{ checkResult.ok ? $t('settings.sandbox.checkPassed') : $t('settings.sandbox.checkFailed') }}
+      </p>
+      <p class="check-result__subtitle">{{ checkScopeHint }}</p>
       <ul class="check-list">
         <li v-for="item in reportedChecks" :key="item.name" class="check-item">
           <t-icon :name="item.ok === true ? 'check-circle-filled'
@@ -380,40 +411,12 @@
           <span v-if="checkDetail(item)" class="check-message">{{ checkDetail(item) }}</span>
         </li>
       </ul>
-      <!--
-        Probes that need a live sandbox used to be listed as three grey "not
-        checked" rows, which made a passing connection test read as half broken
-        and never said how to run them. They are one sentence plus the action
-        that performs them instead. The action stays put even once nothing is
-        pending, because a failed run is precisely when it has to be repeatable.
-      -->
-      <div class="check-pending">
-        <p v-if="pendingCheckNames.length" class="check-pending__text">
-          {{ $t('settings.sandbox.checkPendingHint', { names: pendingCheckNames.join('、') }) }}
-        </p>
-        <t-popconfirm :content="$t('settings.sandbox.deepCheckConfirm')" @confirm="runCheck(true)">
-          <t-button variant="outline" size="small" :loading="checking">
-            {{ lastCheckWasDeep ? $t('settings.sandbox.recheck') : $t('settings.sandbox.deepCheck') }}
-          </t-button>
-        </t-popconfirm>
-      </div>
+      <p v-if="pendingCheckNames.length" class="check-result__hint">
+        {{ $t('settings.sandbox.checkPendingHint', { names: pendingCheckNames.join('、') }) }}
+      </p>
       <t-alert v-if="checkResult.capabilities && checkResult.capabilities.supports_volumes === false" theme="warning"
         class="compact-alert"
         :message="$t('settings.sandbox.noVolumeSupport')" />
-    </div>
-
-    <!--
-      Without a result on screen there is nothing for the pending row above to
-      hang off, so the same offer stands alone. Editing a field discards the
-      previous result, which is exactly when this reappears.
-    -->
-    <div v-else-if="currentStepKey === 'runtime'" class="check-pending check-pending--standalone">
-      <p class="check-pending__text">{{ $t('settings.sandbox.deepCheckIntro') }}</p>
-      <t-popconfirm :content="$t('settings.sandbox.deepCheckConfirm')" @confirm="runCheck(true)">
-        <t-button variant="outline" size="small" :loading="checking">
-          {{ $t('settings.sandbox.deepCheck') }}
-        </t-button>
-      </t-popconfirm>
     </div>
 
   </SettingDrawer>
@@ -425,6 +428,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import SettingDrawer from '@/components/settings/SettingDrawer.vue'
 import SandboxBackendBadge from '@/components/settings/SandboxBackendBadge.vue'
+import SandboxSkillsPanel from '@/components/SandboxSkillsPanel.vue'
 import {
   checkSandboxConfig,
   createSandboxConfig,
@@ -444,10 +448,15 @@ import {
   NAMED_SANDBOX_BACKEND_TYPES,
 } from '@/api/system'
 
+type SandboxStepKey = 'connection' | 'template' | 'runtime' | 'skills'
+
 const props = defineProps<{
   visible: boolean
   record: SandboxConfigRecord | null
   presetType?: string
+  // Which page to land on when opening an existing config, e.g. 'skills' from
+  // the card's 管理技能 entry. Ignored while creating, where order is enforced.
+  initialStep?: SandboxStepKey
 }>()
 
 const emit = defineEmits<{
@@ -506,7 +515,6 @@ const currentTemplateId = computed(() => (
   backend.value === 'cube' ? cube.template_id : backend.value === 'e2b' ? e2b.template_id : ''
 )?.trim() || '')
 const selectedTemplate = computed(() => templates.value.find((item) => item.id === currentTemplateId.value))
-type SandboxStepKey = 'connection' | 'template' | 'runtime'
 const wizardSteps = computed<Array<{ key: SandboxStepKey; title: string }>>(() => {
   const steps: Array<{ key: SandboxStepKey; title: string }> = [
     { key: 'connection', title: t('settings.sandbox.stepConnection') },
@@ -515,6 +523,12 @@ const wizardSteps = computed<Array<{ key: SandboxStepKey; title: string }>>(() =
     steps.push({ key: 'template', title: t('settings.sandbox.stepTemplate') })
   }
   steps.push({ key: 'runtime', title: t('settings.sandbox.stepRuntime') })
+  // Skills are baked into the config's snapshot image, which only the remote
+  // backends have. Docker and local configs therefore end at runtime rather
+  // than showing a step that could never do anything.
+  if (isRemoteBackend.value) {
+    steps.push({ key: 'skills', title: t('settings.sandbox.stepSkills') })
+  }
   return steps
 })
 const currentStepKey = computed<SandboxStepKey>(() => wizardSteps.value[wizardStep.value]?.key || 'connection')
@@ -522,12 +536,64 @@ const stepDescription = computed(() => t(`settings.sandbox.stepDescriptions.${cu
 const primaryText = computed(() => {
   if (currentStepKey.value === 'connection') return t('settings.sandbox.connectAndContinue')
   if (currentStepKey.value === 'template') return t('common.next')
+  // Nothing on the skills step is pending a save — each install, toggle and
+  // removal already went to the server on its own.
+  if (currentStepKey.value === 'skills') return t('common.finish')
+  // Runtime is the last page of settings. If skills follow, keep the wizard
+  // going after the save; otherwise this press closes the drawer.
+  if (wizardSteps.value.some((step) => step.key === 'skills')) {
+    return t('settings.sandbox.saveAndContinue')
+  }
   return t('common.save')
 })
+// Deep check needs the fields that actually get probed. Docker/local collect
+// the image on the connection step; Cube/E2B still have an empty template_id
+// there, so the action waits until the template step.
+const canDeepCheck = computed(() => {
+  if (currentStepKey.value === 'template') return true
+  return currentStepKey.value === 'connection' && !isRemoteBackend.value
+})
+const showCheckResult = computed(() => canDeepCheck.value)
 const primaryDisabled = computed(() => (
   currentStepKey.value === 'template'
   && (!selectedTemplate.value || !isTemplateSelectable(selectedTemplate.value))
 ))
+
+// savedRecord is the config this drawer is editing, including one it just
+// created: after the first save the wizard keeps going into the skills step,
+// which needs an ID, and a second press of save must update that config rather
+// than create another one.
+const savedRecord = ref<SandboxConfigRecord | null>(null)
+const effectiveRecord = computed(() => savedRecord.value || props.record)
+
+function onSkillsConfigUpdated(record: SandboxConfigRecord) {
+  savedRecord.value = record
+}
+
+// Jumping is what separates editing from creating. A config that does not exist
+// yet has to be built in order — its connection has to check out before there
+// are templates to choose from, and it has no image to install skills into. Once
+// it exists, every step is just a page of its settings, so all of them open
+// directly; steps already visited stay clickable during creation so the rail
+// works as a way back.
+function canJumpTo(index: number): boolean {
+  if (index === wizardStep.value) return false
+  return Boolean(effectiveRecord.value) || index < wizardStep.value
+}
+
+function goToStep(index: number) {
+  if (!canJumpTo(index)) return
+  wizardStep.value = index
+  if (currentStepKey.value !== 'template') {
+    stopTemplatePolling()
+    return
+  }
+  // Landing on the template step without having passed through the connection
+  // step still has to ask the cluster what it offers; a step already loaded
+  // just resumes its poll, as walking back through it always has.
+  if (templatesLoaded.value) scheduleTemplatePolling()
+  else void loadTemplates(true)
+}
 const hasPendingTemplates = computed(() => templates.value.some(isTemplatePending))
 
 const backendLabel = (value: string) => t(`settings.sandbox.backends.${value}`)
@@ -654,7 +720,14 @@ function reset() {
   templates.value = []
   templatesLoaded.value = false
   templatesError.value = ''
+  savedRecord.value = null
   wizardStep.value = 0
+  // "管理技能" opens this drawer straight on the skills step. It is a jump like
+  // any other, so it only holds for a config that already exists.
+  if (props.initialStep && props.record) {
+    const index = wizardSteps.value.findIndex((step) => step.key === props.initialStep)
+    if (index >= 0) wizardStep.value = index
+  }
 }
 
 function selectBackend(value: string) {
@@ -774,7 +847,7 @@ async function loadTemplates(ensureStandard: boolean, silent = false): Promise<b
   try {
     const res = await querySandboxTemplates({
       config: collectPayload(),
-      config_id: props.record?.id,
+      config_id: effectiveRecord.value?.id,
       ensure_standard: ensureStandard,
     })
     templates.value = res.data?.templates || []
@@ -817,6 +890,7 @@ function collectPayload(): SandboxConfig {
     default_timeout_sec: defaultTimeoutSec.value || undefined,
     allow_private_endpoints: allowPrivateEndpoints.value || undefined,
     env_vars: envVars,
+    skill_rollout: effectiveRecord.value?.config?.skill_rollout,
   }
   // Send only the selected backend's block so an unused one cannot fail
   // validation (e.g. a stale private URL left in the other tab).
@@ -845,6 +919,7 @@ async function handlePrimaryAction() {
     if (!validateName() || !validateRequiredFields(false)) return
     if (!(await runCheck(false))) return
     if (isRemoteBackend.value) {
+      invalidateCheck()
       wizardStep.value += 1
       await loadTemplates(true)
       return
@@ -854,6 +929,7 @@ async function handlePrimaryAction() {
     if (backend.value === 'docker') {
       void loadTemplates(true)
     }
+    invalidateCheck()
     wizardStep.value += 1
     return
   }
@@ -864,6 +940,10 @@ async function handlePrimaryAction() {
     }
     stopTemplatePolling()
     wizardStep.value += 1
+    return
+  }
+  if (currentStepKey.value === 'skills') {
+    close()
     return
   }
   await save()
@@ -888,13 +968,21 @@ async function save() {
   conflict.value = null
   try {
     const payload = { name: trimmed, description: description.value, config: collectPayload() }
-    if (props.record) {
-      await updateSandboxConfigById(props.record.id, payload)
-    } else {
-      await createSandboxConfig(payload)
-    }
+    const existing = effectiveRecord.value
+    const res = existing
+      ? await updateSandboxConfigById(existing.id, payload)
+      : await createSandboxConfig(payload)
     MessagePlugin.success(t('common.saveSuccess'))
+    // The list behind the drawer refreshes either way, so closing here is only
+    // about whether the wizard has anything left to offer.
     emit('saved')
+    const saved = res?.data
+    if (saved) savedRecord.value = saved
+    const skillsStep = wizardSteps.value.findIndex((step) => step.key === 'skills')
+    if (skillsStep >= 0 && savedRecord.value) {
+      wizardStep.value = skillsStep
+      return
+    }
     close()
   } catch (e: any) {
     const refusal = parseSandboxConflict(e)
@@ -923,7 +1011,7 @@ async function runCheck(deep: boolean): Promise<boolean> {
     // so an edited form can be probed without retyping the API key.
     const res = await checkSandboxConfig({
       config: collectPayload(),
-      config_id: props.record?.id,
+      config_id: effectiveRecord.value?.id,
       deep,
     })
     checkResult.value = res?.data || null
@@ -975,7 +1063,7 @@ onUnmounted(stopTemplatePolling)
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 18px;
+  margin: 0;
 }
 
 .sandbox-step {
@@ -997,6 +1085,30 @@ onUnmounted(stopTemplatePolling)
 
   &.is-done {
     color: var(--td-text-color-secondary);
+  }
+
+  /*
+    Reachable steps render as <button>, so the browser's own control styling has
+    to be undone to keep the rail looking identical either way. Only the cursor
+    and hover state give the affordance away.
+  */
+  &.is-clickable {
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    cursor: pointer;
+
+    &:hover:not(.is-active) {
+      color: var(--td-brand-color);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--td-brand-color);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
   }
 }
 
@@ -1044,6 +1156,13 @@ onUnmounted(stopTemplatePolling)
   .is-done & {
     background: color-mix(in srgb, var(--td-brand-color) 35%, transparent);
   }
+}
+
+.skills-locked {
+  margin: 24px 0;
+  color: var(--td-text-color-placeholder);
+  font-size: 13px;
+  text-align: center;
 }
 
 .sandbox-editor-form {
@@ -1479,55 +1598,39 @@ onUnmounted(stopTemplatePolling)
 }
 
 .check-result {
-  margin-top: 12px;
+  margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--td-component-stroke);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.check-result__summary {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--td-component-stroke);
-  border-radius: 8px;
-  background: var(--td-bg-color-secondarycontainer);
-
-  &.is-success .check-result__summary-icon {
-    color: var(--td-brand-color);
-  }
-
-  &.is-error .check-result__summary-icon {
-    color: var(--td-error-color);
-  }
-}
-
-.check-result__summary-icon {
-  flex-shrink: 0;
-  padding-top: 1px;
-  font-size: 17px;
-}
-
-.check-result__title,
-.check-result__subtitle {
-  margin: 0;
+  gap: 8px;
 }
 
 .check-result__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
   color: var(--td-text-color-primary);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.45;
+
+  &.is-success {
+    color: var(--td-success-color);
+  }
+
+  &.is-error {
+    color: var(--td-error-color);
+  }
 }
 
-.check-result__subtitle {
-  margin-top: 2px;
+.check-result__subtitle,
+.check-result__hint {
+  margin: 0;
   color: var(--td-text-color-secondary);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .check-list {
@@ -1567,29 +1670,6 @@ onUnmounted(stopTemplatePolling)
 .check-latency,
 .check-message {
   color: var(--td-text-color-secondary);
-}
-
-.check-pending {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px dashed var(--td-component-stroke);
-  border-radius: 8px;
-}
-
-.check-pending--standalone {
-  margin-top: 16px;
-}
-
-.check-pending__text {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  color: var(--td-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.55;
 }
 
 .footer-check-ok {

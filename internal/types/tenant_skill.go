@@ -16,7 +16,8 @@ const (
 )
 
 // Snapshot ledger states. deleted is written only after a real provider-side
-// delete, which today happens only when the whole sandbox config is removed.
+// delete: either the whole sandbox config is removed, or the reaper has
+// pruned a retired snapshot past its retention window.
 const (
 	SkillSnapshotStateBuilding   = "building"
 	SkillSnapshotStateActive     = "active"
@@ -29,6 +30,14 @@ const (
 	SkillSnapshotTriggerRemove  = "remove"
 	SkillSnapshotTriggerRebuild = "rebuild"
 )
+
+// SkillMaintenanceSessionMarker tags the sessions that skill image operations
+// run in. Those sessions carry a real agent transcript that is deliberately
+// kept for troubleshooting, but they are infrastructure rather than
+// conversations, so the console must never list them. This mirrors how embed
+// sessions are classified (EmbedSessionMarkerPrefix): a description prefix,
+// so no schema change is needed.
+const SkillMaintenanceSessionMarker = "skill_maintenance:"
 
 // TenantSkillEntity is one skill installed onto one sandbox config.
 //
@@ -62,6 +71,13 @@ type TenantSkillEntity struct {
 	// InstalledSnapshotID is the snapshot produced by this skill's install,
 	// kept for audit and chain troubleshooting.
 	InstalledSnapshotID string `gorm:"type:varchar(255)"`
+
+	// InstallSessionID / InstallMessageID locate the installer agent's
+	// transcript for the most recent install of this skill. A re-install
+	// overwrites them: the previous run's conversation is superseded by the
+	// one that produced the image now in service.
+	InstallSessionID string `gorm:"type:varchar(36)"`
+	InstallMessageID string `gorm:"type:varchar(36)"`
 
 	Status string `gorm:"type:varchar(32);not null"`
 	Error  string `gorm:"type:text"`
