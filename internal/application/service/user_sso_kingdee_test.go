@@ -164,42 +164,69 @@ func TestGetKingdeeIdentityBothPathsMissing(t *testing.T) {
 	}
 }
 
-// token 模式：先 POST oauth2/token 换 access_token，getUserInfo 请求需
-// 同时携带 access_token（query 参数 + Authorization 头）。
+// token 模式：先 POST /kapi/oauth2/getToken（官方 JSON 契约，含 nonce/
+// timestamp/language）换 access_token，getUserInfo 通过字面量名为
+// access_token 的请求头携带。
 func TestGetKingdeeIdentityTokenMode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/kapi/oauth2/token":
+		case "/kapi/oauth2/getToken":
 			if r.Method != http.MethodPost {
 				t.Errorf("token endpoint method = %s, want POST", r.Method)
 			}
-			if err := r.ParseForm(); err != nil {
-				t.Errorf("parse form: %v", err)
+			if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+				t.Errorf("token endpoint Content-Type = %q, want application/json", ct)
 			}
-			if r.PostForm.Get("client_secret") != "s3cret" {
+			var body struct {
+				ClientID     string `json:"client_id"`
+				ClientSecret string `json:"client_secret"`
+				Username     string `json:"username"`
+				AccountID    string `json:"accountId"`
+				Nonce        string `json:"nonce"`
+				Timestamp    string `json:"timestamp"`
+				Language     string `json:"language"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode token body: %v", err)
+				return
+			}
+			if body.ClientSecret != "s3cret" {
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{
 					"description": "secret invalid", "errorcode": "login.loginBizException",
 				})
 				return
 			}
 			for _, kv := range [][2]string{
-				{"client_id", "sys01"},
-				{"username", "proxyuser"}, {"accountId", "1001"},
+				{"client_id", "sys01"}, {"username", "proxyuser"},
+				{"accountId", "1001"}, {"language", "zh_CN"},
 			} {
-				if got := r.PostForm.Get(kv[0]); got != kv[1] {
-					t.Errorf("token form %s = %q, want %q", kv[0], got, kv[1])
+				// 结构体字段名与 JSON tag 对应
+				var got string
+				switch kv[0] {
+				case "client_id":
+					got = body.ClientID
+				case "username":
+					got = body.Username
+				case "accountId":
+					got = body.AccountID
+				case "language":
+					got = body.Language
+				}
+				if got != kv[1] {
+					t.Errorf("token body %s = %q, want %q", kv[0], got, kv[1])
 				}
 			}
+			if body.Nonce == "" || body.Timestamp == "" {
+				t.Errorf("nonce/timestamp must be non-empty, got %+v", body)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"data": map[string]interface{}{"access_token": "tok123", "expires_in": 7200},
+				// expires_in 用毫秒形态验证换算
+				"data":      map[string]interface{}{"access_token": "tok123", "expires_in": 7199992},
 				"errorCode": "0", "status": true,
 			})
 		case "/kapi/v2/secm/authen/getUserInfo":
-			if got := r.URL.Query().Get("access_token"); got != "tok123" {
-				t.Errorf("getUserInfo access_token param = %q, want tok123", got)
-			}
-			if got := r.Header.Get("Authorization"); got != "Bearer tok123" {
-				t.Errorf("getUserInfo Authorization = %q, want Bearer tok123", got)
+			if got := r.Header.Get("access_token"); got != "tok123" {
+				t.Errorf("getUserInfo access_token header = %q, want tok123", got)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"data":      map[string]string{"name": "王五", "userName": "wangwu"},

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
@@ -363,29 +366,51 @@ type kingdeeTokenResponse struct {
 	DescriptionCn string `json:"description_cn"`
 }
 
-// getKingdeeAccessToken 用 client_id/client_secret/username/accountId 调
-// 苍穹 OAuth2 令牌端点换 access_token，按凭证组合缓存到过期。
+// kingdeeTokenRequest 苍穹「获取 Token 示例」的官方契约：JSON body，
+// 除应用凭证四件套外还需 nonce（随机串）与 timestamp（yyyy-MM-dd
+// HH:mm:ss）参与校验。
+type kingdeeTokenRequest struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	Username     string `json:"username"`
+	AccountID    string `json:"accountId"`
+	Nonce        string `json:"nonce"`
+	Timestamp    string `json:"timestamp"`
+	Language     string `json:"language"`
+}
+
+// getKingdeeAccessToken 调苍穹 OAuth2 令牌端点换 access_token，按凭证组合
+// 缓存到过期。端点与报文以苍穹「获取 Token 示例」为准（/kapi/oauth2/
+// getToken，JSON body），另保留 /ierp 前缀形态兼容标准网关。
 func (s *userService) getKingdeeAccessToken(ctx context.Context, cfg *types.KingdeeTenantSSO) (string, error) {
 	cacheKey := "kingdee:sso:" + cfg.BaseURL + "|" + cfg.AppClientID + "|" + cfg.ProxyUsername + "|" + cfg.AccountID + "|" + cfg.AppSecret
 	if token, ok := ssoCachedToken(cacheKey); ok {
 		return token, nil
 	}
 
-	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
-	form := url.Values{}
-	form.Set("client_id", cfg.AppClientID)
-	form.Set("client_secret", cfg.AppSecret)
-	form.Set("username", cfg.ProxyUsername)
-	form.Set("accountId", cfg.AccountID)
+	body, err := json.Marshal(kingdeeTokenRequest{
+		ClientID:     cfg.AppClientID,
+		ClientSecret: cfg.AppSecret,
+		Username:     cfg.ProxyUsername,
+		AccountID:    cfg.AccountID,
+		Nonce:        uuid.NewString(),
+		// 苍穹按其服务端时钟校验 timestamp 偏差，按东八区生成
+		Timestamp: time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02 15:04:05"),
+		Language:  "zh_CN",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to encode Kingdee token request: %w", err)
+	}
 
-	paths := []string{"/kapi/oauth2/token", "/ierp/kapi/oauth2/token"}
+	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	paths := []string{"/kapi/oauth2/getToken", "/ierp/kapi/oauth2/getToken"}
 	var data kingdeeTokenResponse
 	for i, path := range paths {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, strings.NewReader(form.Encode()))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, bytes.NewReader(body))
 		if err != nil {
 			return "", fmt.Errorf("failed to build Kingdee token request: %w", err)
 		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
 		status, err := ssoDoJSONStatus(ctx, req, &data)
 		if err == nil {
@@ -418,6 +443,10 @@ func (s *userService) getKingdeeAccessToken(ctx context.Context, cfg *types.King
 	if expiresIn <= 0 {
 		expiresIn = data.ExpiresIn
 	}
+	// 苍穹返回的 expires_in 可能是毫秒（如 7199992 ≈ 2h）
+	if expiresIn > 100000 {
+		expiresIn /= 1000
+	}
 	if expiresIn <= 0 {
 		expiresIn = 3600
 	}
@@ -446,20 +475,15 @@ func (s *userService) getKingdeeIdentity(ctx context.Context, cfg *types.Kingdee
 	}
 	var data kingdeeUserInfoResponse
 	for i, path := range paths {
-		q := url.Values{}
-		q.Set("code", code)
-		if accessToken != "" {
-			// 苍穹 kapi 常见传法是 query 参数；Authorization 头一并发送，
-			// 网关取其认识的那个。
-			q.Set("access_token", accessToken)
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path+"?"+q.Encode(), nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path+"?code="+url.QueryEscape(code), nil)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to build Kingdee userinfo request: %w", err)
 		}
 		req.Header.Set("Accept", "application/json")
 		if accessToken != "" {
-			req.Header.Set("Authorization", "Bearer "+accessToken)
+			// 实测苍穹网关识别字面量名为 access_token 的请求头（Authorization
+			// Bearer 与 query 参数均不被接受，统一 401 未经授权）。
+			req.Header.Set("access_token", accessToken)
 		}
 		status, err := ssoDoJSONStatus(ctx, req, &data)
 		if err == nil {
