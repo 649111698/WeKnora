@@ -887,6 +887,9 @@ export default {
     yesterday: '昨天',
     daysAgo: '{days} 天前'
   },
+  echarts: {
+    diagram: '图表',
+  },
   mermaid: {
     diagram: '图表',
     expand: '全屏查看',

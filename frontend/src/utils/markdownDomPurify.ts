@@ -79,7 +79,7 @@ export const markdownDomPurifyConfig = {
   ALLOWED_ATTR: [
     'href', 'title', 'target', 'rel', 'data-tooltip', 'data-url', 'data-kb-id',
     'data-chunk-id', 'data-doc', 'data-slug', 'class', 'role', 'tabindex', 'src', 'alt', 'data-protected-src', 'data-img-loading',
-    'width', 'height', 'style', 'id', 'type', 'aria-label', 'data-mermaid', 'disabled',
+    'width', 'height', 'style', 'id', 'type', 'aria-label', 'data-mermaid', 'data-echarts', 'disabled',
     'd', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
     'stroke-dasharray', 'stroke-dashoffset', 'stroke-miterlimit', 'stroke-opacity',
     'fill-opacity', 'opacity', 'transform', 'viewbox', 'preserveaspectratio',

@@ -498,7 +498,7 @@ watch(isStreaming, (streaming) => {
 });
 
 let customMermaidTimer: ReturnType<typeof setTimeout> | null = null;
-const COMPLETE_MERMAID_RE = /```mermaid[\s\S]*?```/;
+const COMPLETE_MERMAID_RE = /```(?:mermaid|echarts)[\s\S]*?```/;
 
 watch(customInput, () => {
   if (!COMPLETE_MERMAID_RE.test(customInput.value)) return;

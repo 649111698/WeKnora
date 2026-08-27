@@ -325,6 +325,54 @@
     border-radius: 0;
   }
 
+  // ECharts 图表块：与 mermaid 块同观感，画布需要固定高度供 canvas 初始化
+  :deep(.chat-echarts-block) {
+    margin: 0.75em 0;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--td-bg-color-container);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--td-text-color-primary) 5%, transparent);
+  }
+
+  :deep(.chat-echarts-block__header) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 6px 10px 6px 12px;
+    background: var(--td-bg-color-secondarycontainer);
+    border-bottom: 1px solid var(--td-component-stroke);
+  }
+
+  :deep(.chat-echarts-block__badge) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--td-text-color-secondary);
+  }
+
+  :deep(.chat-echarts-block__canvas) {
+    height: 340px;
+    padding: 12px 8px;
+    overflow: hidden;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+
+    &--error {
+      height: auto;
+      max-height: 220px;
+      overflow: auto;
+      color: var(--td-text-color-secondary);
+      font-family: var(--td-font-family-mono, monospace);
+    }
+  }
+
   :deep(pre.mermaid:not(.chat-mermaid-block__canvas)) {
     margin: 0.75em 0;
     padding: 20px 16px;

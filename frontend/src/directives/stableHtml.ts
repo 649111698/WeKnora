@@ -65,14 +65,21 @@ function morphNode(current: Node, next: Node): void {
     morphImage(currentElement, nextElement);
     return;
   }
-  // 已渲染成 SVG 的 mermaid 画布不能被 morph 回代码形态：重新生成的 markdown
-  // 携带 data-mermaid="false" 与 <code> 子树，照常同步会抹掉渲染结果（图片
-  // 的保留逻辑同理，见 morphImage）。内容不变时直接原样保留。
+  // 已渲染成图的图表画布（mermaid SVG / echarts canvas）不能被 morph 回
+  // 代码形态：重新生成的 markdown 携带 data-*-mermaid/echarts="false" 与
+  // 原始文本子树，照常同步会抹掉渲染结果（图片的保留逻辑同理，见
+  // morphImage）。内容不变时直接原样保留。
   if (
-    currentElement.getAttribute?.('data-mermaid') === 'true' &&
-    nextElement.classList?.contains('chat-mermaid-block__canvas')
+    nextElement.classList?.contains('chat-mermaid-block__canvas') &&
+    currentElement.getAttribute?.('data-mermaid') === 'true'
   ) {
-    return;
+    return
+  }
+  if (
+    nextElement.classList?.contains('chat-echarts-block__canvas') &&
+    currentElement.getAttribute?.('data-echarts') === 'true'
+  ) {
+    return
   }
 
   syncAttributes(currentElement, nextElement);

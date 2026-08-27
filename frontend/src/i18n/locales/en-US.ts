@@ -5769,6 +5769,9 @@ export default {
       noFailedRecords: 'No failed records available for download'
     }
   },
+  echarts: {
+    diagram: 'Chart',
+  },
   mermaid: {
     diagram: 'Diagram',
     expand: 'Expand',

@@ -386,6 +386,19 @@ func (t *DataAnalysisTool) formatQueryResults(results []map[string]string, query
 		output.WriteString(fmt.Sprintf("record %d: %s\n", i+1, recordStr))
 	}
 
+	// 可视化指引：数据分析场景引导模型用 ECharts option JSON 出图，前端
+	// 将 ```echarts 块渲染为交互式图表。
+	output.WriteString(`
+=== Visualization Hint ===
+When the answer benefits from a chart (distribution, trend, comparison), render it with an ECharts option JSON in a fenced code block:
+
+` + "```" + `echarts
+{"title":{"text":"..."},"tooltip":{},"legend":{},"xAxis":{"type":"category","data":["..."]},"yAxis":{"type":"value"},"series":[{"type":"bar","data":[...]}]}
+` + "```" +
+
+		`
+Rules: valid JSON only (no comments, no trailing commas), series type must be one of bar/line/pie/scatter, keep the chart focused on at most ~15 data points, and always pair the chart with a short textual conclusion.` + "\n")
+
 	return output.String()
 }
 

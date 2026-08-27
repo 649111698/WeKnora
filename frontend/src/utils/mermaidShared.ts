@@ -5,10 +5,12 @@ import { openMermaidFullscreen } from '@/utils/mermaidViewer.ts'
 import {
   buildCodeBlockHtml,
   buildMermaidBlockHtml,
+  buildEchartsBlockHtml,
   attachMarkdownEnhancementListeners,
   highlightCodeBlocksInContainer,
   syncMermaidExpandButtons,
 } from '@/utils/markdownEnhancements'
+import { renderEchartsInContainer } from '@/utils/echartsShared'
 
 hljs.registerAliases('mermaid', { languageName: 'plaintext' })
 
@@ -201,6 +203,12 @@ let mermaidCount = 0
 
 export const createMermaidCodeRenderer = (idPrefix: string) => {
   return ({ text, lang }: Tokens.Code) => {
+    // echarts 块同样经此路由：所有聊天/嵌入/技能文件的 markdown 渲染器
+    // 都挂了这个 codeRenderer，统一分发后各处自动获得 echarts 支持。
+    if (lang === 'echarts') {
+      const id = `${idPrefix}-echarts-${++mermaidCount}`
+      return buildEchartsBlockHtml(escapeHtml(text), `id="${id}" data-echarts="false"`)
+    }
     const { html: highlighted, language: highlightLang } = highlightCode(text, lang)
     if (lang === 'mermaid') {
       const id = `${idPrefix}-${++mermaidCount}`
@@ -261,5 +269,6 @@ export async function enhanceMarkdownContainer(
   attachMarkdownEnhancementListeners(rootElement)
   highlightCodeBlocksInContainer(rootElement)
   await renderMermaidInContainer(rootElement)
+  await renderEchartsInContainer(rootElement)
   syncMermaidExpandButtons(rootElement)
 }

@@ -885,6 +885,9 @@ export default {
     yesterday: 'Вчера',
     daysAgo: '{days} дней назад'
   },
+  echarts: {
+    diagram: 'График',
+  },
   mermaid: {
     diagram: 'Диаграмма',
     expand: 'На весь экран',
