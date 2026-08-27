@@ -18,8 +18,10 @@ const PENDING_SELECTOR =
 let observer: MutationObserver | null = null
 let renderTimer: ReturnType<typeof setTimeout> | null = null
 
-// 诊断入口：任何渲染阶段的异常都记录在此，用户控制台一键可读
-(window as any).__wkChartErrors = [] as string[]
+// 诊断入口：任何渲染阶段的异常都记录在此，用户控制台一键可读。
+// 行首分号必须保留：上一行以 null 结尾，括号开头会被 ASI 续接成
+// null(...) 调用，模块顶层直接抛 TypeError（压缩后无换行）。
+;(window as any).__wkChartErrors = [] as string[]
 
 export function startChartAutoRenderer(): void {
   if (observer || typeof MutationObserver === 'undefined') return
