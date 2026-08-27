@@ -95,9 +95,9 @@ func (s *userService) GetSSOStatus(ctx context.Context, host string) (*types.SSO
 	}
 	if cfg.KingdeeEnabled() {
 		resp.Kingdee = &types.SSOProviderStatus{
-			Enabled:      true,
-			BaseURL:      cfg.Kingdee.BaseURL,
-			AppClientID:  cfg.Kingdee.AppClientID,
+			Enabled:     true,
+			BaseURL:     cfg.Kingdee.BaseURL,
+			AppClientID: cfg.Kingdee.AppClientID,
 		}
 	}
 	return resp, nil
@@ -346,6 +346,85 @@ type kingdeeUserInfoResponse struct {
 	Status    bool   `json:"status"`
 }
 
+// kingdeeTokenResponse 苍穹 oauth2/token 响应。成功负载可能在 data 内嵌
+// 或扁平两种形态，字段都带上兼容。
+type kingdeeTokenResponse struct {
+	Data struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int64  `json:"expires_in"`
+	} `json:"data"`
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int64  `json:"expires_in"`
+	ErrorCode   string `json:"errorCode"`
+	Status      bool   `json:"status"`
+	Message     string `json:"message"`
+	// 错误形态（如 login.loginBizException）用 description/description_cn
+	Description   string `json:"description"`
+	DescriptionCn string `json:"description_cn"`
+}
+
+// getKingdeeAccessToken 用 client_id/client_secret/username/accountId 调
+// 苍穹 OAuth2 令牌端点换 access_token，按凭证组合缓存到过期。
+func (s *userService) getKingdeeAccessToken(ctx context.Context, cfg *types.KingdeeTenantSSO) (string, error) {
+	cacheKey := "kingdee:sso:" + cfg.BaseURL + "|" + cfg.AppClientID + "|" + cfg.ProxyUsername + "|" + cfg.AccountID + "|" + cfg.AppSecret
+	if token, ok := ssoCachedToken(cacheKey); ok {
+		return token, nil
+	}
+
+	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	form := url.Values{}
+	form.Set("client_id", cfg.AppClientID)
+	form.Set("client_secret", cfg.AppSecret)
+	form.Set("username", cfg.ProxyUsername)
+	form.Set("accountId", cfg.AccountID)
+
+	paths := []string{"/kapi/oauth2/token", "/ierp/kapi/oauth2/token"}
+	var data kingdeeTokenResponse
+	for i, path := range paths {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, strings.NewReader(form.Encode()))
+		if err != nil {
+			return "", fmt.Errorf("failed to build Kingdee token request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+		status, err := ssoDoJSONStatus(ctx, req, &data)
+		if err == nil {
+			break
+		}
+		if status != http.StatusNotFound || i == len(paths)-1 {
+			return "", fmt.Errorf("Kingdee token request failed: %w", err)
+		}
+	}
+
+	token := data.Data.AccessToken
+	if token == "" {
+		token = data.AccessToken
+	}
+	if token == "" {
+		msg := strings.TrimSpace(data.Message)
+		if msg == "" {
+			msg = strings.TrimSpace(data.DescriptionCn)
+		}
+		if msg == "" {
+			msg = strings.TrimSpace(data.Description)
+		}
+		if msg == "" {
+			msg = data.ErrorCode
+		}
+		return "", fmt.Errorf("Kingdee token response missing access_token: %s", msg)
+	}
+
+	expiresIn := data.Data.ExpiresIn
+	if expiresIn <= 0 {
+		expiresIn = data.ExpiresIn
+	}
+	if expiresIn <= 0 {
+		expiresIn = 3600
+	}
+	ssoStoreToken(cacheKey, token, time.Duration(expiresIn)*time.Second)
+	return token, nil
+}
+
 // getKingdeeIdentity 用授权码调苍穹 getUserInfo 换当前登录用户身份。
 // externalID 取 userName（苍穹账号唯一键），displayName 取 name。
 // 苍穹 kapi 有两种网关挂载形态：标准形态是 {base}/ierp/kapi/...（集成指南
@@ -353,17 +432,35 @@ type kingdeeUserInfoResponse struct {
 // {base}/kapi/...。指南路径 404 时自动退到无 /ierp 前缀的路径重试。
 func (s *userService) getKingdeeIdentity(ctx context.Context, cfg *types.KingdeeTenantSSO, code string) (externalID, displayName string, err error) {
 	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+
+	var accessToken string
+	if cfg.TokenMode() {
+		if accessToken, err = s.getKingdeeAccessToken(ctx, cfg); err != nil {
+			return "", "", err
+		}
+	}
+
 	paths := []string{
 		"/ierp/kapi/v2/secm/authen/getUserInfo",
 		"/kapi/v2/secm/authen/getUserInfo",
 	}
 	var data kingdeeUserInfoResponse
 	for i, path := range paths {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path+"?code="+url.QueryEscape(code), nil)
+		q := url.Values{}
+		q.Set("code", code)
+		if accessToken != "" {
+			// 苍穹 kapi 常见传法是 query 参数；Authorization 头一并发送，
+			// 网关取其认识的那个。
+			q.Set("access_token", accessToken)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path+"?"+q.Encode(), nil)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to build Kingdee userinfo request: %w", err)
 		}
 		req.Header.Set("Accept", "application/json")
+		if accessToken != "" {
+			req.Header.Set("Authorization", "Bearer "+accessToken)
+		}
 		status, err := ssoDoJSONStatus(ctx, req, &data)
 		if err == nil {
 			break
@@ -376,6 +473,10 @@ func (s *userService) getKingdeeIdentity(ctx context.Context, cfg *types.Kingdee
 		msg := strings.TrimSpace(data.Message)
 		if msg == "" {
 			msg = data.ErrorCode
+		}
+		// 未配置 token 模式时的 401 多半是苍穹要求应用鉴权，给出可操作提示
+		if !cfg.TokenMode() && (data.ErrorCode == "401" || strings.Contains(msg, "未经授权")) {
+			msg += "（独立部署需在苍穹 SSO 设置中填写 app_secret/username/account_id）"
 		}
 		return "", "", fmt.Errorf("Kingdee getUserInfo failed: %s", msg)
 	}

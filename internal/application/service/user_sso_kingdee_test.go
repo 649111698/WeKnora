@@ -163,3 +163,72 @@ func TestGetKingdeeIdentityBothPathsMissing(t *testing.T) {
 		t.Fatal("expected error when both kapi paths are missing")
 	}
 }
+
+// token 模式：先 POST oauth2/token 换 access_token，getUserInfo 请求需
+// 同时携带 access_token（query 参数 + Authorization 头）。
+func TestGetKingdeeIdentityTokenMode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/kapi/oauth2/token":
+			if r.Method != http.MethodPost {
+				t.Errorf("token endpoint method = %s, want POST", r.Method)
+			}
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("parse form: %v", err)
+			}
+			if r.PostForm.Get("client_secret") != "s3cret" {
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"description": "secret invalid", "errorcode": "login.loginBizException",
+				})
+				return
+			}
+			for _, kv := range [][2]string{
+				{"client_id", "sys01"},
+				{"username", "proxyuser"}, {"accountId", "1001"},
+			} {
+				if got := r.PostForm.Get(kv[0]); got != kv[1] {
+					t.Errorf("token form %s = %q, want %q", kv[0], got, kv[1])
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": map[string]interface{}{"access_token": "tok123", "expires_in": 7200},
+				"errorCode": "0", "status": true,
+			})
+		case "/kapi/v2/secm/authen/getUserInfo":
+			if got := r.URL.Query().Get("access_token"); got != "tok123" {
+				t.Errorf("getUserInfo access_token param = %q, want tok123", got)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer tok123" {
+				t.Errorf("getUserInfo Authorization = %q, want Bearer tok123", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data":      map[string]string{"name": "王五", "userName": "wangwu"},
+				"errorCode": "0",
+				"status":    true,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	svc := &userService{}
+	id, name, err := svc.getKingdeeIdentity(context.Background(), &types.KingdeeTenantSSO{
+		BaseURL: srv.URL, AppClientID: "sys01", AppSecret: "s3cret",
+		ProxyUsername: "proxyuser", AccountID: "1001",
+	}, "the-code")
+	if err != nil {
+		t.Fatalf("getKingdeeIdentity token mode: %v", err)
+	}
+	if id != "wangwu" || name != "王五" {
+		t.Fatalf("identity = %q/%q, want wangwu/王五", id, name)
+	}
+
+	// token 端点报错时应把错误带出来
+	if _, _, err := svc.getKingdeeIdentity(context.Background(), &types.KingdeeTenantSSO{
+		BaseURL: srv.URL, AppClientID: "sys01", AppSecret: "bad",
+		ProxyUsername: "proxyuser", AccountID: "1001",
+	}, "the-code"); err == nil {
+		t.Fatal("expected error when credentials rejected")
+	}
+}

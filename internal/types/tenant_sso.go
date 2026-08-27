@@ -43,9 +43,13 @@ type KingdeeTenantSSO struct {
 	BaseURL string `json:"base_url,omitempty"`
 	// AppClientID 苍穹「系统服务云 → OpenAPI → 第三方应用」的系统编码。
 	AppClientID string `json:"app_client_id,omitempty"`
-	// AppSecret 苍穹「认证凭证」里自定义的 appSecret（可选，仅
-	// token 换取模式需要；getUserInfo?code= 直连模式不使用）。
+	// AppSecret 苍穹「认证凭证」里自定义的 appSecret。
 	AppSecret string `json:"app_secret,omitempty"`
+	// ProxyUsername 应用代理的用户名（「获取 Token 示例」里的 username）。
+	// 独立部署的第三方必须走 token 模式，此项与 AppSecret/AccountID 配套。
+	ProxyUsername string `json:"username,omitempty"`
+	// AccountID 数据中心 id（「获取 Token 示例」里的 accountId）。
+	AccountID string `json:"account_id,omitempty"`
 }
 
 // TenantSSOConfig 租户 SSO 总配置。
@@ -53,9 +57,9 @@ type TenantSSOConfig struct {
 	// LoginDomain 租户专属登录域名（可选）。配置后按 Host 精确匹配
 	// （大小写不敏感，可含端口），匹配到的租户登录页自动使用其 SSO
 	// 与水印配置。
-	LoginDomain string           `json:"login_domain,omitempty"`
-	WeCom       *WeComTenantSSO  `json:"wecom,omitempty"`
-	Feishu      *FeishuTenantSSO `json:"feishu,omitempty"`
+	LoginDomain string            `json:"login_domain,omitempty"`
+	WeCom       *WeComTenantSSO   `json:"wecom,omitempty"`
+	Feishu      *FeishuTenantSSO  `json:"feishu,omitempty"`
 	Kingdee     *KingdeeTenantSSO `json:"kingdee,omitempty"`
 }
 
@@ -78,6 +82,16 @@ func (c *TenantSSOConfig) KingdeeEnabled() bool {
 	return c != nil && c.Kingdee != nil &&
 		strings.TrimSpace(c.Kingdee.BaseURL) != "" &&
 		strings.TrimSpace(c.Kingdee.AppClientID) != ""
+}
+
+// TokenMode 独立部署的第三方需走 OpenAPI token 模式：应用凭证
+// （client_id/client_secret/username/accountId）换 access_token 后调用
+// 业务接口；跑在苍穹框架内的系统才可 code 直连。
+func (k *KingdeeTenantSSO) TokenMode() bool {
+	return k != nil &&
+		strings.TrimSpace(k.AppSecret) != "" &&
+		strings.TrimSpace(k.ProxyUsername) != "" &&
+		strings.TrimSpace(k.AccountID) != ""
 }
 
 // TenantSSOConfigForResponse 返回打码后的配置（secret → "***"）。
@@ -165,7 +179,7 @@ func MergeTenantSSOConfigForUpdate(submitted, existing *TenantSSOConfig) *Tenant
 
 // WatermarkConfig 租户全站水印配置。未配置（nil）视为关闭。
 type WatermarkConfig struct {
-	Enabled bool   `json:"enabled"`
+	Enabled bool `json:"enabled"`
 	// Text 水印文案，支持 {username} 占位符（登录后替换为用户名）。
 	Text string `json:"text,omitempty"`
 }

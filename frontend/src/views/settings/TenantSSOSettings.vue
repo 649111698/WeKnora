@@ -108,6 +108,17 @@
             :placeholder="kingdeeSecretPlaceholder" :disabled="saving" />
           <p class="sso-field__hint">{{ t('tenantSSO.kingdee.appSecretHint') }}</p>
         </div>
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.kingdee.proxyUsername') }}</label>
+          <t-input v-model="form.kingdee.username" :placeholder="t('tenantSSO.kingdee.proxyUsernamePlaceholder')"
+            :disabled="saving" />
+        </div>
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.kingdee.accountId') }}</label>
+          <t-input v-model="form.kingdee.account_id" :placeholder="t('tenantSSO.kingdee.accountIdPlaceholder')"
+            :disabled="saving" />
+          <p class="sso-field__hint">{{ t('tenantSSO.kingdee.tokenModeHint') }}</p>
+        </div>
         <div v-if="kingdeeCallbackUrl" class="sso-field">
           <label class="sso-field__label">{{ t('tenantSSO.kingdee.callbackUrl') }}</label>
           <div class="sso-copy-row">
@@ -170,14 +181,14 @@ type SSOForm = {
   login_domain: string
   wecom: { corp_id: string; corp_secret: string; agent_id: string; domain_verify_text: string }
   feishu: { app_id: string; app_secret: string }
-  kingdee: { base_url: string; app_client_id: string; app_secret: string }
+  kingdee: { base_url: string; app_client_id: string; app_secret: string; username: string; account_id: string }
 }
 
 const form = reactive<SSOForm>({
   login_domain: '',
   wecom: { corp_id: '', corp_secret: '', agent_id: '', domain_verify_text: '' },
   feishu: { app_id: '', app_secret: '' },
-  kingdee: { base_url: '', app_client_id: '', app_secret: '' },
+  kingdee: { base_url: '', app_client_id: '', app_secret: '', username: '', account_id: '' },
 })
 const watermark = reactive({ enabled: false, text: '' })
 
@@ -260,6 +271,8 @@ const loadConfig = async () => {
       if (cfg.kingdee) {
         form.kingdee.base_url = cfg.kingdee.base_url || ''
         form.kingdee.app_client_id = cfg.kingdee.app_client_id || ''
+        form.kingdee.username = cfg.kingdee.username || ''
+        form.kingdee.account_id = cfg.kingdee.account_id || ''
         kingdeeSecretConfigured.value = !!cfg.kingdee.app_secret
       }
     }
@@ -280,7 +293,7 @@ const loadConfig = async () => {
 const saveAll = async () => {
   const hasWecom = !!(form.wecom.corp_id.trim() || form.wecom.corp_secret)
   const hasFeishu = !!(form.feishu.app_id.trim() || form.feishu.app_secret)
-  const hasKingdee = !!(form.kingdee.base_url.trim() || form.kingdee.app_client_id.trim() || form.kingdee.app_secret)
+  const hasKingdee = !!(form.kingdee.base_url.trim() || form.kingdee.app_client_id.trim() || form.kingdee.app_secret || form.kingdee.username.trim() || form.kingdee.account_id.trim())
   if ((hasWecom || hasFeishu || hasKingdee) && !form.login_domain.trim()) {
     MessagePlugin.warning(t('tenantSSO.loginDomain.required'))
     return
@@ -303,6 +316,8 @@ const saveAll = async () => {
         base_url: form.kingdee.base_url.trim().replace(/\/+$/, ''),
         app_client_id: form.kingdee.app_client_id.trim(),
         app_secret: form.kingdee.app_secret,
+        username: form.kingdee.username.trim(),
+        account_id: form.kingdee.account_id.trim(),
       },
     }
     const resp: any = await put('/api/v1/tenants/kv/sso-config', payload)
