@@ -132,7 +132,6 @@ import {
 import {
     createMermaidCodeRenderer,
     ensureMermaidInitialized,
-    renderMermaidInContainer,
     enhanceMarkdownContainer,
 } from '@/utils/mermaidShared';
 import { refreshMarkdownEnhancements } from '@/utils/markdownEnhancements';
@@ -388,13 +387,15 @@ watch(renderedHTML, () => {
     });
 });
 
-// 渲染 Mermaid 图表的函数
+// 渲染 Mermaid/ECharts 图表的函数
 onUpdated(() => {
     nextTick(async () => {
         await hydrateProtectedFileImages(parentMd.value);
         refreshMarkdownEnhancements(parentMd.value);
         if (props.session?.is_completed) {
-            await renderMermaidInContainer(parentMd.value);
+            // 完整增强（含 mermaid 与 echarts 渲染），与 AgentStreamDisplay
+            // 的收尾路径保持一致
+            await enhanceMarkdownContainer(parentMd.value);
         }
     });
 });
