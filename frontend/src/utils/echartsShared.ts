@@ -1,5 +1,13 @@
 import type * as EChartsType from 'echarts/core'
 
+function escapeHtml(text: string) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 // echarts 按需模块懒加载：只有页面真正出现 echarts 块时才拉取，
 // 避免把图表库打进主包。
 let echartsPromise: Promise<typeof EChartsType> | null = null
@@ -81,6 +89,8 @@ export const renderEchartsInContainer = async (
     if (!option) {
       el.setAttribute('data-echarts', 'error')
       el.classList.add('chat-echarts-block__canvas--error')
+      el.innerHTML = `<div class="chart-render-error">图表 JSON 无法解析，已保留原始输出</div>` +
+        escapeHtml(code)
       continue
     }
 
@@ -100,6 +110,8 @@ export const renderEchartsInContainer = async (
       console.error('ECharts rendering error:', e)
       el.setAttribute('data-echarts', 'error')
       el.classList.add('chat-echarts-block__canvas--error')
+      const reason = e instanceof Error ? e.message : String(e)
+      el.innerHTML = `<div class="chart-render-error">图表渲染失败：${escapeHtml(reason.slice(0, 300))}</div>`
     }
   }
 }

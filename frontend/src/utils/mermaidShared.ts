@@ -257,6 +257,12 @@ export const renderMermaidInContainer = async (
       el.setAttribute('data-mermaid', 'true')
     } catch (e) {
       console.error('Mermaid rendering error:', e)
+      // 失败可见化：静默停在代码形态无法排查，这里把原因直接标到块上
+      el.setAttribute('data-mermaid', 'error')
+      el.classList.add('chat-mermaid-block__canvas--error')
+      const reason = e instanceof Error ? e.message : String(e)
+      el.innerHTML = `<code class="hljs">${escapeHtml(el.innerText)}</code>` +
+        `<div class="chart-render-error">图表渲染失败：${escapeHtml(reason.slice(0, 300))}</div>`
       continue
     }
   }

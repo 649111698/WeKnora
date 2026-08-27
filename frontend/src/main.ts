@@ -33,6 +33,9 @@ initFont();
 // 消灭切换会话等场景下组件钩子错过的时序问题。
 startChartAutoRenderer();
 
+// 浏览器控制台自检版本用（系统信息页也展示前端 commit）
+(window as any).__WK_BUILD__ = String(__FRONTEND_COMMIT__);
+
 async function bootstrap() {
   const app = createApp(App);
 
