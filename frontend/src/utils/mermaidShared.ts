@@ -234,11 +234,23 @@ export const renderMermaidToSvg = async (code: string, id: string): Promise<stri
   }
 }
 
+// mermaid 内部渲染状态非并发安全：多条管线（组件钩子/全局观察器/兜底
+// watcher）同时触发 render 会产生只含 <style> 的空壳 SVG（图形层全部丢
+// 失，表现为图表框内空白）。这里把整段渲染串行化成单链，后到者排队执行
+// （幂等：已渲染块按 data-mermaid 跳过）。
+let mermaidRenderChain: Promise<void> = Promise.resolve()
+
 export const renderMermaidInContainer = async (
   rootElement: HTMLElement | null | undefined,
 ) => {
   if (!rootElement) return
 
+  const run = mermaidRenderChain.then(() => renderMermaidBlocks(rootElement))
+  mermaidRenderChain = run.catch(() => {})
+  await run
+}
+
+async function renderMermaidBlocks(rootElement: HTMLElement) {
   // 库加载/初始化失败也要可见：否则图表块静默停在代码形态无从排查
   let mermaid: Awaited<ReturnType<typeof getMermaid>>
   try {
@@ -269,6 +281,14 @@ export const renderMermaidInContainer = async (
       const { svg } = await mermaid.render(renderId, code)
       el.classList.add('mermaid')
       el.innerHTML = svg
+      // 空壳防御：并发或 mermaid 内部异常会返回只含 <style> 的 SVG，
+      // 图形节点为零时拨回待渲染，观察器/后续管线会重试
+      const shapeCount = el.querySelectorAll('path, rect, circle, text, line, polyline, polygon, ellipse').length
+      if (shapeCount === 0 && code.trim()) {
+        el.setAttribute('data-mermaid', 'false')
+        el.classList.remove('mermaid')
+        continue
+      }
       el.setAttribute('data-mermaid', 'true')
     } catch (e) {
       console.error('Mermaid rendering error:', e)
@@ -279,6 +299,18 @@ export const renderMermaidInContainer = async (
       el.innerHTML = `<code class="hljs">${escapeHtml(el.innerText)}</code>` +
         `<div class="chart-render-error">图表渲染失败：${escapeHtml(reason.slice(0, 300))}</div>`
       continue
+    }
+  }
+
+  // 回收历史空壳：已被标记 true 但图形节点为零的块拨回待渲染；DOM 变化
+  // 会让全局观察器在下一轮（200ms 防抖后）重画，形成自愈闭环。
+  for (const el of rootElement.querySelectorAll<HTMLElement>('[data-mermaid="true"]')) {
+    if (
+      el instanceof HTMLElement &&
+      el.querySelectorAll('path, rect, circle, text, line, polyline, polygon, ellipse').length === 0
+    ) {
+      el.setAttribute('data-mermaid', 'false')
+      el.classList.remove('mermaid')
     }
   }
 }
