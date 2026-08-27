@@ -1535,6 +1535,10 @@ watch(answerFullyRendered, (ready) => {
   clearProtectedFileFailureCache();
   nextTick(async () => {
     await hydrateProtectedFileImages(rootElement.value, protectedFileAccess.value);
+    // 最终答案走打字机渐进渲染，watch(eventStream) 里的 markdown 增强执行时
+    // 图表/代码块大多还不在 DOM 里；打字机收尾后必须再补一次完整增强，
+    // 否则 mermaid 块会永远停留在原始代码形态（历史会话重载同理）。
+    await enhanceMarkdownContainer(rootElement.value);
   });
 }, { immediate: true });
 
@@ -2419,11 +2423,6 @@ const renderMarkdown = (content: unknown): string => {
     console.error('Markdown rendering error:', e, 'Content:', contentStr.substring(0, 100));
     return contentStr.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
-};
-
-// 渲染 Mermaid 图表的函数
-const renderMermaidDiagrams = async () => {
-  await enhanceMarkdownContainer(rootElement.value);
 };
 
 // Tool summary - extract key info to display externally
