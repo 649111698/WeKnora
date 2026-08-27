@@ -20,6 +20,7 @@ import { initTheme } from "@/composables/useTheme";
 import { initFont } from "@/composables/useFont";
 import { installTDesignIconOfflineGuard } from "@/utils/tdesign-icon-offline";
 import { installAutofillGuard } from "@/utils/disable-autofill";
+import { startChartAutoRenderer } from "@/utils/chartAutoRender";
 import { useAuthStore } from "@/stores/auth";
 
 // 必须在 Vue 组件挂载之前执行，避免 tdesign-icons 运行时请求 tdesign.gtimg.com
@@ -27,6 +28,10 @@ installTDesignIconOfflineGuard();
 
 initTheme();
 initFont();
+
+// 图表渲染的终极兜底：无论图表块何时经何路径进入 DOM 都会被渲染，
+// 消灭切换会话等场景下组件钩子错过的时序问题。
+startChartAutoRenderer();
 
 async function bootstrap() {
   const app = createApp(App);

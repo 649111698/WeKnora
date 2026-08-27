@@ -1,40 +1,41 @@
-import * as echarts from 'echarts/core'
-import {
-  BarChart,
-  LineChart,
-  PieChart,
-  ScatterChart,
-} from 'echarts/charts'
-import {
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  TitleComponent,
-  DataZoomComponent,
-  MarkLineComponent,
-  MarkPointComponent,
-  ToolboxComponent,
-} from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
+import type * as EChartsType from 'echarts/core'
 
-echarts.use([
-  BarChart,
-  LineChart,
-  PieChart,
-  ScatterChart,
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  TitleComponent,
-  DataZoomComponent,
-  MarkLineComponent,
-  MarkPointComponent,
-  ToolboxComponent,
-  CanvasRenderer,
-])
+// echarts 按需模块懒加载：只有页面真正出现 echarts 块时才拉取，
+// 避免把图表库打进主包。
+let echartsPromise: Promise<typeof EChartsType> | null = null
+
+async function getEcharts(): Promise<typeof EChartsType> {
+  if (!echartsPromise) {
+    echartsPromise = (async () => {
+      const [{ default: core }, charts, components, renderers] = await Promise.all([
+        import('echarts/core'),
+        import('echarts/charts'),
+        import('echarts/components'),
+        import('echarts/renderers'),
+      ])
+      core.use([
+        charts.BarChart,
+        charts.LineChart,
+        charts.PieChart,
+        charts.ScatterChart,
+        components.GridComponent,
+        components.TooltipComponent,
+        components.LegendComponent,
+        components.TitleComponent,
+        components.DataZoomComponent,
+        components.MarkLineComponent,
+        components.MarkPointComponent,
+        components.ToolboxComponent,
+        renderers.CanvasRenderer,
+      ])
+      return core
+    })()
+  }
+  return echartsPromise
+}
 
 // 已渲染实例与容器的映射，用于防重复渲染；resize 由 ResizeObserver 自持
-const chartInstances = new WeakMap<HTMLElement, echarts.ECharts>()
+const chartInstances = new WeakMap<HTMLElement, EChartsType.ECharts>()
 
 /**
  * 解析 ```echarts 代码块里的 option JSON。模型输出常见的小毛病（尾随
@@ -69,6 +70,9 @@ export const renderEchartsInContainer = async (
   const targets = rootElement.querySelectorAll<HTMLElement>(
     '.chat-echarts-block__canvas[data-echarts="false"]',
   )
+  if (!targets.length) return
+  const echarts = await getEcharts()
+
   for (const el of targets) {
     if (chartInstances.has(el)) continue
 
@@ -86,7 +90,7 @@ export const renderEchartsInContainer = async (
         backgroundColor: 'transparent',
         textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif' },
         ...option,
-      } as echarts.EChartsCoreOption)
+      } as EChartsType.EChartsCoreOption)
       chartInstances.set(el, chart)
       el.setAttribute('data-echarts', 'true')
 
