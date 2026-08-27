@@ -351,24 +351,30 @@ func (s *TenantSkillService) runInstall(
 	if !owned {
 		return nil
 	}
-	// The generation comes from the config read at the top of this function,
-	// while switchImagePointer deliberately re-reads for everything else it
-	// writes. That asymmetry is sound because the two fields have different
-	// writers: SkillImage is written only by an install or a removal, and
-	// withConfigLock serialises every one of those per config, so no other
-	// writer can have advanced the generation while this run held the lock.
-	// The rest of the entity is written by the config service under its own
-	// cordon, which this lock says nothing about — hence the re-read there.
-	generation := currentGeneration(cfgEntity) + 1
+	// Generation is max(live pointer, ledger)+1 so a build that died after
+	// the commit but before the pointer moved cannot share a name with the
+	// next install. withConfigLock still serialises writers of SkillImage;
+	// the ledger read is what closes the crash window the lock cannot see.
+	ledger, err := s.skills.ListSnapshotsByConfig(ctx, tenantID, configID)
+	if err != nil {
+		return fmt.Errorf("list snapshots of config %s: %w", configID, err)
+	}
+	generation := nextSnapshotGeneration(currentGeneration(cfgEntity), ledger)
 	installRowID := uuid.NewString()
+	// The name is recorded with the row rather than derived at the call below,
+	// so a run that dies during the commit still leaves the ledger able to
+	// name what it was building. Without it the snapshot would be a provider
+	// resource nothing could ever address, let alone reclaim. The row id is
+	// in the name so two rows of the same generation cannot share a tag.
+	snapshotName := skillSnapshotBuildName(tenantID, configID, generation, installRowID)
 	if err := s.skills.CreateSnapshotRow(ctx, &types.TenantSkillSnapshotEntity{
 		ID: installRowID, TenantID: tenantID, SandboxConfigID: configID, SkillID: skillID,
 		ParentSnapshotID: currentSnapshotID(cfgEntity), Generation: generation,
 		Trigger: types.SkillSnapshotTriggerInstall, State: types.SkillSnapshotStateBuilding,
+		PlannedName: snapshotName,
 	}); err != nil {
 		return err
 	}
-	snapshotName := fmt.Sprintf("weknora-sk-%s-g%d", shortID(configID), generation)
 	ref, err := s.createSnapshot(ctx, mgr, sess.ID, snapshotName)
 	if err != nil {
 		return err
@@ -810,8 +816,8 @@ func describeExecFailure(res *sandbox.ExecuteResult) string {
 
 // installExecutor resolves the one executor every command of an install runs
 // through. It goes through the capability accessor rather than a bare type
-// assertion so a manager that fell back to LocalSandbox reports no capability
-// instead of running the install on the WeKnora host.
+// assertion so a manager that cannot run install-mode shell reports no
+// capability instead of attempting the install on the WeKnora host.
 func installExecutor(mgr sandbox.Manager) (sandbox.SessionInstallShellExecutor, error) {
 	executor := sessionSandboxInstallShellExecutor(mgr)
 	if executor == nil {
@@ -1324,15 +1330,115 @@ func currentSnapshotID(cfgEntity *types.TenantSandboxConfigEntity) string {
 	return cfgEntity.Config.SkillImage.SnapshotID
 }
 
-func shortID(id string) string {
-	trimmed := strings.ReplaceAll(strings.TrimSpace(id), "-", "")
-	if len(trimmed) > 8 {
-		return trimmed[:8]
+func skillSnapshotNamePrefix(tenantID uint64, configID string) string {
+	return fmt.Sprintf("weknora-sk-t%d-%s", tenantID, compactConfigID(configID))
+}
+
+// nextSnapshotGeneration is one past both the live pointer and every ledger
+// row. An abandoned building row still occupies its generation; reusing it
+// would mint the same planned name and let the reaper delete a later install's
+// snapshot.
+func nextSnapshotGeneration(live int, rows []*types.TenantSkillSnapshotEntity) int {
+	highest := live
+	for _, row := range rows {
+		if row != nil && row.Generation > highest {
+			highest = row.Generation
+		}
 	}
-	if trimmed == "" {
-		return "config"
+	if highest < 0 {
+		highest = 0
 	}
-	return trimmed
+	return highest + 1
+}
+
+func compactSnapshotToken(id string) string {
+	s := compactConfigID(id)
+	const n = 8
+	if len(s) > n {
+		return s[:n]
+	}
+	if s == "" {
+		return "row"
+	}
+	return s
+}
+
+// skillSnapshotBuildName is the name every generation of a config's image
+// chain is committed under. It is recorded on the ledger row before the
+// provider call so an abandoned build stays identifiable. Tenant and the
+// full config id are in the name because Cube, E2B and Docker all list
+// snapshots across a shared account or daemon; the row token stops two
+// builds of the same generation from sharing a tag.
+func skillSnapshotBuildName(tenantID uint64, configID string, generation int, rowID string) string {
+	prefix := skillSnapshotNamePrefix(tenantID, configID)
+	return fmt.Sprintf("%s-g%d-%s", prefix, generation, compactSnapshotToken(rowID))
+}
+
+func compactConfigID(id string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(id), "-", ""))
+}
+
+// weknoraSkillSnapshotName pulls the weknora-sk-… token out of a provider
+// listing. Cube and E2B echo it in Names; Docker embeds it in the image tag.
+func weknoraSkillSnapshotName(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = strings.TrimPrefix(s, "docker.io/")
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		s = s[i+1:]
+	}
+	if cut := strings.IndexByte(s, ':'); cut >= 0 {
+		s = s[:cut]
+	}
+	if strings.HasPrefix(s, "weknora-sk-") {
+		return s
+	}
+	return ""
+}
+
+// snapshotsNotFromOtherConfig drops provider listings that already name a
+// different WeKnora config. Cube, E2B and Docker all ListSnapshots across the
+// whole account/daemon, so without this a reconcile of one config would treat
+// every other config's image as an extra, and an abandoned-build match could
+// bind to the wrong snapshot.
+func snapshotsNotFromOtherConfig(
+	listed []sandbox.RemoteSnapshotRef, prefix string,
+) []sandbox.RemoteSnapshotRef {
+	if strings.TrimSpace(prefix) == "" {
+		return listed
+	}
+	out := make([]sandbox.RemoteSnapshotRef, 0, len(listed))
+	for _, snap := range listed {
+		if snapshotBelongsToOtherConfig(snap, prefix) {
+			continue
+		}
+		out = append(out, snap)
+	}
+	return out
+}
+
+func snapshotBelongsToOtherConfig(snap sandbox.RemoteSnapshotRef, prefix string) bool {
+	if strings.TrimSpace(prefix) == "" {
+		return false
+	}
+	needle := prefix + "-g"
+	sawForeign := false
+	for _, candidate := range append([]string{snap.ID}, snap.Names...) {
+		name := weknoraSkillSnapshotName(candidate)
+		if name == "" {
+			continue
+		}
+		if strings.HasPrefix(name, needle) {
+			return false
+		}
+		// New-format names are weknora-sk-t<tenant>-<config>-gN. Legacy
+		// weknora-sk-<short>-gN names are left alone so a row written before
+		// the prefix existed can still be matched.
+		rest := strings.TrimPrefix(name, "weknora-sk-")
+		if len(rest) > 1 && rest[0] == 't' && rest[1] >= '0' && rest[1] <= '9' {
+			sawForeign = true
+		}
+	}
+	return sawForeign
 }
 
 func buildInstallPrompt(skillDir string, bundle *SkillBundle, uvAvailable bool) string {
@@ -1628,6 +1734,10 @@ func currentBaseTemplate(cfg *types.TenantSandboxConfig) string {
 		if cfg.E2B != nil {
 			return cfg.E2B.TemplateID
 		}
+	case sandbox.SandboxTypeDocker:
+		if cfg.Docker != nil {
+			return cfg.Docker.Image
+		}
 	}
 	return ""
 }
@@ -1646,26 +1756,13 @@ func isSkillNameConflict(err error) bool {
 }
 
 func skillOwnerFingerprint(cfg *types.TenantSandboxConfig) string {
-	if cfg == nil {
-		return ""
-	}
-	switch sandbox.SandboxType(cfg.SandboxType) {
-	case sandbox.SandboxTypeCube:
-		if cfg.Cube != nil {
-			return sandbox.SkillImageFingerprint("cube", cfg.Cube.APIKey, cfg.Cube.APIURL)
-		}
-	case sandbox.SandboxTypeE2B:
-		if cfg.E2B != nil {
-			return sandbox.SkillImageFingerprint("e2b", cfg.E2B.APIKey, cfg.E2B.APIURL)
-		}
-	}
-	return ""
+	return sandbox.SkillOwnerFingerprint(cfg)
 }
 
 // configSandboxInvalidator is the narrow capability marking bound sandboxes
 // needs. It is reached by type assertion rather than declared on Manager
-// because only the session-bound remote manager owns bindings to mark: a local
-// or disabled backend has none, and for those doing nothing is correct.
+// because only the session-bound remote manager owns bindings to mark: a
+// disabled backend has none, and for that doing nothing is correct.
 type configSandboxInvalidator interface {
 	InvalidateConfigSandboxes(ctx context.Context, tenantID uint64, configID string) (int, error)
 }

@@ -69,6 +69,45 @@ func TestRunInstallHappyPathSwitchesPointerLast(t *testing.T) {
 	require.Equal(t, types.SkillStatusReady, skill.Status)
 }
 
+func TestRunInstallSucceedsOnDockerConfig(t *testing.T) {
+	fx := newInstallFixture(t)
+	fx.configRepo.entity.SandboxType = "docker"
+	fx.configRepo.entity.Config.SandboxType = "docker"
+	fx.configRepo.entity.Config.E2B = nil
+	fx.configRepo.entity.Config.Docker = &types.DockerSandboxConfig{
+		Image: "weknora/sandbox:base",
+		Host:  "unix:///var/run/docker.sock",
+	}
+	fx.fingerprint = sandbox.SkillImageFingerprint("docker", "", "unix:///var/run/docker.sock")
+
+	err := fx.svc.runInstall(context.Background(), 7, "cfg-1", "sk-1", fx.bundle)
+
+	require.NoError(t, err)
+	require.Contains(t, fx.events, "create-snapshot")
+	require.Equal(t, "snap-1", fx.configRepo.saved.Config.SkillImage.SnapshotID)
+	require.Equal(t, "weknora/sandbox:base", fx.configRepo.saved.Config.SkillImage.BaseTemplateID)
+	require.Equal(t, fx.fingerprint, fx.configRepo.saved.Config.SkillImage.OwnerFingerprint)
+}
+
+func TestSkillSnapshotBuildNameIncludesTenantAndFullConfig(t *testing.T) {
+	a := skillSnapshotBuildName(7, "aaaaaaaa-bbbb-cccc-dddd-eeeeffff0001", 1, "11111111-2222-3333-4444-555555555555")
+	b := skillSnapshotBuildName(8, "aaaaaaaa-bbbb-cccc-dddd-eeeeffff0001", 1, "11111111-2222-3333-4444-555555555555")
+	c := skillSnapshotBuildName(7, "aaaaaaaa-bbbb-cccc-dddd-eeeeffff0002", 1, "11111111-2222-3333-4444-555555555555")
+	d := skillSnapshotBuildName(7, "aaaaaaaa-bbbb-cccc-dddd-eeeeffff0001", 1, "aaaaaaaa-bbbb-cccc-dddd-eeeeffff0001")
+	require.Equal(t, "weknora-sk-t7-aaaaaaaabbbbccccddddeeeeffff0001-g1-11111111", a)
+	require.NotEqual(t, a, b, "the same config in another tenant must not share a tag")
+	require.NotEqual(t, a, c, "two configs must not share a tag")
+	require.NotEqual(t, a, d, "two builds of the same generation must not share a tag")
+}
+
+func TestNextSnapshotGenerationSkipsAbandonedLedgerRows(t *testing.T) {
+	require.Equal(t, 1, nextSnapshotGeneration(0, nil))
+	require.Equal(t, 4, nextSnapshotGeneration(2, []*types.TenantSkillSnapshotEntity{
+		{Generation: 3, State: types.SkillSnapshotStateBuilding},
+		{Generation: 1, State: types.SkillSnapshotStateActive},
+	}))
+}
+
 // TestRunInstallIssuesExactlyTheseCommands pins the order, not just the set.
 // Ownership and permissions are normalised BEFORE verification on purpose: the
 // agent creates the tree as root, so a restrictive root umask would leave the
@@ -715,11 +754,12 @@ func (s stubWorkspaceSandboxPolicy) WorkspaceScriptsDisabled(context.Context, ui
 
 func TestSwitchImagePointerRefusesAnUnusableFingerprint(t *testing.T) {
 	fx := newInstallFixture(t)
-	// A config whose provider carries no credentials produces no fingerprint,
+	// A config whose provider cannot snapshot produces no fingerprint,
 	// and a pointer with an empty fingerprint is discarded at session start.
 	fx.configRepo.entity.SandboxType = "docker"
 	fx.configRepo.entity.Config.SandboxType = "docker"
 	fx.configRepo.entity.Config.E2B = nil
+	fx.configRepo.entity.Config.Docker = nil
 
 	err := fx.svc.runInstall(context.Background(), 7, "cfg-1", "sk-1", fx.bundle)
 
