@@ -18,6 +18,9 @@ const PENDING_SELECTOR =
 let observer: MutationObserver | null = null
 let renderTimer: ReturnType<typeof setTimeout> | null = null
 
+// 诊断入口：任何渲染阶段的异常都记录在此，用户控制台一键可读
+(window as any).__wkChartErrors = [] as string[]
+
 export function startChartAutoRenderer(): void {
   if (observer || typeof MutationObserver === 'undefined') return
   observer = new MutationObserver(() => {
@@ -26,10 +29,25 @@ export function startChartAutoRenderer(): void {
     renderTimer = setTimeout(() => {
       renderTimer = null
       void (async () => {
-        await renderMermaidInContainer(document.body)
-        await renderEchartsInContainer(document.body)
+        try {
+          await renderMermaidInContainer(document.body)
+        } catch (e) {
+          noteChartError('mermaid', e)
+        }
+        try {
+          await renderEchartsInContainer(document.body)
+        } catch (e) {
+          noteChartError('echarts', e)
+        }
       })()
     }, 200)
   })
   observer.observe(document.body, { childList: true, subtree: true })
+}
+
+function noteChartError(kind: string, e: unknown) {
+  const msg = e instanceof Error ? `${e.message}\n${e.stack?.slice(0, 500) ?? ''}` : String(e)
+  const entry = `[${new Date().toISOString()}] ${kind}: ${msg}`
+  ;(window as any).__wkChartErrors.push(entry)
+  console.error('[chart-render]', entry)
 }

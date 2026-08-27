@@ -239,9 +239,24 @@ export const renderMermaidInContainer = async (
 ) => {
   if (!rootElement) return
 
-  const mermaid = await getMermaid()
-  ensureMermaidInitialized()
-  await initPromise
+  // 库加载/初始化失败也要可见：否则图表块静默停在代码形态无从排查
+  let mermaid: Awaited<ReturnType<typeof getMermaid>>
+  try {
+    mermaid = await getMermaid()
+    ensureMermaidInitialized()
+    await initPromise
+  } catch (e) {
+    console.error('Mermaid library failed to load:', e)
+    const reason = e instanceof Error ? e.message : String(e)
+    for (const el of rootElement.querySelectorAll<HTMLElement>(
+      'pre[data-mermaid="false"], .chat-mermaid-block__canvas[data-mermaid="false"]',
+    )) {
+      el.setAttribute('data-mermaid', 'error')
+      el.classList.add('chat-mermaid-block__canvas--error')
+      el.innerHTML = `<div class="chart-render-error">图表库加载失败：${escapeHtml(reason.slice(0, 200))}</div>`
+    }
+    return
+  }
 
   const mermaidElements = rootElement.querySelectorAll<HTMLElement>(
     'pre[data-mermaid="false"], .chat-mermaid-block__canvas[data-mermaid="false"]',
