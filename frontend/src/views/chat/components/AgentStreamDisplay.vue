@@ -1542,6 +1542,19 @@ watch(answerFullyRendered, (ready) => {
   });
 }, { immediate: true });
 
+// 兜底：切换会话切回时打字机可能不重播，answerFullyRendered 全程为 true
+// 没有跳变，上面的 watcher 不会触发，图表因此无人渲染。按内容变化兜底
+// （切回会话 activeAnswerMarkdown 必然变化），防抖等待 DOM 就绪。
+let answerEnhanceTimer: ReturnType<typeof setTimeout> | null = null;
+watch(activeAnswerMarkdown, () => {
+  if (!isConversationDone.value) return;
+  if (answerEnhanceTimer) clearTimeout(answerEnhanceTimer);
+  answerEnhanceTimer = setTimeout(() => {
+    answerEnhanceTimer = null;
+    nextTick(() => { void enhanceMarkdownContainer(rootElement.value); });
+  }, 300);
+}, { immediate: true });
+
 // Whether any currently visible step is actively pending (a running tool, or a
 // blocking approval/OAuth prompt). A pending step shimmers on its own, so we
 // don't stack a placeholder on top of it.
