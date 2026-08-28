@@ -781,7 +781,31 @@ func (r *reaperSkillStore) GetSkill(
 
 func (r *reaperSkillStore) UpdateSkill(_ context.Context, e *types.TenantSkillEntity) error {
 	cp := *e
+	if stored := r.rows[e.ID]; stored != nil {
+		cp.Envs = stored.Envs
+	} else {
+		cp.Envs = nil
+	}
 	r.rows[e.ID] = &cp
+	return nil
+}
+
+func (r *reaperSkillStore) UpdateSkillEnvs(
+	_ context.Context, _ uint64, _, skillID string, envs types.SkillEnvVars,
+) error {
+	if stored := r.rows[skillID]; stored != nil {
+		stored.Envs = envs
+	}
+	return nil
+}
+
+func (r *reaperSkillStore) UpdateSkillAdminState(
+	_ context.Context, _ uint64, _, skillID string, enabled bool, envs types.SkillEnvVars,
+) error {
+	if stored := r.rows[skillID]; stored != nil {
+		stored.Enabled = enabled
+		stored.Envs = envs
+	}
 	return nil
 }
 
@@ -856,6 +880,30 @@ func (r *reaperSkillStore) MarkSnapshotState(
 
 func (r *reaperSkillStore) DeleteSnapshotRowsByConfig(context.Context, uint64, string) error {
 	panic("DeleteSnapshotRowsByConfig is outside the reaper surface")
+}
+func (r *reaperSkillStore) ListSkillsByTenant(context.Context, uint64) ([]*types.TenantSkillEntity, error) {
+	panic("ListSkillsByTenant is outside the reaper surface")
+}
+func (r *reaperSkillStore) ListUserEnvVars(
+	context.Context, uint64, types.Principal, string, string,
+) ([]*types.TenantUserEnvVar, error) {
+	panic("ListUserEnvVars is outside the reaper surface")
+}
+func (r *reaperSkillStore) ListUserEnvVarsByConfig(
+	context.Context, uint64, types.Principal, string,
+) ([]*types.TenantUserEnvVar, error) {
+	panic("ListUserEnvVarsByConfig is outside the reaper surface")
+}
+func (r *reaperSkillStore) UpsertUserEnvVar(context.Context, *types.TenantUserEnvVar) error {
+	panic("UpsertUserEnvVar is outside the reaper surface")
+}
+func (r *reaperSkillStore) DeleteUserEnvVar(
+	context.Context, uint64, types.Principal, string, string, string,
+) error {
+	panic("DeleteUserEnvVar is outside the reaper surface")
+}
+func (r *reaperSkillStore) DeleteUserEnvVarsByConfig(context.Context, uint64, string) error {
+	panic("DeleteUserEnvVarsByConfig is outside the reaper surface")
 }
 
 type reaperConfigStore struct {

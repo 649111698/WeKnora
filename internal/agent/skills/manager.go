@@ -38,6 +38,19 @@ const artifactHistoryEnvVar = "WEKNORA_SKILL_HISTORY_ROOT"
 // install-time verification pass exports the same name.
 const skillDirEnvVar = "WEKNORA_SKILL_DIR"
 
+// InjectedSandboxEnvVars is every name ExecuteScript writes into the sandbox
+// environment. The skill-env declaration blacklist must reject these so a
+// stored value cannot redirect artifacts, the skill directory, or the session
+// input tree. Credential names such as WEKNORA_API_KEY are not in this list.
+func InjectedSandboxEnvVars() []string {
+	return []string{
+		artifactOutputEnvVar,
+		sessionInputEnvVar,
+		artifactHistoryEnvVar,
+		skillDirEnvVar,
+	}
+}
+
 // defaultArtifactOutputDir is used when neither the environment variable
 // (WEKNORA_SKILL_OUTPUT_DIR) nor the ExecuteConfig.Env has an override.
 // /workspace/output sits inside the base sandbox image's writable tree and
@@ -81,6 +94,11 @@ type Manager struct {
 	// skills/preloaded directory is not what execute_skill_script would find
 	// inside the sandbox.
 	tenantSource SkillSource
+
+	// envResolver supplies the per-caller environment for one execution. It
+	// is nil when the run has no installed skills, in which case execution
+	// keeps exactly its previous behaviour.
+	envResolver SkillEnvResolver
 
 	// Configuration
 	skillDirs     []string
@@ -127,6 +145,14 @@ func (m *Manager) IsEnabled() bool {
 // manager - so it takes no lock.
 func (m *Manager) WithTenantSource(source SkillSource) *Manager {
 	m.tenantSource = source
+	return m
+}
+
+// WithEnvResolver attaches the per-caller environment resolver. Like
+// WithTenantSource it is part of construction and must be invoked before
+// Initialize, so it takes no lock.
+func (m *Manager) WithEnvResolver(resolver SkillEnvResolver) *Manager {
+	m.envResolver = resolver
 	return m
 }
 
@@ -341,6 +367,30 @@ func (m *Manager) ExecuteScript(ctx context.Context, skillName, scriptPath strin
 				logger.Warnf(ctx, "[Tool][ExecuteScript] pre-create output dir %s failed: %v", outputDir, err)
 			}
 		}
+	}
+
+	// Per-caller values are resolved here rather than baked into the sandbox
+	// at creation: an IM thread can have several people sharing one sandbox,
+	// so each turn's values must belong to that turn's speaker and must not
+	// linger where the next person could read them with `env`.
+	//
+	// The resolver runs after the artifact keys above are seeded, so
+	// applyResolvedEnv's skip-existing rule protects WEKNORA_SKILL_OUTPUT_DIR
+	// and WEKNORA_SKILL_HISTORY_ROOT (always) plus WEKNORA_SESSION_INPUT_DIR
+	// (when a session file store exists). skillDirEnvVar is set later inside
+	// buildSkillExecuteConfig by an unconditional write. The write-time
+	// blacklist of skills.InjectedSandboxEnvVars (service.validateUserEnvName)
+	// is what covers a name that was not seeded on this path. Other WEKNORA_*
+	// names (API keys, base URLs) are ordinary credentials a skill may declare.
+	if m.envResolver != nil {
+		resolved, missing, err := m.envResolver.ResolveEnv(ctx, skillName)
+		if err != nil {
+			return nil, err
+		}
+		if len(missing) > 0 {
+			return nil, &MissingSkillEnvError{SkillName: skillName, Names: missing}
+		}
+		applyResolvedEnv(env, resolved)
 	}
 
 	config, err := buildSkillExecuteConfig(

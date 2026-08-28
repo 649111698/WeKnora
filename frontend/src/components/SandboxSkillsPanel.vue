@@ -179,6 +179,134 @@
                       @change="(v: any) => toggleEnabled(skill, Boolean(v))"
                     />
                   </t-tooltip>
+                  <t-popup
+                    v-if="skillHasDeclaredEnvs(skill)"
+                    :visible="expandedEnvSkillId === skill.id"
+                    trigger="click"
+                    placement="bottom-right"
+                    attach="body"
+                    destroy-on-close
+                    overlay-class-name="skill-env-popup"
+                    :z-index="3200"
+                    :overlay-inner-style="{ padding: '0' }"
+                    @visible-change="(visible: boolean, context?: { e?: Event }) => onEnvVisible(skill, visible, context)"
+                  >
+                    <t-tooltip
+                      :content="$t('settings.sandbox.skillEnv.toggle')"
+                      placement="top"
+                      destroy-on-close
+                      v-bind="expandedEnvSkillId === skill.id ? { visible: false } : {}"
+                    >
+                      <button
+                        type="button"
+                        class="skill-item__icon-btn skill-item__icon-btn--key"
+                        :class="{ 'is-on': expandedEnvSkillId === skill.id }"
+                        :aria-label="$t('settings.sandbox.skillEnv.toggle')"
+                        @pointerdown="ensureEnvDrafts(skill.id)"
+                      >
+                        <t-icon name="key" size="18px" />
+                      </button>
+                    </t-tooltip>
+                    <template #content>
+                        <div class="skill-env-popup__panel">
+                          <header class="skill-env-popup__head">
+                            <div class="skill-env-popup__head-text">
+                              <div class="skill-env-popup__title">{{ skill.name || skill.id }}</div>
+                              <div class="skill-env-popup__meta">
+                                {{ $t('settings.sandbox.skillEnv.workspaceTitle') }}
+                              </div>
+                            </div>
+                            <t-button
+                              variant="text"
+                              shape="square"
+                              size="small"
+                              class="skill-env-popup__close"
+                              :title="$t('common.close')"
+                              @click.stop="onEnvVisible(skill, false)"
+                            >
+                              <template #icon><t-icon name="close" size="16px" /></template>
+                            </t-button>
+                          </header>
+                          <div class="skill-env-popup__body">
+                            <p class="skill-envs__hint">{{ $t('settings.sandbox.skillEnv.workspaceHint') }}</p>
+                            <div class="skill-envs__rows">
+                              <div v-for="(env, envIdx) in skill.envs" :key="env.name" class="skill-envs__row">
+                                <div class="skill-envs__meta">
+                                  <code class="skill-envs__name">{{ env.name }}</code>
+                                  <span v-if="env.required" class="skill-envs__tag skill-envs__tag--required">
+                                    {{ $t('settings.sandbox.skillEnv.required') }}
+                                  </span>
+                                  <span
+                                    class="skill-envs__tag"
+                                    :class="env.is_set ? 'skill-envs__tag--set' : 'skill-envs__tag--unset'"
+                                  >
+                                    {{
+                                      env.is_set
+                                        ? $t('settings.sandbox.skillEnv.isSet')
+                                        : $t('settings.sandbox.skillEnv.notSet')
+                                    }}
+                                  </span>
+                                  <span v-if="env.description" class="skill-envs__desc">{{ env.description }}</span>
+                                </div>
+                                <div class="skill-envs__editor">
+                                  <t-input
+                                    :value="envDrafts[skill.id]?.[env.name] ?? ''"
+                                    type="password"
+                                    autocomplete="new-password"
+                                    :name="`wk-se-${envIdx}`"
+                                    :readonly="!isEnvInputUnlocked(skill.id, env.name)"
+                                    spellcheck="false"
+                                    data-lpignore="true"
+                                    data-1p-ignore="true"
+                                    data-bwignore="true"
+                                    :aria-label="env.name"
+                                    :placeholder="
+                                      env.is_set
+                                        ? $t('settings.sandbox.skillEnv.placeholderSet')
+                                        : $t('settings.sandbox.skillEnv.placeholderUnset')
+                                    "
+                                    @focus="unlockEnvInput(skill.id, env.name)"
+                                    @update:value="(v: string) => setEnvDraft(skill.id, env.name, v)"
+                                  />
+                                  <t-popconfirm
+                                    v-if="canClearAdminSkillEnv(env)"
+                                    theme="warning"
+                                    attach="body"
+                                    :z-index="3300"
+                                    :popup-props="{ attach: 'body', zIndex: 3300 }"
+                                    :content="$t('settings.sandbox.skillEnv.clearConfirm', { name: env.name })"
+                                    :confirm-btn="{ content: $t('settings.sandbox.skillEnv.clear'), theme: 'danger' }"
+                                    :cancel-btn="{ content: $t('common.cancel') }"
+                                    @confirm="clearEnv(skill, env.name)"
+                                  >
+                                    <t-button
+                                      theme="danger"
+                                      variant="text"
+                                      size="small"
+                                      :disabled="envSaveInFlight(skill)"
+                                      :loading="envSaveInFlight(skill)"
+                                    >
+                                      {{ $t('settings.sandbox.skillEnv.clear') }}
+                                    </t-button>
+                                  </t-popconfirm>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="skill-env-popup__footer">
+                            <t-button
+                              theme="primary"
+                              size="small"
+                              :disabled="!hasEnvEdits(skill) || envSaveInFlight(skill)"
+                              :loading="envSaveInFlight(skill)"
+                              @click="saveEnvs(skill)"
+                            >
+                              {{ $t('settings.sandbox.skillEnv.save') }}
+                            </t-button>
+                          </div>
+                        </div>
+                      </template>
+                    </t-popup>
                   <span class="skill-item__actions-divider" />
                   <t-tooltip :content="$t('settings.sandbox.skillFiles')" placement="top">
                     <button
@@ -191,24 +319,25 @@
                       <t-icon name="folder" size="16px" />
                     </button>
                   </t-tooltip>
-                  <t-tooltip
-                    v-if="hasTranscript(skill) || isBusy(skill)"
-                    :content="isBusy(skill)
-                      ? $t('settings.sandbox.skillTranscriptLiveHint')
-                      : $t('settings.sandbox.skillTranscript')"
-                    placement="top"
+                  <t-popup
+                    v-if="hasTranscript(skill)"
+                    :visible="expandedSkillId === skill.id"
+                    trigger="click"
+                    placement="bottom-right"
+                    attach="body"
+                    destroy-on-close
+                    overlay-class-name="skill-transcript-popup"
+                    :z-index="3200"
+                    :overlay-inner-style="{ padding: '0' }"
+                    @visible-change="(visible: boolean) => onTranscriptVisible(skill, visible)"
                   >
-                    <t-popup
-                      v-if="hasTranscript(skill)"
-                      :visible="expandedSkillId === skill.id"
-                      trigger="click"
-                      placement="bottom-right"
-                      attach="body"
+                    <t-tooltip
+                      :content="isBusy(skill)
+                        ? $t('settings.sandbox.skillTranscriptLiveHint')
+                        : $t('settings.sandbox.skillTranscript')"
+                      placement="top"
                       destroy-on-close
-                      overlay-class-name="skill-transcript-popup"
-                      :z-index="3200"
-                      :overlay-inner-style="{ padding: '0' }"
-                      @visible-change="(visible: boolean) => onTranscriptVisible(skill, visible)"
+                      v-bind="expandedSkillId === skill.id ? { visible: false } : {}"
                     >
                       <button
                         type="button"
@@ -226,7 +355,8 @@
                           {{ $t('settings.sandbox.skillTranscriptLive') }}
                         </span>
                       </button>
-                      <template #content>
+                    </t-tooltip>
+                    <template #content>
                         <div class="skill-transcript-popup__panel">
                           <header class="skill-transcript-popup__head">
                             <div class="skill-transcript-popup__head-text">
@@ -264,19 +394,23 @@
                         </div>
                       </template>
                     </t-popup>
-                    <button
-                      v-else
-                      type="button"
-                      class="skill-item__icon-btn is-live is-live-chip"
-                      :aria-label="$t('settings.sandbox.skillTranscript')"
+                    <t-tooltip
+                      v-else-if="isBusy(skill)"
+                      :content="$t('settings.sandbox.skillTranscriptLiveHint')"
+                      placement="top"
                     >
-                      <span class="skill-item__live-dot" aria-hidden="true" />
-                      <t-icon name="chat-bubble-history" size="16px" />
-                      <span class="skill-item__live-label">
-                        {{ $t('settings.sandbox.skillTranscriptLive') }}
-                      </span>
-                    </button>
-                  </t-tooltip>
+                      <button
+                        type="button"
+                        class="skill-item__icon-btn is-live is-live-chip"
+                        :aria-label="$t('settings.sandbox.skillTranscript')"
+                      >
+                        <span class="skill-item__live-dot" aria-hidden="true" />
+                        <t-icon name="chat-bubble-history" size="16px" />
+                        <span class="skill-item__live-label">
+                          {{ $t('settings.sandbox.skillTranscriptLive') }}
+                        </span>
+                      </button>
+                    </t-tooltip>
                   <t-tooltip
                     v-if="skill.status === 'failed'"
                     :content="$t('settings.sandbox.skillRetryHint')"
@@ -348,7 +482,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
@@ -378,6 +512,19 @@ import {
 import { getApiBaseUrl } from '@/utils/api-base'
 import { generateRandomString } from '@/utils/index'
 import i18n from '@/i18n'
+import {
+  MAX_ENV_VALUE_BYTES,
+  addSkillEnvSaveInFlight,
+  adminSkillEnvClearPayload,
+  canClearAdminSkillEnv,
+  clearSkillEnvSaveInFlight,
+  clearSubmittedSkillEnvDrafts,
+  editedSkillEnvPayload,
+  isSkillEnvSaveInFlight,
+  isValidEnvValueLength,
+  skillHasDeclaredEnvs,
+  type SkillEnvSavesInFlight,
+} from '@/views/settings/envVarState'
 
 // Skills are installed into the config's snapshot image, so the panel needs a
 // config that already exists. The editor only renders it on a saved config.
@@ -414,6 +561,16 @@ const transcriptEpoch = ref(0)
 const focusedSkillId = ref('')
 const skillItemEls = new Map<string, HTMLElement>()
 let focusTimer: number | null = null
+// Workspace-wide env values. Only one skill's editor popup is open at a time,
+// same as the install timeline.
+const expandedEnvSkillId = ref('')
+// Drafts keyed by skill then variable name. An absent key means "the admin did
+// not touch this field", which is what keeps the PATCH partial: an empty string
+// clears the stored value server-side, so submitting every input would wipe
+// values nobody looked at.
+const envDrafts = reactive<Record<string, Record<string, string>>>({})
+const envInputUnlocked = reactive<Record<string, boolean>>({})
+const envSavesInFlight = ref<SkillEnvSavesInFlight>({})
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const progressById = ref<Record<string, ConfigSkillInstallEvent>>({})
 
@@ -524,6 +681,7 @@ function revealSkill(skillId: string) {
 function onTranscriptVisible(skill: ConfigSkill, visible: boolean) {
   if (visible) {
     filesDrawerVisible.value = false
+    expandedEnvSkillId.value = ''
     if (expandedSkillId.value !== skill.id) {
       expandedSkillId.value = skill.id
       // A run that finished while the popup was closed was tailed from the
@@ -539,6 +697,7 @@ function onTranscriptVisible(skill: ConfigSkill, visible: boolean) {
 
 function openSkillFiles(skill: ConfigSkill) {
   expandedSkillId.value = ''
+  expandedEnvSkillId.value = ''
   if (filesDrawerVisible.value && filesSkillId.value === skill.id) {
     filesDrawerVisible.value = false
     return
@@ -546,6 +705,131 @@ function openSkillFiles(skill: ConfigSkill) {
   filesSkillId.value = skill.id
   filesSkillName.value = skill.name || skill.id
   filesDrawerVisible.value = true
+}
+
+function ensureEnvDrafts(skillId: string) {
+  if (!envDrafts[skillId]) envDrafts[skillId] = {}
+}
+
+function setEnvDraft(skillId: string, name: string, value: string) {
+  ensureEnvDrafts(skillId)
+  envDrafts[skillId][name] = value ?? ''
+}
+
+function envInputLockKey(skillId: string, name: string) {
+  return `${skillId}\n${name}`
+}
+
+function isEnvInputUnlocked(skillId: string, name: string) {
+  return envInputUnlocked[envInputLockKey(skillId, name)] === true
+}
+
+function unlockEnvInput(skillId: string, name: string) {
+  envInputUnlocked[envInputLockKey(skillId, name)] = true
+}
+
+function resetEnvInputLocks() {
+  for (const key of Object.keys(envInputUnlocked)) delete envInputUnlocked[key]
+}
+
+function onEnvVisible(skill: ConfigSkill, visible: boolean, context?: { e?: Event }) {
+  if (visible) {
+    if (!skillHasDeclaredEnvs(skill)) return
+    filesDrawerVisible.value = false
+    expandedSkillId.value = ''
+    if (expandedEnvSkillId.value !== skill.id) {
+      // Reopening starts from a clean slate rather than resurrecting a
+      // half-typed secret from the last time the editor was open.
+      envDrafts[skill.id] = {}
+      resetEnvInputLocks()
+      expandedEnvSkillId.value = skill.id
+    } else {
+      ensureEnvDrafts(skill.id)
+    }
+    return
+  }
+  // The clear confirm is another body-attached popup, so TDesign treats a
+  // click on it as an outside click on this editor.
+  const target = context?.e?.target
+  if (target instanceof Element && target.closest('.t-popconfirm')) {
+    return
+  }
+  if (expandedEnvSkillId.value === skill.id) {
+    expandedEnvSkillId.value = ''
+  }
+}
+
+function envPayload(skill: ConfigSkill): Record<string, string> {
+  return editedSkillEnvPayload(
+    (skill.envs || []).map((env) => env.name),
+    envDrafts[skill.id],
+  )
+}
+
+function hasEnvEdits(skill: ConfigSkill): boolean {
+  return Object.keys(envPayload(skill)).length > 0
+}
+
+function envSaveInFlight(skill: ConfigSkill): boolean {
+  const configId = props.record?.id
+  return configId
+    ? isSkillEnvSaveInFlight(envSavesInFlight.value, configId, skill.id)
+    : false
+}
+
+async function saveEnvs(skill: ConfigSkill) {
+  const envs = envPayload(skill)
+  if (Object.keys(envs).length === 0) return
+  if (Object.values(envs).some((value) => !isValidEnvValueLength(value))) {
+    MessagePlugin.error(
+      t('settings.sandbox.skillEnv.valueTooLong', { max: MAX_ENV_VALUE_BYTES }),
+    )
+    return
+  }
+  await submitEnvs(skill, envs, 'settings.sandbox.skillEnv.saveSuccess')
+}
+
+async function clearEnv(skill: ConfigSkill, name: string) {
+  await submitEnvs(skill, adminSkillEnvClearPayload(name), 'settings.sandbox.skillEnv.clearSuccess')
+}
+
+async function submitEnvs(
+  skill: ConfigSkill,
+  envs: Record<string, string>,
+  successKey: string,
+) {
+  if (!props.record) return
+  const configId = props.record.id
+  if (isSkillEnvSaveInFlight(envSavesInFlight.value, configId, skill.id)) return
+  // A response that lands after the drawer moved to another config describes a
+  // panel nobody is looking at any more.
+  const isCurrent = () => props.record?.id === configId
+  envSavesInFlight.value = addSkillEnvSaveInFlight(
+    envSavesInFlight.value,
+    configId,
+    skill.id,
+  )
+  try {
+    const res = await patchConfigSkill(configId, skill.id, { envs })
+    if (!isCurrent()) return
+    const updated = res?.data
+    if (updated) {
+      skills.value = skills.value.map((item) => (item.id === skill.id ? updated : item))
+    }
+    // Nothing reads a stored value back. Remove only values that are still the
+    // submitted ones; newer typing during the request must survive cleanup.
+    envDrafts[skill.id] = clearSubmittedSkillEnvDrafts(envDrafts[skill.id] || {}, envs)
+    MessagePlugin.success(t(successKey))
+  } catch (e: any) {
+    if (!isCurrent()) return
+    MessagePlugin.error(e?.message || t('settings.sandbox.skillEnv.saveFailed'))
+  } finally {
+    envSavesInFlight.value = clearSkillEnvSaveInFlight(
+      envSavesInFlight.value,
+      configId,
+      skill.id,
+    )
+  }
 }
 
 function progressOf(skill: ConfigSkill): number {
@@ -945,7 +1229,11 @@ async function removeSkill(skill: ConfigSkill) {
 // steps tears the follows down and coming back re-reads the list.
 watch(
   () => props.record?.id,
-  (configID) => {
+  (configID, previousConfigID) => {
+    if (configID !== previousConfigID) {
+      expandedEnvSkillId.value = ''
+      for (const skillId of Object.keys(envDrafts)) delete envDrafts[skillId]
+    }
     if (configID) {
       void loadAll()
       return
@@ -1312,6 +1600,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+
+  :deep(.t-popup),
+  :deep(.t-popup__reference) {
+    display: inline-flex;
+  }
 }
 
 .skill-item__actions-divider {
@@ -1333,7 +1626,12 @@ onUnmounted(() => {
   background: transparent;
   color: var(--td-text-color-placeholder);
   cursor: pointer;
+  line-height: 0;
   transition: background 0.15s ease, color 0.15s ease;
+
+  :deep(.t-icon) {
+    display: block;
+  }
 
   &:hover:not(:disabled) {
     background: var(--td-bg-color-secondarycontainer);
@@ -1366,6 +1664,13 @@ onUnmounted(() => {
     background: var(--td-error-color-1, var(--td-bg-color-secondarycontainer));
     color: var(--td-error-color);
   }
+
+  /* TDesign's key glyph sits in a smaller ink box than folder/refresh/delete. */
+  &--key :deep(.t-icon) {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+  }
 }
 
 .skill-item__live-dot {
@@ -1396,7 +1701,8 @@ onUnmounted(() => {
 </style>
 
 <style lang="less">
-.skill-transcript-popup {
+.skill-transcript-popup,
+.skill-env-popup {
   z-index: 3200 !important;
 
   .t-popup__content {
@@ -1451,6 +1757,27 @@ onUnmounted(() => {
     color: var(--td-text-color-placeholder);
   }
 
+  &__close {
+    flex-shrink: 0;
+    color: var(--td-text-color-secondary);
+  }
+
+  &__body {
+    max-height: min(360px, 52vh);
+    overflow: auto;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--td-bg-color-component-disabled);
+      border-radius: 3px;
+    }
+  }
+}
+
+.skill-transcript-popup {
   &__status {
     color: var(--td-text-color-secondary);
 
@@ -1468,24 +1795,103 @@ onUnmounted(() => {
     }
   }
 
-  &__close {
-    flex-shrink: 0;
-    color: var(--td-text-color-secondary);
+  &__body {
+    background: var(--td-bg-color-secondarycontainer);
+  }
+}
+
+.skill-env-popup {
+  .t-popup__content {
+    width: 440px;
+    max-width: min(440px, calc(100vw - 32px));
   }
 
   &__body {
-    max-height: min(360px, 52vh);
-    overflow: auto;
+    padding: 12px 14px 14px;
+    background: var(--td-bg-color-container);
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 10px 14px;
+    border-top: 1px solid var(--td-component-stroke);
+  }
+
+  .skill-envs__hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
+  }
+
+  .skill-envs__rows {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .skill-envs__row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .skill-envs__meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .skill-envs__name {
+    font-family: var(--td-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+    font-size: 12px;
+    color: var(--td-text-color-primary);
+    overflow-wrap: anywhere;
+  }
+
+  .skill-envs__tag {
+    font-size: 12px;
+    line-height: 18px;
+    padding: 0 8px;
+    border-radius: 10px;
     background: var(--td-bg-color-secondarycontainer);
+    color: var(--td-text-color-secondary);
+  }
 
-    &::-webkit-scrollbar {
-      width: 6px;
-    }
+  .skill-envs__tag--required {
+    background: var(--td-warning-color-light);
+    color: var(--td-warning-color);
+  }
 
-    &::-webkit-scrollbar-thumb {
-      background: var(--td-bg-color-component-disabled);
-      border-radius: 3px;
-    }
+  .skill-envs__tag--set {
+    background: var(--td-success-color-light);
+    color: var(--td-success-color);
+  }
+
+  .skill-envs__desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
+  }
+
+  .skill-envs__editor {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .skill-envs__editor .t-input__wrap {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* readonly is only there to block password-manager fill; keep the field looking editable. */
+  .skill-envs__editor .t-input.t-is-readonly {
+    cursor: text;
+    background-color: var(--td-bg-color-specialcomponent);
   }
 }
 </style>
