@@ -72,10 +72,30 @@ func (s *TenantSkillService) InstallSkill(
 		return "", err
 	}
 	if s.canSkipInstall(ctx, existing, bundle) {
+		catalog, catalogErr := s.upsertCatalogFromBundle(ctx, tenantID, bundle, archive, false)
+		if catalogErr != nil {
+			return "", fmt.Errorf("record skill catalog: %w", catalogErr)
+		}
 		if err := s.refreshSkippedBundle(ctx, existing, archive); err != nil {
 			return "", fmt.Errorf("store bundle for skill %s: %w", existing.ID, err)
 		}
+		if catalog != nil && existing.CatalogID != catalog.ID {
+			if err := s.updateSkillFields(ctx, tenantID, configID, existing.ID, func(e *types.TenantSkillEntity) {
+				e.CatalogID = catalog.ID
+			}); err != nil {
+				return "", err
+			}
+		}
 		return existing.ID, nil
+	}
+
+	catalog, err := s.upsertCatalogFromBundle(ctx, tenantID, bundle, archive, false)
+	if err != nil {
+		return "", fmt.Errorf("record skill catalog: %w", err)
+	}
+	catalogID := ""
+	if catalog != nil {
+		catalogID = catalog.ID
 	}
 
 	skillID := uuid.NewString()
@@ -83,13 +103,15 @@ func (s *TenantSkillService) InstallSkill(
 	if existing != nil {
 		skillID = existing.ID
 		takeSkillRowForInstall(existing, bundle, now)
+		existing.CatalogID = catalogID
 		if err := s.skills.UpdateSkill(ctx, existing); err != nil {
 			return "", err
 		}
 	} else {
 		if err := s.skills.CreateSkill(ctx, &types.TenantSkillEntity{
 			ID: skillID, TenantID: tenantID, SandboxConfigID: configID,
-			Name: bundle.Name, Version: bundle.Version,
+			CatalogID: catalogID,
+			Name:      bundle.Name, Version: bundle.Version,
 			Description: bundle.Description, Instructions: bundle.Instructions,
 			BundleSHA256: bundle.SHA256, Enabled: true,
 			Status: types.SkillStatusInstalling, InstallingSince: &now,
@@ -108,6 +130,7 @@ func (s *TenantSkillService) InstallSkill(
 			}
 			skillID = winner.ID
 			takeSkillRowForInstall(winner, bundle, now)
+			winner.CatalogID = catalogID
 			if err := s.skills.UpdateSkill(ctx, winner); err != nil {
 				return "", err
 			}
