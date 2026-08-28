@@ -1,6 +1,6 @@
 -- Description: Tenant-level skill catalog. A skill exists independently of any
 -- sandbox; tenant_skills rows become installations onto one config's image.
-DO $$ BEGIN RAISE NOTICE '[Migration 000090] Creating tenant_skill_catalog'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000092] Creating tenant_skill_catalog'; END $$;
 
 CREATE TABLE IF NOT EXISTS tenant_skill_catalog (
     id            VARCHAR(36)  PRIMARY KEY,
@@ -22,7 +22,7 @@ COMMENT ON TABLE tenant_skill_catalog IS
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tenant_skill_catalog_name
     ON tenant_skill_catalog (tenant_id, name) WHERE deleted_at IS NULL;
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000090] Linking tenant_skills to catalog'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000092] Linking tenant_skills to catalog'; END $$;
 
 ALTER TABLE tenant_skills ADD COLUMN IF NOT EXISTS catalog_id VARCHAR(36);
 
