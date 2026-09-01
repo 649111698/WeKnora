@@ -19,7 +19,22 @@ export MAX_FILE_SIZE=${MAX_FILE_SIZE_MB}M
 export APP_HOST=${APP_HOST:-app}
 export APP_PORT=${APP_PORT:-8080}
 export APP_SCHEME=${APP_SCHEME:-http}
-envsubst '${MAX_FILE_SIZE} ${APP_HOST} ${APP_PORT} ${APP_SCHEME}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
+
+# 主站防嵌策略：默认 X-Frame-Options: SAMEORIGIN（防点击劫持）。
+# 设置 FRAME_ALLOWED_ORIGINS（空格分隔的宿主站点 origin，如
+# https://portal.example.com）后改为 CSP frame-ancestors 白名单，允许
+# 这些站点以 iframe 集成主站（如金蝶苍穹门户菜单的 SSO 免登链接）。
+# nginx 的 add_header 值为空字符串时不发送该头，两种模式共用同一份配置。
+FRAME_ALLOWED_ORIGINS="${FRAME_ALLOWED_ORIGINS:-}"
+if [ -n "$FRAME_ALLOWED_ORIGINS" ]; then
+  export X_FRAME_OPTIONS=""
+  export FRAME_CSP="frame-ancestors 'self' ${FRAME_ALLOWED_ORIGINS}"
+else
+  export X_FRAME_OPTIONS="SAMEORIGIN"
+  export FRAME_CSP=""
+fi
+
+envsubst '${MAX_FILE_SIZE} ${APP_HOST} ${APP_PORT} ${APP_SCHEME} ${X_FRAME_OPTIONS} ${FRAME_CSP}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
 
 # 启动 nginx
 exec nginx -g 'daemon off;'

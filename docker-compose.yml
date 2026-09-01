@@ -16,6 +16,10 @@ services:
       # For remote deployment, set this to the remote App's service port.
       - APP_PORT=${APP_BACKEND_PORT:-8080}
       - APP_SCHEME=${APP_SCHEME:-http}
+      # 主站 iframe 集成白名单（空格分隔的宿主站点 origin）。设置后主站不再发
+      # X-Frame-Options: SAMEORIGIN，改发 CSP frame-ancestors 白名单，供宿主站点
+      # （如金蝶苍穹门户菜单的 SSO 免登链接）内嵌本系统；留空保持默认防嵌策略。
+      - FRAME_ALLOWED_ORIGINS=${FRAME_ALLOWED_ORIGINS:-}
     # NOTE: If using a remote App backend, comment out or remove the depends_on
     # block below and set APP_HOST/APP_BACKEND_PORT/APP_SCHEME in your .env file.
     depends_on:

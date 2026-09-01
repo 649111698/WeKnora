@@ -59,6 +59,7 @@ export default {
         callbackUrl: 'SSO 신뢰 화이트리스트 콜백 주소',
         menuUrl: 'Cosmic 포털 자동 로그인 링크',
         menuUrlHint: 'Cosmic 메뉴 / 빠른 실행 / 외부 링크에 구성하세요. Cosmic에 로그인한 사용자는 재로그인 없이 진입하며 기본적으로 대화 페이지에 도착합니다.',
+        menuUrlFrameHint: 'Cosmic이 이 링크를 iframe으로 임베드하는 경우 frontend 컨테이너에 FRAME_ALLOWED_ORIGINS=<Cosmic 포털 origin(예: https://portal.example.com)>을 설정하세요. 설정하지 않으면 메인 사이트 정책(X-Frame-Options)이 임베드를 차단합니다. 새 창으로 열 때는 필요 없습니다.',
         callbackUrlHint: '이 전체 주소(쿼리 매개변수 포함)를 Cosmic 제3자 애플리케이션 접근 정책 SSO 화이트리스트에 추가하세요.',
       },
       watermark: {

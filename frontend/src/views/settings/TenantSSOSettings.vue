@@ -138,6 +138,7 @@
             </t-button>
           </div>
           <p class="sso-field__hint">{{ t('tenantSSO.kingdee.menuUrlHint') }}</p>
+          <p class="sso-field__hint">{{ t('tenantSSO.kingdee.menuUrlFrameHint') }}</p>
         </div>
       </div>
     </section>

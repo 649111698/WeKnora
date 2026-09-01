@@ -59,6 +59,7 @@ export default {
         callbackUrl: 'SSO 可信白名单回调地址',
         menuUrl: '苍穹门户免登链接',
         menuUrlHint: '配置到苍穹「菜单 / 快速发起 / 外部链接」，已登录苍穹的用户点击即免登进入本系统，默认落在对话页。',
+        menuUrlFrameHint: '若苍穹以 iframe 内嵌该链接，需在部署侧为前端容器设置环境变量 FRAME_ALLOWED_ORIGINS=苍穹门户地址（如 https://portal.example.com），否则会被主站的防嵌策略（X-Frame-Options）拦截；新窗口打开则无需设置。',
         callbackUrlHint: '把此完整地址（含查询参数）加入苍穹「第三方应用 → 访问策略 → SSO 可信白名单」；苍穹门户免登链接的 redirect_uri 也使用该地址。',
       },
       watermark: {

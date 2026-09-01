@@ -59,6 +59,7 @@ export default {
         callbackUrl: 'SSO trusted whitelist callback URL',
         menuUrl: 'Cosmic portal auto-login URL',
         menuUrlHint: 'Configure in Cosmic Menu / Quick Launch / External Link; users already signed in to Cosmic enter this system without a second login, landing on the chat page by default.',
+        menuUrlFrameHint: 'If Cosmic embeds this link in an iframe, set FRAME_ALLOWED_ORIGINS=<Cosmic portal origin, e.g. https://portal.example.com> on the frontend container; otherwise framing is blocked by the main site policy (X-Frame-Options). Not needed when opening in a new window.',
         callbackUrlHint: 'Add this full URL (including query parameters) to the Cosmic third-party app access policy SSO whitelist; the Cosmic portal menu redirect_uri also uses this address.',
       },
       watermark: {
