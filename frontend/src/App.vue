@@ -7,6 +7,7 @@ import ManualKnowledgeEditor from '@/components/manual-knowledge-editor.vue'
 import UploadConfirmHost from '@/components/UploadConfirmHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
+import { useBrandingStore } from '@/stores/branding'
 import { getCurrentUser, userInfoFromApi, getAuthConfig } from '@/api/auth'
 import { get } from '@/utils/request'
 import SiteWatermark from '@/components/SiteWatermark.vue'
@@ -27,6 +28,7 @@ const { formatRole, roleIcon } = useRoleLabel()
 const router = useRouter()
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
+const brandingStore = useBrandingStore()
 
 // 租户级水印：文案中的 {username} 用当前登录用户名替换。
 // 未登录（登录页）：后端按请求 Host 匹配租户专属登录域名解析；
@@ -251,8 +253,9 @@ watch(
   (logged) => {
     if (logged) startInvitationPolling()
     else stopInvitationPolling()
-    // 登录态变化后水印按当前租户重新解析（未登录走 ?t=/Host，已登录走租户配置）
+    // 登录态变化后水印/品牌按当前租户重新解析（未登录走 Host 搭车，已登录走租户配置）
     loadWatermarkConfig()
+    void brandingStore.load(logged)
   },
   { immediate: true },
 )

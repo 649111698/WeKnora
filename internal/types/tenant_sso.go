@@ -267,3 +267,49 @@ func (c *ConversationConfig) Scan(value interface{}) error {
 	}
 	return json.Unmarshal(b, c)
 }
+
+// BrandingConfig 租户级品牌外观（白标）：欢迎语、登录页文案与 Logo。
+// 未配置（nil）时全部回退到前端默认文案与默认 Logo，不改变现有行为。
+type BrandingConfig struct {
+	// WelcomeTitle 新对话空状态页的欢迎标题（覆盖前端 createChat.title）。
+	WelcomeTitle string `json:"welcome_title,omitempty"`
+	// LoginTitle 登录页主标题。
+	LoginTitle string `json:"login_title,omitempty"`
+	// LoginSubtitle 登录页副标题。
+	LoginSubtitle string `json:"login_subtitle,omitempty"`
+	// LogoURL 自定义 Logo 的图片地址（https 或 /api 开头的站内路径）。
+	LogoURL string `json:"logo_url,omitempty"`
+	// SidebarTitle 侧边栏展示的产品名（留空回退默认）。
+	SidebarTitle string `json:"sidebar_title,omitempty"`
+}
+
+// ResolvedBranding 返回生效的品牌配置，字段统一去空白。
+func (c *BrandingConfig) ResolvedBranding() BrandingConfig {
+	if c == nil {
+		return BrandingConfig{}
+	}
+	return BrandingConfig{
+		WelcomeTitle:  strings.TrimSpace(c.WelcomeTitle),
+		LoginTitle:    strings.TrimSpace(c.LoginTitle),
+		LoginSubtitle: strings.TrimSpace(c.LoginSubtitle),
+		LogoURL:       strings.TrimSpace(c.LogoURL),
+		SidebarTitle:  strings.TrimSpace(c.SidebarTitle),
+	}
+}
+
+// Value implements driver.Valuer for tenants.branding_config.
+func (c BrandingConfig) Value() (driver.Value, error) {
+	return json.Marshal(c)
+}
+
+// Scan implements sql.Scanner for tenants.branding_config.
+func (c *BrandingConfig) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(b, c)
+}

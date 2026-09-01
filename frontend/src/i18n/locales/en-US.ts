@@ -75,6 +75,23 @@ export default {
       saveSuccess: 'SSO and watermark configuration saved',
       saveFailed: 'Save failed, please retry',
     },
+    branding: {
+      title: 'Branding (white-label)',
+      description: "Customize this workspace's welcome title, login copy and logo. Empty fields fall back to defaults; the logo accepts an image URL (https:// or /api-prefixed). Takes effect immediately after saving.",
+      welcomeTitle: 'New-chat welcome title',
+      welcomeTitlePlaceholder: 'e.g. Hi, I am MoldKeeper — your data assistant',
+      welcomeTitleHint: 'Shown at the top of the new-chat page; empty shows the default.',
+      loginTitle: 'Login page title',
+      loginTitlePlaceholder: 'e.g. MoldKeeper Data Platform',
+      loginSubtitle: 'Login page subtitle',
+      loginSubtitlePlaceholder: 'e.g. Intelligent analytics for the mold industry',
+      sidebarTitle: 'Sidebar name',
+      sidebarTitlePlaceholder: 'Empty shows the default name',
+      logoUrl: 'Logo URL',
+      logoUrlPlaceholder: 'https://example.com/logo.png',
+      logoUrlHint: 'Shared by the login page and sidebar; empty shows the default logo.',
+      saveFailed: 'Failed to save branding'
+    },
 
   menu: {
     knowledgeBase: 'Knowledge Base',

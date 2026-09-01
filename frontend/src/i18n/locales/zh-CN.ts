@@ -75,6 +75,23 @@ export default {
       saveSuccess: '单点登录与水印配置已保存',
       saveFailed: '保存失败，请重试',
     },
+    branding: {
+      title: '品牌外观（白标）',
+      description: '自定义本空间的欢迎语、登录页文案与 Logo。留空使用默认文案；Logo 支持图片地址（https:// 或 /api 开头）。保存后立即生效。',
+      welcomeTitle: '新对话欢迎语',
+      welcomeTitlePlaceholder: '例如：Hi，我是模管家，模具数据智能助手',
+      welcomeTitleHint: '新建对话页面顶部显示的欢迎标题，留空显示默认文案。',
+      loginTitle: '登录页标题',
+      loginTitlePlaceholder: '例如：模管家数据平台',
+      loginSubtitle: '登录页副标题',
+      loginSubtitlePlaceholder: '例如：模具行业智能数据分析与知识管理平台',
+      sidebarTitle: '侧边栏名称',
+      sidebarTitlePlaceholder: '留空显示默认名称',
+      logoUrl: 'Logo 地址',
+      logoUrlPlaceholder: 'https://example.com/logo.png',
+      logoUrlHint: '登录页与侧边栏共用；留空显示默认 Logo。',
+      saveFailed: '保存品牌配置失败'
+    },
 
   platformApiKeys: {
     title: '平台 API Key',

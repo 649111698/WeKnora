@@ -1348,6 +1348,9 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 	case "conversation-config":
 		h.GetTenantConversationConfig(c)
 		return
+	case "branding-config":
+		h.GetTenantBrandingConfig(c)
+		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
 		c.Error(errors.NewBadRequestError("unsupported key"))
@@ -1407,6 +1410,9 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 		return
 	case "conversation-config":
 		h.updateTenantConversationConfigInternal(c)
+		return
+	case "branding-config":
+		h.updateTenantBrandingConfigInternal(c)
 		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
@@ -2081,6 +2087,83 @@ func (h *TenantHandler) updateTenantWatermarkConfigInternal(c *gin.Context) {
 		"success": true,
 		"data":    updatedTenant.WatermarkConfig.Resolved(),
 		"message": "Watermark configuration updated successfully",
+	})
+}
+
+// GetTenantBrandingConfig godoc
+// @Summary      获取空间品牌外观配置
+// @Tags         空间管理
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /tenants/kv/branding-config [get]
+func (h *TenantHandler) GetTenantBrandingConfig(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    tenant.BrandingConfig.ResolvedBranding(),
+	})
+}
+
+// updateTenantBrandingConfigInternal updates the tenant white-label
+// appearance (welcome title, login copy, logo).
+func (h *TenantHandler) updateTenantBrandingConfigInternal(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var cfg types.BrandingConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		logger.Error(ctx, "Failed to parse request parameters", err)
+		c.Error(errors.NewValidationError("Invalid request data").WithDetails(err.Error()))
+		return
+	}
+	cfg = cfg.ResolvedBranding()
+	for field, val := range map[string]string{
+		"welcome_title":  cfg.WelcomeTitle,
+		"login_title":    cfg.LoginTitle,
+		"login_subtitle": cfg.LoginSubtitle,
+		"sidebar_title":  cfg.SidebarTitle,
+	} {
+		if len([]rune(val)) > 128 {
+			c.Error(errors.NewBadRequestError("branding " + field + " must be at most 128 characters"))
+			return
+		}
+	}
+	if cfg.LogoURL != "" && !strings.HasPrefix(cfg.LogoURL, "https://") && !strings.HasPrefix(cfg.LogoURL, "http://") && !strings.HasPrefix(cfg.LogoURL, "/") {
+		c.Error(errors.NewBadRequestError("logo_url must start with http(s):// or /"))
+		return
+	}
+
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		logger.Error(ctx, "Workspace is empty")
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+
+	if cfg == (types.BrandingConfig{}) {
+		tenant.BrandingConfig = nil // 全空 = 清除白标，回退默认
+	} else {
+		tenant.BrandingConfig = &cfg
+	}
+	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+		} else {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to update branding config").WithDetails(err.Error()))
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    updatedTenant.BrandingConfig.ResolvedBranding(),
+		"message": "Branding configuration updated successfully",
 	})
 }
 

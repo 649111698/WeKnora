@@ -161,6 +161,41 @@
       </div>
     </section>
 
+    <!-- 品牌外观（租户级白标） -->
+    <section class="sso-card">
+      <h3 class="sso-card__title">{{ t('tenantSSO.branding.title') }}</h3>
+      <p class="sso-card__desc">{{ t('tenantSSO.branding.description') }}</p>
+      <div class="sso-form">
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.branding.welcomeTitle') }}</label>
+          <t-input v-model="branding.welcome_title" :placeholder="t('tenantSSO.branding.welcomeTitlePlaceholder')"
+            :disabled="saving" />
+          <p class="sso-field__hint">{{ t('tenantSSO.branding.welcomeTitleHint') }}</p>
+        </div>
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.branding.loginTitle') }}</label>
+          <t-input v-model="branding.login_title" :placeholder="t('tenantSSO.branding.loginTitlePlaceholder')"
+            :disabled="saving" />
+        </div>
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.branding.loginSubtitle') }}</label>
+          <t-input v-model="branding.login_subtitle" :placeholder="t('tenantSSO.branding.loginSubtitlePlaceholder')"
+            :disabled="saving" />
+        </div>
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.branding.sidebarTitle') }}</label>
+          <t-input v-model="branding.sidebar_title" :placeholder="t('tenantSSO.branding.sidebarTitlePlaceholder')"
+            :disabled="saving" />
+        </div>
+        <div class="sso-field">
+          <label class="sso-field__label">{{ t('tenantSSO.branding.logoUrl') }}</label>
+          <t-input v-model="branding.logo_url" :placeholder="t('tenantSSO.branding.logoUrlPlaceholder')"
+            :disabled="saving" />
+          <p class="sso-field__hint">{{ t('tenantSSO.branding.logoUrlHint') }}</p>
+        </div>
+      </div>
+    </section>
+
     <div class="sso-actions">
       <t-button theme="primary" :loading="saving" @click="saveAll">{{ t('common.save') }}</t-button>
     </div>
@@ -173,8 +208,10 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { get, put } from '@/utils/request'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useI18n } from 'vue-i18n'
+import { useBrandingStore } from '@/stores/branding'
 
 const { t } = useI18n()
+const brandingStore = useBrandingStore()
 
 const SECRET_MASK = '***'
 
@@ -192,6 +229,13 @@ const form = reactive<SSOForm>({
   kingdee: { base_url: '', app_client_id: '', app_secret: '', username: '', account_id: '' },
 })
 const watermark = reactive({ enabled: false, text: '' })
+const branding = reactive({
+  welcome_title: '',
+  login_title: '',
+  login_subtitle: '',
+  sidebar_title: '',
+  logo_url: '',
+})
 
 const wecomSecretConfigured = ref(false)
 const feishuSecretConfigured = ref(false)
@@ -289,6 +333,18 @@ const loadConfig = async () => {
   } catch {
     // 水印加载失败不打扰（保持默认关闭）
   }
+  try {
+    const resp: any = await get('/api/v1/tenants/kv/branding-config')
+    if (resp?.data) {
+      branding.welcome_title = resp.data.welcome_title || ''
+      branding.login_title = resp.data.login_title || ''
+      branding.login_subtitle = resp.data.login_subtitle || ''
+      branding.sidebar_title = resp.data.sidebar_title || ''
+      branding.logo_url = resp.data.logo_url || ''
+    }
+  } catch {
+    // 品牌加载失败不打扰（保持默认文案）
+  }
 }
 
 const saveAll = async () => {
@@ -335,6 +391,20 @@ const saveAll = async () => {
       enabled: watermark.enabled,
       text: watermark.enabled ? watermark.text : '',
     })
+    try {
+      const resp: any = await put('/api/v1/tenants/kv/branding-config', {
+        welcome_title: branding.welcome_title.trim(),
+        login_title: branding.login_title.trim(),
+        login_subtitle: branding.login_subtitle.trim(),
+        sidebar_title: branding.sidebar_title.trim(),
+        logo_url: branding.logo_url.trim(),
+      })
+      // 即时生效：应用点直接读 store，保存后无需刷新页面
+      brandingStore.apply(resp?.data)
+    } catch (e: any) {
+      MessagePlugin.error(e?.response?.data?.error || t('tenantSSO.branding.saveFailed'))
+      return
+    }
     MessagePlugin.success(t('tenantSSO.saveSuccess'))
   } catch (e: any) {
     MessagePlugin.error(e?.response?.data?.error || t('tenantSSO.saveFailed'))

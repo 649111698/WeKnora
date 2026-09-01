@@ -806,6 +806,16 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 	if h.userService != nil {
 		wm := h.userService.GetSSOWatermark(c.Request.Context(), c.Request.Host)
 		resp["watermark"] = gin.H{"enabled": wm.Enabled, "text": wm.Text}
+		// 白标品牌配置同样按 Host 解析租户，登录页在鉴权前就能拿到
+		// 自定义标题/副标题/Logo；未配置时为零值，前端回退默认。
+		br := h.userService.GetSSOBranding(c.Request.Context(), c.Request.Host)
+		resp["branding"] = gin.H{
+			"welcome_title":  br.WelcomeTitle,
+			"login_title":    br.LoginTitle,
+			"login_subtitle": br.LoginSubtitle,
+			"logo_url":       br.LogoURL,
+			"sidebar_title":  br.SidebarTitle,
+		}
 	}
 	c.JSON(http.StatusOK, resp)
 }

@@ -75,6 +75,23 @@ export default {
       saveSuccess: 'Конфигурация SSO и водяного знака сохранена',
       saveFailed: 'Не удалось сохранить, попробуйте снова',
     },
+    branding: {
+      title: 'Брендинг (white-label)',
+      description: 'Настройте приветствие, тексты страницы входа и логотип рабочего пространства. Пустые поля используют значения по умолчанию; логотип принимает URL изображения (https:// или с префиксом /api). Вступает в силу сразу после сохранения.',
+      welcomeTitle: 'Приветствие нового чата',
+      welcomeTitlePlaceholder: 'напр. Hi, я MoldKeeper — ваш дата-ассистент',
+      welcomeTitleHint: 'Отображается вверху страницы нового чата; пусто — текст по умолчанию.',
+      loginTitle: 'Заголовок страницы входа',
+      loginTitlePlaceholder: 'напр. Платформа данных MoldKeeper',
+      loginSubtitle: 'Подзаголовок страницы входа',
+      loginSubtitlePlaceholder: 'напр. Интеллектуальная аналитика для литейной отрасли',
+      sidebarTitle: 'Название в боковой панели',
+      sidebarTitlePlaceholder: 'Пусто — название по умолчанию',
+      logoUrl: 'URL логотипа',
+      logoUrlPlaceholder: 'https://example.com/logo.png',
+      logoUrlHint: 'Общий для страницы входа и боковой панели; пусто — логотип по умолчанию.',
+      saveFailed: 'Не удалось сохранить брендинг'
+    },
 
   platformApiKeys: {
     title: 'Платформенные API-ключи',

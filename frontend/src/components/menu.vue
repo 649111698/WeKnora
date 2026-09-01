@@ -6,7 +6,7 @@
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
         <div class="logo_row" v-if="!sidebarCollapsedUI">
             <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
-                <img class="logo" src="@/assets/img/weknora.png" alt="">
+                <img class="logo" :src="brandingStore.logoUrl || defaultLogo" :alt="brandingStore.sidebarTitle || 'WeKnora'">
                 <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
             </div>
             <div class="logo_actions">
@@ -264,6 +264,8 @@ import { MessagePlugin, DialogPlugin, Icon as TIcon } from "tdesign-vue-next";
 import UserMenu from '@/components/UserMenu.vue';
 import TenantSelector from '@/components/TenantSelector.vue';
 import { useI18n } from 'vue-i18n';
+import { useBrandingStore } from '@/stores/branding';
+import defaultLogo from '@/assets/img/weknora.png';
 import { getSystemInfo } from '@/api/system';
 
 const chatResources = useChatResourcesStore();
@@ -294,6 +296,7 @@ const PLATFORM_LOGO: Record<string, string> = {
 const platformLogo = (p: string): string => (p ? PLATFORM_LOGO[p] || '' : '');
 
 const { t } = useI18n();
+const brandingStore = useBrandingStore();
 const usemenuStore = useMenuStore();
 const authStore = useAuthStore();
 const deploymentCapabilities = useDeploymentCapabilitiesStore();

@@ -34,6 +34,9 @@ type UserService interface {
 	// GetSSOWatermark resolves the watermark for an unauthenticated page
 	// (login screen) using the same tenant resolution as GetSSOStatus.
 	GetSSOWatermark(ctx context.Context, host string) types.WatermarkConfig
+	// GetSSOBranding resolves the tenant white-label branding for an
+	// unauthenticated page (login), keyed by request Host.
+	GetSSOBranding(ctx context.Context, host string) types.BrandingConfig
 	// GetSSODomainVerifyText returns the WeCom trusted-domain verification
 	// text configured on the resolved tenant (empty when unset).
 	GetSSODomainVerifyText(ctx context.Context, host string) string

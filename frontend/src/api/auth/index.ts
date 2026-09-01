@@ -267,6 +267,14 @@ export interface AuthConfigResponse {
     enabled: boolean
     text: string
   }
+  /** 当前租户的白标品牌配置（租户级，按 Host 匹配登录域名解析；未配置为零值） */
+  branding?: {
+    welcome_title?: string
+    login_title?: string
+    login_subtitle?: string
+    logo_url?: string
+    sidebar_title?: string
+  }
 }
 
 export async function getAuthConfig(): Promise<AuthConfigResponse> {

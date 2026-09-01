@@ -115,6 +115,17 @@ func (s *userService) GetSSOWatermark(ctx context.Context, host string) types.Wa
 	return tenant.WatermarkConfig.Resolved()
 }
 
+// GetSSOBranding 返回目标租户的白标品牌配置（登录页在鉴权前使用，
+// 经公开的 /auth/config 搭车下发）。未命中域名或未配置时返回零值，
+// 前端回退默认文案与默认 Logo。
+func (s *userService) GetSSOBranding(ctx context.Context, host string) types.BrandingConfig {
+	tenant, err := s.resolveSSOTenant(ctx, host)
+	if err != nil || tenant == nil {
+		return types.BrandingConfig{}
+	}
+	return tenant.BrandingConfig.ResolvedBranding()
+}
+
 // GetSSODomainVerifyText 返回目标租户配置的企微可信域名验证文字。
 func (s *userService) GetSSODomainVerifyText(ctx context.Context, host string) string {
 	tenant, err := s.resolveSSOTenant(ctx, host)

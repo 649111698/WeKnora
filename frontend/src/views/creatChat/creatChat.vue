@@ -7,7 +7,7 @@
                     @click="uiStore.toggleMobileNav()">
                     <t-icon name="view-list" size="18px" />
                 </button>
-                <span style="--wails-draggable: drag">{{ $t('createChat.title') }}</span>
+                <span style="--wails-draggable: drag">{{ brandingStore.welcomeTitle || $t('createChat.title') }}</span>
             </div>
             <!-- 推荐问题 -->
             <div ref="sqContainerRef" class="suggested-questions-container">
@@ -72,6 +72,7 @@ import { useUIStore } from '@/stores/ui';
 import { useRoute, useRouter } from 'vue-router';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useI18n } from 'vue-i18n';
+import { useBrandingStore } from '@/stores/branding';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 
@@ -81,6 +82,7 @@ const usemenuStore = useMenuStore();
 const settingsStore = useSettingsStore();
 const uiStore = useUIStore();
 const { t } = useI18n();
+const brandingStore = useBrandingStore();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 
 const showChatContextualGuide = computed(() => {

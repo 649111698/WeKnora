@@ -128,6 +128,9 @@ type Tenant struct {
 	// ConversationConfig tenant-wide chat UX lock: hide the input-box model
 	// dropdown and pin the chat model for all members. nil = selector shown.
 	ConversationConfig *ConversationConfig `yaml:"conversation_config" json:"conversation_config,omitempty" gorm:"type:jsonb"`
+	// BrandingConfig tenant-wide white-label appearance (welcome title,
+	// login copy, logo). nil = stock WeKnora texts and logo.
+	BrandingConfig *BrandingConfig `yaml:"branding_config" json:"branding_config,omitempty" gorm:"type:jsonb"`
 	// Creation time
 	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`
 	// Last updated time

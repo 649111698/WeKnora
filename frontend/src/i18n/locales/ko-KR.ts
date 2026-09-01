@@ -75,6 +75,23 @@ export default {
       saveSuccess: 'SSO 및 워터마크 구성이 저장되었습니다',
       saveFailed: '저장에 실패했습니다. 다시 시도하세요',
     },
+    branding: {
+      title: '브랜딩(화이트라벨)',
+      description: '워크스페이스의 환영 문구, 로그인 페이지 문구와 로고를 사용자 지정합니다. 비워 두면 기본값이 사용되고, 로고는 이미지 URL(https:// 또는 /api 접두사)을 지원합니다. 저장 후 즉시 적용됩니다.',
+      welcomeTitle: '새 대화 환영 문구',
+      welcomeTitlePlaceholder: '예: Hi, 저는 몰드키퍼 데이터 어시스턴트입니다',
+      welcomeTitleHint: '새 대화 페이지 상단에 표시되며, 비워 두면 기본 문구가 표시됩니다.',
+      loginTitle: '로그인 페이지 제목',
+      loginTitlePlaceholder: '예: 몰드키퍼 데이터 플랫폼',
+      loginSubtitle: '로그인 페이지 부제목',
+      loginSubtitlePlaceholder: '예: 금형 산업 지능형 데이터 분석 플랫폼',
+      sidebarTitle: '사이드바 이름',
+      sidebarTitlePlaceholder: '비워 두면 기본 이름 표시',
+      logoUrl: '로고 URL',
+      logoUrlPlaceholder: 'https://example.com/logo.png',
+      logoUrlHint: '로그인 페이지와 사이드바에서 공용으로 사용되며, 비워 두면 기본 로고가 표시됩니다.',
+      saveFailed: '브랜딩 저장 실패'
+    },
 
   platformApiKeys: {
     title: '플랫폼 API 키',

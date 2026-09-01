@@ -97,7 +97,7 @@
 
     <!-- Logo - Top Left（白标：去掉外链，仅展示图片） -->
     <div class="header-logo">
-      <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
+      <img :src="brandingStore.logoUrl || defaultLogo" alt="Logo" class="logo-image" />
     </div>
 
     <!-- Header Links - Top Right（白标：移除官网/GitHub 外链，保留语言切换） -->
@@ -175,8 +175,8 @@
             {{ inviteLookupError }}
           </div>
           <div class="form-header">
-            <h2 class="form-title">{{ $t('auth.login') }}</h2>
-            <p class="form-welcome">{{ $t('auth.subtitle') }}</p>
+            <h2 class="form-title">{{ brandingStore.loginTitle || $t('auth.login') }}</h2>
+            <p class="form-welcome">{{ brandingStore.loginSubtitle || $t('auth.subtitle') }}</p>
             <p v-if="registrationEnabled" class="form-hint">{{ $t('auth.loginHint') }}</p>
           </div>
 
@@ -355,6 +355,8 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { maybeStartIMSSOLogin, sanitizeRedirectTarget, getKingdeeLoginURL } from '@/composables/useIMSSOLogin'
 import { useI18n } from 'vue-i18n'
+import { useBrandingStore } from '@/stores/branding'
+import defaultLogo from '@/assets/img/weknora.png'
 
 // Import screenshot images
 import screenshot1 from '@/assets/img/screenshot-1.svg'
@@ -366,6 +368,7 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const { t, tm, locale } = useI18n()
+const brandingStore = useBrandingStore()
 const { formatRole, roleIcon } = useRoleLabel()
 
 // Swiper modules
