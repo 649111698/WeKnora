@@ -5,12 +5,10 @@ import { openMermaidFullscreen } from '@/utils/mermaidViewer.ts'
 import {
   buildCodeBlockHtml,
   buildMermaidBlockHtml,
-  buildEchartsBlockHtml,
   attachMarkdownEnhancementListeners,
   highlightCodeBlocksInContainer,
   syncMermaidExpandButtons,
 } from '@/utils/markdownEnhancements'
-import { renderEchartsInContainer } from '@/utils/echartsShared'
 
 hljs.registerAliases('mermaid', { languageName: 'plaintext' })
 
@@ -203,12 +201,6 @@ let mermaidCount = 0
 
 export const createMermaidCodeRenderer = (idPrefix: string) => {
   return ({ text, lang }: Tokens.Code) => {
-    // echarts 块同样经此路由：所有聊天/嵌入/技能文件的 markdown 渲染器
-    // 都挂了这个 codeRenderer，统一分发后各处自动获得 echarts 支持。
-    if (lang === 'echarts') {
-      const id = `${idPrefix}-echarts-${++mermaidCount}`
-      return buildEchartsBlockHtml(escapeHtml(text), `id="${id}" data-echarts="false"`)
-    }
     const { html: highlighted, language: highlightLang } = highlightCode(text, lang)
     if (lang === 'mermaid') {
       const id = `${idPrefix}-${++mermaidCount}`
@@ -219,14 +211,17 @@ export const createMermaidCodeRenderer = (idPrefix: string) => {
   }
 }
 
-export const renderMermaidToSvg = async (code: string, id: string): Promise<string | null> => {
+export const renderMermaidToSvg = async (code: string, id?: string): Promise<string | null> => {
   if (!code.trim()) return null
   try {
     const mermaid = await getMermaid()
     ensureMermaidInitialized()
     await initPromise
     await mermaid.parse(code)
-    const { svg } = await mermaid.render(id, code)
+    // Mermaid reuses the render id as the SVG root id. Always mint a fresh
+    // one so a later render cannot collide with an SVG already in the DOM.
+    const renderId = `${id || 'mermaid'}-${++mermaidCount}`
+    const { svg } = await mermaid.render(renderId, code)
     return svg
   } catch (e) {
     console.error('Mermaid rendering error:', e)
@@ -234,83 +229,54 @@ export const renderMermaidToSvg = async (code: string, id: string): Promise<stri
   }
 }
 
-// mermaid 内部渲染状态非并发安全：多条管线（组件钩子/全局观察器/兜底
-// watcher）同时触发 render 会产生只含 <style> 的空壳 SVG（图形层全部丢
-// 失，表现为图表框内空白）。这里把整段渲染串行化成单链，后到者排队执行
-// （幂等：已渲染块按 data-mermaid 跳过）。
-let mermaidRenderChain: Promise<void> = Promise.resolve()
+function mermaidSourceFromElement(el: HTMLElement): string {
+  const codeEl = el.querySelector('code')
+  return (codeEl?.textContent ?? el.textContent ?? '').trim()
+}
+
+export async function appendMermaidSvgCache(
+  codes: string[],
+  cache: readonly string[],
+  idPrefix: string,
+): Promise<string[]> {
+  const next = cache.slice()
+  while (next.length < codes.length) {
+    const i = next.length
+    const svg = await renderMermaidToSvg(codes[i], `${idPrefix}-${i}`)
+    next.push(svg || '')
+  }
+  return next
+}
 
 export const renderMermaidInContainer = async (
   rootElement: HTMLElement | null | undefined,
 ) => {
   if (!rootElement) return
 
-  const run = mermaidRenderChain.then(() => renderMermaidBlocks(rootElement))
-  mermaidRenderChain = run.catch(() => {})
-  await run
-}
-
-async function renderMermaidBlocks(rootElement: HTMLElement) {
-  // 库加载/初始化失败也要可见：否则图表块静默停在代码形态无从排查
-  let mermaid: Awaited<ReturnType<typeof getMermaid>>
-  try {
-    mermaid = await getMermaid()
-    ensureMermaidInitialized()
-    await initPromise
-  } catch (e) {
-    console.error('Mermaid library failed to load:', e)
-    const reason = e instanceof Error ? e.message : String(e)
-    for (const el of rootElement.querySelectorAll<HTMLElement>(
-      'pre[data-mermaid="false"], .chat-mermaid-block__canvas[data-mermaid="false"]',
-    )) {
-      el.setAttribute('data-mermaid', 'error')
-      el.classList.add('chat-mermaid-block__canvas--error')
-      el.innerHTML = `<div class="chart-render-error">图表库加载失败：${escapeHtml(reason.slice(0, 200))}</div>`
-    }
-    return
-  }
+  const mermaid = await getMermaid()
+  ensureMermaidInitialized()
+  await initPromise
 
   const mermaidElements = rootElement.querySelectorAll<HTMLElement>(
     'pre[data-mermaid="false"], .chat-mermaid-block__canvas[data-mermaid="false"]',
   )
   for (const el of mermaidElements) {
     try {
-      const code = el.innerText
+      if (el.querySelector('svg')) {
+        el.setAttribute('data-mermaid', 'true')
+        continue
+      }
+      const code = mermaidSourceFromElement(el)
+      if (!code) continue
       await mermaid.parse(code)
-      const renderId = el.id ? `${el.id}-svg` : `mermaid-render-${++mermaidCount}`
+      const renderId = `mermaid-render-${++mermaidCount}`
       const { svg } = await mermaid.render(renderId, code)
       el.classList.add('mermaid')
       el.innerHTML = svg
-      // 空壳防御：并发或 mermaid 内部异常会返回只含 <style> 的 SVG，
-      // 图形节点为零时拨回待渲染，观察器/后续管线会重试
-      const shapeCount = el.querySelectorAll('path, rect, circle, text, line, polyline, polygon, ellipse').length
-      if (shapeCount === 0 && code.trim()) {
-        el.setAttribute('data-mermaid', 'false')
-        el.classList.remove('mermaid')
-        continue
-      }
       el.setAttribute('data-mermaid', 'true')
     } catch (e) {
       console.error('Mermaid rendering error:', e)
-      // 失败可见化：静默停在代码形态无法排查，这里把原因直接标到块上
-      el.setAttribute('data-mermaid', 'error')
-      el.classList.add('chat-mermaid-block__canvas--error')
-      const reason = e instanceof Error ? e.message : String(e)
-      el.innerHTML = `<code class="hljs">${escapeHtml(el.innerText)}</code>` +
-        `<div class="chart-render-error">图表渲染失败：${escapeHtml(reason.slice(0, 300))}</div>`
       continue
-    }
-  }
-
-  // 回收历史空壳：已被标记 true 但图形节点为零的块拨回待渲染；DOM 变化
-  // 会让全局观察器在下一轮（200ms 防抖后）重画，形成自愈闭环。
-  for (const el of rootElement.querySelectorAll<HTMLElement>('[data-mermaid="true"]')) {
-    if (
-      el instanceof HTMLElement &&
-      el.querySelectorAll('path, rect, circle, text, line, polyline, polygon, ellipse').length === 0
-    ) {
-      el.setAttribute('data-mermaid', 'false')
-      el.classList.remove('mermaid')
     }
   }
 }
@@ -322,6 +288,5 @@ export async function enhanceMarkdownContainer(
   attachMarkdownEnhancementListeners(rootElement)
   highlightCodeBlocksInContainer(rootElement)
   await renderMermaidInContainer(rootElement)
-  await renderEchartsInContainer(rootElement)
   syncMermaidExpandButtons(rootElement)
 }

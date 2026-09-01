@@ -53,6 +53,27 @@ function morphImage(current: HTMLImageElement, next: HTMLImageElement): void {
   syncAttributes(current, next);
 }
 
+function isMermaidCanvas(el: Element): boolean {
+  return el.classList.contains('chat-mermaid-block__canvas')
+    || (el.tagName === 'PRE' && el.classList.contains('mermaid'));
+}
+
+function mermaidCanvasHasSvg(el: Element): boolean {
+  return !!el.querySelector('svg');
+}
+
+function morphMermaidCanvas(current: Element, next: Element): void {
+  // Incoming HTML from marked still has mermaid source. Keep a diagram that
+  // was already painted so typewriter / stream ticks cannot flash it back
+  // into a fenced code block.
+  if (mermaidCanvasHasSvg(current) && !mermaidCanvasHasSvg(next)) {
+    syncAttributes(current, next, new Set(['data-mermaid']));
+    return;
+  }
+  syncAttributes(current, next);
+  morphChildren(current, next);
+}
+
 function morphNode(current: Node, next: Node): void {
   if (current.nodeType === Node.TEXT_NODE || current.nodeType === Node.COMMENT_NODE) {
     if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
@@ -65,21 +86,9 @@ function morphNode(current: Node, next: Node): void {
     morphImage(currentElement, nextElement);
     return;
   }
-  // 已渲染成图的图表画布（mermaid SVG / echarts canvas）不能被 morph 回
-  // 代码形态：重新生成的 markdown 携带 data-*-mermaid/echarts="false" 与
-  // 原始文本子树，照常同步会抹掉渲染结果（图片的保留逻辑同理，见
-  // morphImage）。内容不变时直接原样保留。
-  if (
-    nextElement.classList?.contains('chat-mermaid-block__canvas') &&
-    currentElement.getAttribute?.('data-mermaid') === 'true'
-  ) {
-    return
-  }
-  if (
-    nextElement.classList?.contains('chat-echarts-block__canvas') &&
-    currentElement.getAttribute?.('data-echarts') === 'true'
-  ) {
-    return
+  if (isMermaidCanvas(currentElement) && isMermaidCanvas(nextElement)) {
+    morphMermaidCanvas(currentElement, nextElement);
+    return;
   }
 
   syncAttributes(currentElement, nextElement);

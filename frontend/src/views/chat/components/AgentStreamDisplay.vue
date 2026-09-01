@@ -587,8 +587,9 @@ import {
   formatManualTitle,
   replaceIncompleteMermaidWithPlaceholder,
   prepareStreamingMermaidMarkdown,
-  extractFirstMermaidCode,
+  extractMermaidCodes,
   injectCachedMermaidSvg,
+  type CachedMermaidSvgHtml,
 } from '@/utils/chatMessageShared';
 import { copyWithToast } from '@/utils/clipboard';
 import { exportAnswerScreenshot, exportAnswerPDF } from '@/utils/answerScreenshot';
@@ -598,10 +599,10 @@ import {
   wrapChatMarkdownTables,
 } from '@/utils/chatMarkdownRenderer';
 import {
+  appendMermaidSvgCache,
   createMermaidCodeRenderer,
   ensureMermaidInitialized,
   enhanceMarkdownContainer,
-  renderMermaidToSvg,
 } from '@/utils/mermaidShared';
 import { attachMarkdownEnhancementListeners, refreshMarkdownEnhancements } from '@/utils/markdownEnhancements';
 import { useTypewriter } from '@/composables/useTypewriter';
@@ -649,6 +650,8 @@ const TOOL_NAME_KEYS: Record<string, string> = {
   execute_skill_script: 'agentStream.tools.executeSkillScript',
   list_sandbox_files: 'agentStream.tools.listSandboxFiles',
   read_sandbox_file: 'agentStream.tools.readSandboxFile',
+  write_sandbox_file: 'agentStream.tools.writeSandboxFile',
+  edit_sandbox_file: 'agentStream.tools.editSandboxFile',
   shell_exec: 'agentStream.tools.shellExec',
   data_analysis: 'agentStream.tools.dataAnalysis',
   data_schema: 'agentStream.tools.dataSchema',
@@ -1095,6 +1098,12 @@ const resolveToolDisplayType = (event: any): DisplayType | undefined => {
   if (event?.tool_name === 'list_sandbox_files' && event?.success !== false) {
     return 'list_sandbox_files'
   }
+  if (event?.tool_name === 'write_sandbox_file' && event?.success !== false) {
+    return 'write_sandbox_file'
+  }
+  if (event?.tool_name === 'edit_sandbox_file' && event?.success !== false) {
+    return 'edit_sandbox_file'
+  }
   if (event?.tool_name === 'read_skill' && event?.success !== false) {
     return 'read_skill'
   }
@@ -1497,9 +1506,8 @@ const isConversationDone = computed(() => {
   return !!doneAnswer;
 });
 
-const streamingMermaidSvgCache = ref<string | null>(null);
+const streamingMermaidSvgCache = ref<string[]>([]);
 let streamingMermaidRenderTask: Promise<void> | null = null;
-let streamingMermaidRenderId = 0;
 
 const activeAnswerMarkdown = computed(() => {
   const stream = eventStream.value;
@@ -1527,25 +1535,31 @@ const { displayed: typedAnswer } = useTypewriter(
 );
 
 const cacheStreamingMermaidSvg = async () => {
-  if (streamingMermaidSvgCache.value) return;
-  const code = extractFirstMermaidCode(activeAnswerMarkdown.value);
-  if (!code) return;
+  const codes = extractMermaidCodes(activeAnswerMarkdown.value);
+  if (codes.length <= streamingMermaidSvgCache.value.length) return;
 
   if (!streamingMermaidRenderTask) {
     streamingMermaidRenderTask = (async () => {
-      const svg = await renderMermaidToSvg(code, `mermaid-agent-stream-${++streamingMermaidRenderId}`);
-      if (svg) streamingMermaidSvgCache.value = svg;
+      streamingMermaidSvgCache.value = await appendMermaidSvgCache(
+        extractMermaidCodes(activeAnswerMarkdown.value),
+        streamingMermaidSvgCache.value,
+        'mermaid-agent-stream',
+      );
     })().finally(() => {
       streamingMermaidRenderTask = null;
     });
   }
 
   await streamingMermaidRenderTask;
+
+  if (extractMermaidCodes(activeAnswerMarkdown.value).length > streamingMermaidSvgCache.value.length) {
+    await cacheStreamingMermaidSvg();
+  }
 };
 
 watch(isConversationDone, (done) => {
   if (!done) {
-    streamingMermaidSvgCache.value = null;
+    streamingMermaidSvgCache.value = [];
     streamingMermaidRenderTask = null;
   }
 });
@@ -1555,7 +1569,6 @@ watch(streamingMermaidSvgCache, () => {
 });
 
 watch(activeAnswerMarkdown, () => {
-  if (isConversationDone.value || streamingMermaidSvgCache.value) return;
   void cacheStreamingMermaidSvg();
 });
 
@@ -1580,24 +1593,8 @@ watch(answerFullyRendered, (ready) => {
   clearProtectedFileFailureCache();
   nextTick(async () => {
     await hydrateProtectedFileImages(rootElement.value, protectedFileAccess.value);
-    // 最终答案走打字机渐进渲染，watch(eventStream) 里的 markdown 增强执行时
-    // 图表/代码块大多还不在 DOM 里；打字机收尾后必须再补一次完整增强，
-    // 否则 mermaid 块会永远停留在原始代码形态（历史会话重载同理）。
     await enhanceMarkdownContainer(rootElement.value);
   });
-}, { immediate: true });
-
-// 兜底：切换会话切回时打字机可能不重播，answerFullyRendered 全程为 true
-// 没有跳变，上面的 watcher 不会触发，图表因此无人渲染。按内容变化兜底
-// （切回会话 activeAnswerMarkdown 必然变化），防抖等待 DOM 就绪。
-let answerEnhanceTimer: ReturnType<typeof setTimeout> | null = null;
-watch(activeAnswerMarkdown, () => {
-  if (!isConversationDone.value) return;
-  if (answerEnhanceTimer) clearTimeout(answerEnhanceTimer);
-  answerEnhanceTimer = setTimeout(() => {
-    answerEnhanceTimer = null;
-    nextTick(() => { void enhanceMarkdownContainer(rootElement.value); });
-  }, 300);
 }, { immediate: true });
 
 // Whether any currently visible step is actively pending (a running tool, or a
@@ -2470,9 +2467,18 @@ agentRenderer.image = function agentImageRenderer(token) {
   return defaultImageRenderer.call(this, token);
 };
 
-const prepareAgentMarkdown = (markdown: string, cachedSvgHtml?: string | null): string => {
-  const mermaidSafe = !isConversationDone.value
-    ? prepareStreamingMermaidMarkdown(markdown, cachedSvgHtml ?? streamingMermaidSvgCache.value)
+const hasCachedMermaidSvg = (cached: CachedMermaidSvgHtml): boolean => {
+  if (!cached) return false;
+  if (typeof cached === 'string') return cached.length > 0;
+  return cached.some((svg) => Boolean(svg));
+};
+
+const prepareAgentMarkdown = (markdown: string, cachedSvgHtml?: CachedMermaidSvgHtml): string => {
+  const cache = cachedSvgHtml ?? streamingMermaidSvgCache.value;
+  // Keep masking after the turn ends when SVG is already cached so v-html /
+  // v-stable-html cannot replace a painted diagram with mermaid source.
+  const mermaidSafe = !isConversationDone.value || hasCachedMermaidSvg(cache)
+    ? prepareStreamingMermaidMarkdown(markdown, cache)
     : replaceIncompleteMermaidWithPlaceholder(markdown);
   return mermaidSafe.replace(/<(?:kb|web)\b[^>]*$/i, '');
 };
@@ -2520,6 +2526,11 @@ const renderMarkdown = (content: unknown): string => {
     console.error('Markdown rendering error:', e, 'Content:', contentStr.substring(0, 100));
     return contentStr.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
+};
+
+// 渲染 Mermaid 图表的函数
+const renderMermaidDiagrams = async () => {
+  await enhanceMarkdownContainer(rootElement.value);
 };
 
 // Tool summary - extract key info to display externally
@@ -2722,7 +2733,7 @@ const getToolTitle = (event: any): string => {
       const name = getLocalizedToolName(event.tool_name);
       return `${formatToolTitleWithDetail(name, getEventSkillName(event))}...`;
     }
-    if (event.tool_name === 'list_sandbox_files' || event.tool_name === 'read_sandbox_file') {
+    if (event.tool_name === 'list_sandbox_files' || event.tool_name === 'read_sandbox_file' || event.tool_name === 'write_sandbox_file' || event.tool_name === 'edit_sandbox_file') {
       const name = getLocalizedToolName(event.tool_name);
       return `${formatToolTitleWithDetail(name, getSandboxToolPath(event))}...`;
     }
@@ -2828,7 +2839,7 @@ const getToolTitle = (event: any): string => {
     return formatToolTitleWithDetail(getToolDescription(event), getReadSkillTarget(event));
   }
 
-  if (toolName === 'list_sandbox_files' || toolName === 'read_sandbox_file') {
+  if (toolName === 'list_sandbox_files' || toolName === 'read_sandbox_file' || toolName === 'write_sandbox_file' || toolName === 'edit_sandbox_file') {
     return formatToolTitleWithDetail(getToolDescription(event), getSandboxToolPath(event));
   }
 
@@ -2883,7 +2894,7 @@ const getToolDescription = (event: any): string => {
       const name = getLocalizedToolName(event.tool_name);
       return `${formatToolTitleWithDetail(name, getEventSkillName(event))}...`;
     }
-    if (event.tool_name === 'list_sandbox_files' || event.tool_name === 'read_sandbox_file') {
+    if (event.tool_name === 'list_sandbox_files' || event.tool_name === 'read_sandbox_file' || event.tool_name === 'write_sandbox_file' || event.tool_name === 'edit_sandbox_file') {
       const name = getLocalizedToolName(event.tool_name);
       return `${formatToolTitleWithDetail(name, getSandboxToolPath(event))}...`;
     }
@@ -2920,7 +2931,7 @@ const getToolDescription = (event: any): string => {
     return success ? t('agentStream.toolStatus.attachmentParsingDone') : t('agentStream.toolStatus.attachmentParsingFailed');
   } else if (toolName === 'query_understand') {
     return success ? t('agentStream.toolStatus.queryUnderstandDone') : t('agentStream.toolStatus.calledFailed', { name: getLocalizedToolName(toolName) });
-  } else if (toolName === 'shell_exec' || toolName === 'execute_skill_script' || toolName === 'read_skill' || toolName === 'list_sandbox_files' || toolName === 'read_sandbox_file') {
+  } else if (toolName === 'shell_exec' || toolName === 'execute_skill_script' || toolName === 'read_skill' || toolName === 'list_sandbox_files' || toolName === 'read_sandbox_file' || toolName === 'write_sandbox_file' || toolName === 'edit_sandbox_file') {
     const localizedName = getLocalizedToolName(toolName);
     return success ? localizedName : t('agentStream.toolStatus.calledFailed', { name: localizedName });
   } else {

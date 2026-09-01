@@ -885,9 +885,6 @@ export default {
     yesterday: '어제',
     daysAgo: '{days}일 전'
   },
-  echarts: {
-    diagram: '차트',
-  },
   mermaid: {
     diagram: '다이어그램',
     expand: '전체 화면',
@@ -1191,7 +1188,8 @@ export default {
       contextTemplate: '검색된 콘텐츠를 모델에 전달하기 전에 형식을 정의합니다',
       model: '에이전트가 사용할 대규모 언어 모델을 선택하세요',
       temperature: '출력의 무작위성을 제어합니다. 0이 가장 확정적, 1이 가장 무작위',
-      maxTokens: '모델이 생성하는 응답의 최대 토큰 수',
+      maxTokens: '모델 응답의 최대 토큰 수. 「기본값」은 2048입니다. 「사용자 지정」은 입력한 값을 그대로 저장합니다.',
+      maxTokensAgent: '각 추론 라운드에서 생성할 최대 토큰 수(도구 호출 JSON 포함). 「기본값」은 샌드박스 없으면 4096, 파일 쓰기/편집이 가능하면 24576입니다. 「사용자 지정」은 입력한 값을 그대로 저장합니다.',
       thinking: '모델의 확장 사고 기능 활성화 (모델 지원 필요)',
       conversationSection: '다중 턴 대화 및 질문 재작성 관련 매개변수 설정',
       conversationSectionAgent: '매 턴에 실어 보낼 이전 대화 분량 설정 (스마트 추론은 항상 다중 턴)',
@@ -1401,6 +1399,8 @@ export default {
       executeSkillScript: '스킬 스크립트 실행',
       listSandboxFiles: '샌드박스 파일 목록',
       readSandboxFile: '샌드박스 파일 읽기',
+      writeSandboxFile: '샌드박스 파일 쓰기',
+      editSandboxFile: '샌드박스 파일 편집',
       shellExec: '샌드박스 명령 실행',
       dataAnalysis: '데이터 분석',
       dataSchema: '데이터 구조',
@@ -1414,7 +1414,10 @@ export default {
     sandboxFiles: {
       found: '파일 {count}개 발견',
       empty: '파일 없음',
-      truncated: '목록이 잘림'
+      truncated: '목록이 잘림',
+      wrote: '씀',
+      edited: '편집함',
+      replacements: '{count}곳 치환'
     },
     shellExec: {
       workDir: '디렉터리',
@@ -5078,10 +5081,10 @@ export default {
     parserEngine: '파싱 엔진',
     storageEngine: '스토리지 엔진',
     sandbox: {
-      title: '샌드박스',
+      title: '샌드박스 설정',
       description: '에이전트 스킬 스크립트의 격리 실행 환경을 구성합니다. 각 에이전트는 설정을 하나 선택합니다.',
       pageHintTitle: '샌드박스란?',
-      pageHint: '샌드박스는 에이전트 스킬 스크립트가 실행되는 격리 환경입니다. 워크스페이스에 Docker, E2B, CubeSandbox 설정을 여러 개 둘 수 있고, 각 에이전트가 하나를 선택합니다. 스킬은 「스킬」 페이지에서 선택한 설정의 이미지에 설치됩니다. 선택하지 않으면 스크립트는 실행되지 않습니다.',
+      pageHint: '샌드박스는 에이전트 스킬 스크립트가 실행되는 격리 환경입니다. 워크스페이스에 Docker, E2B, CubeSandbox 설정을 여러 개 둘 수 있고, 각 에이전트가 하나를 선택합니다. 스킬은 「스킬 관리」 페이지에서 선택한 설정의 이미지에 설치됩니다. 선택하지 않으면 스크립트는 실행되지 않습니다.',
       editorDescription: 'Configure a workspace runtime. Docker, CubeSandbox, and E2B use the same management flow.',
       stepConnection: 'Connect',
       stepTemplate: 'Template',
@@ -5401,7 +5404,7 @@ export default {
       },
     },
     skills: {
-      title: '스킬',
+      title: '스킬 관리',
       description: '스킬은 워크스페이스 카탈로그에 속합니다. 먼저 등록한 뒤 하나 이상의 샌드박스에 설치할 수 있습니다. 에이전트는 현재 샌드박스에서 준비된 스킬만 사용할 수 있습니다.',
       helpTooltip: '카탈로그 스킬은 아무 샌드박스에도 설치하지 않아도 됩니다. 스크립트를 실행하려면 에이전트가 쓰는 샌드박스 이미지에 설치해야 합니다. Docker, Cube, E2B 이미지는 호환되지 않으므로 샌드박스마다 따로 설치합니다.',
       goSandboxSettings: '샌드박스 구성',
@@ -5428,6 +5431,9 @@ export default {
       noSandboxToInstall: '설치할 수 있는 샌드박스가 없습니다.',
       noInstalls: '어떤 샌드박스에도 설치되지 않음',
       installedOn: '설치됨',
+      installedOnName: '{name}에 설치됨',
+      installedCount: '{count}개 샌드박스에 설치됨',
+      installPanelGroup: '설치됨',
       manageOnSandbox: '「{name}」 샌드박스에서 관리',
       manageDrawerDesc: '샌드박스 「{name}」에서 사용 여부, 변수, 제거를 관리합니다.',
       manageEnable: '사용',
@@ -5829,6 +5835,8 @@ export default {
       rewritePromptUser: '사용자 프롬프트 다시 작성',
       rewritePromptUserPlaceholder: '시스템 기본 프롬프트를 사용하려면 비워 두세요.',
       maxCompletionTokens: '생성된 토큰의 최대 수',
+      maxCompletionTokensDefault: '기본값',
+      maxCompletionTokensCustom: '사용자 지정',
       fallbackStrategy: '폴백 전략',
       fallbackResponse: '고정 응답 내용',
       fallbackResponsePlaceholder: '죄송합니다. 이 질문에는 답변해 드릴 수 없습니다.',

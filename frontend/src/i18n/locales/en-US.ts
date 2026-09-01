@@ -1084,6 +1084,8 @@ export default {
       rewritePromptUser: 'Rewrite User Prompt',
       rewritePromptUserPlaceholder: 'Leave empty to use default prompt',
       maxCompletionTokens: 'Max Completion Tokens',
+      maxCompletionTokensDefault: 'Default',
+      maxCompletionTokensCustom: 'Custom',
       fallbackStrategy: 'Fallback Strategy',
       fallbackResponse: 'Fixed Response',
       fallbackResponsePlaceholder: 'Sorry, I cannot answer this question.',
@@ -1146,10 +1148,10 @@ export default {
     parserEngine: 'Parser Engine',
     storageEngine: 'Storage Engine',
     sandbox: {
-      title: 'Sandbox',
+      title: 'Sandbox Config',
       description: 'Configure isolated runtimes for agent skill scripts. Each agent picks one workspace config.',
       pageHintTitle: 'What is a sandbox?',
-      pageHint: 'A sandbox is the isolated environment where agent skill scripts run. A workspace can have several configs (Docker, E2B, CubeSandbox); each agent picks one. Skills are installed on the Skills page into the selected config\'s image. Scripts stay disabled until a config is selected.',
+      pageHint: 'A sandbox is the isolated environment where agent skill scripts run. A workspace can have several configs (Docker, E2B, CubeSandbox); each agent picks one. Skills are installed on the Skill Management page into the selected config\'s image. Scripts stay disabled until a config is selected.',
       editorDescription: 'Configure a workspace runtime. Docker, CubeSandbox, and E2B use the same management flow.',
       stepConnection: 'Connect',
       stepTemplate: 'Template',
@@ -1469,7 +1471,7 @@ export default {
       },
     },
     skills: {
-      title: 'Skills',
+      title: 'Skill Management',
       description: 'Skills live in the workspace catalog. Register them first, then install onto one or more sandboxes. An agent can only enable skills that are ready on its sandbox.',
       helpTooltip: 'A catalog skill does not have to be installed anywhere. Scripts only run after the skill is installed into the sandbox image the agent uses. Docker, Cube, and E2B images are not interchangeable — install once per sandbox.',
       goSandboxSettings: 'Configure sandboxes',
@@ -1496,6 +1498,9 @@ export default {
       noSandboxToInstall: 'No sandbox is available to install into.',
       noInstalls: 'Not installed on any sandbox',
       installedOn: 'Installed on',
+      installedOnName: 'Installed on {name}',
+      installedCount: 'Installed on {count} sandboxes',
+      installPanelGroup: 'Installed',
       manageOnSandbox: 'Manage this skill on “{name}”',
       manageDrawerDesc: 'Manage enablement, variables, and uninstall on sandbox “{name}”.',
       manageEnable: 'Enable',
@@ -5414,6 +5419,8 @@ export default {
       executeSkillScript: 'Execute Skill Script',
       listSandboxFiles: 'List sandbox files',
       readSandboxFile: 'Read sandbox file',
+      writeSandboxFile: 'Write sandbox file',
+      editSandboxFile: 'Edit sandbox file',
       shellExec: 'Run sandbox command',
       dataAnalysis: 'Data Analysis',
       dataSchema: 'Data Schema',
@@ -5427,7 +5434,10 @@ export default {
     sandboxFiles: {
       found: 'Found {count} file(s)',
       empty: 'No files',
-      truncated: 'List truncated'
+      truncated: 'List truncated',
+      wrote: 'Wrote',
+      edited: 'Edited',
+      replacements: 'Replaced {count}'
     },
     shellExec: {
       workDir: 'Directory',
@@ -5606,7 +5616,8 @@ export default {
       contextTemplate: 'Define how retrieved content is formatted before passing to the model',
       model: 'Select the LLM used by the agent',
       temperature: 'Control output randomness, 0 is most deterministic, 1 is most random',
-      maxTokens: 'Maximum number of tokens for model-generated responses',
+      maxTokens: 'Maximum tokens for the model reply. Default is 2048. Custom values are saved as entered.',
+      maxTokensAgent: 'Maximum tokens generated in each reasoning round, including tool-call JSON. Default is 4096 without a sandbox, or 24576 when a sandbox can write or edit files. A custom value is saved as entered and is not changed later.',
       thinking: 'Enable extended thinking capability (requires model support)',
       conversationSection: 'Configure multi-turn conversation and query rewriting parameters',
       conversationSectionAgent: 'How much earlier conversation each turn carries. Smart reasoning is always multi-turn',
@@ -5920,9 +5931,6 @@ export default {
       importInProgress: 'Import is in progress, please wait for it to complete',
       noFailedRecords: 'No failed records available for download'
     }
-  },
-  echarts: {
-    diagram: 'Chart',
   },
   mermaid: {
     diagram: 'Diagram',

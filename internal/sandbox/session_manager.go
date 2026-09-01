@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -170,8 +171,10 @@ func NewSessionBoundManager(deps SessionBoundManagerConfig) (*SessionBoundManage
 		)
 	}
 
+	client := wrapLangfuseRemoteClient(deps.Client)
+
 	lifecycle, err := newRemoteSessionLifecycle(
-		deps.Client,
+		client,
 		deps.Store,
 		deps.Checker,
 		createRequest,
@@ -185,11 +188,11 @@ func NewSessionBoundManager(deps SessionBoundManagerConfig) (*SessionBoundManage
 	m := &SessionBoundManager{
 		config:     cfg,
 		validator:  NewScriptValidator(),
-		client:     deps.Client,
+		client:     client,
 		bindings:   deps.Store,
 		checker:    deps.Checker,
 		lifecycle:  lifecycle,
-		ephemeral:  NewRemoteSandbox(deps.Client, createRequest),
+		ephemeral:  NewRemoteSandbox(client, createRequest),
 		activeType: provider,
 	}
 
@@ -301,12 +304,22 @@ func (m *SessionBoundManager) ensureSessionWorkspaceDirs(
 		return
 	}
 	execUser := DefaultSandboxExecUser
+	ctx, span := langfuse.GetManager().StartSpan(ctx, langfuse.SpanOptions{
+		Name: "sandbox.ensure_workspace",
+		Input: map[string]interface{}{
+			"input_dir":  SessionInputRoot,
+			"output_dir": outputDir,
+			"user":       execUser,
+		},
+		Metadata: sandboxHandleMeta(handle),
+	})
 	result, err := m.client.Exec(ctx, handle, RemoteExecRequest{
 		Shell:   true,
 		Command: workspaceBootstrapCommand(SessionInputRoot, outputDir),
 		User:    execUser,
 		Timeout: sessionArtifactDirBootstrapTimeout,
 	})
+	span.Finish(nil, nil, err)
 	switch {
 	case err != nil:
 		log.Printf(
@@ -509,6 +522,36 @@ func (m *SessionBoundManager) WriteSessionInputFile(
 	}
 	if err := m.client.WriteFile(ctx, handle, clean, content); err != nil {
 		return fmt.Errorf("sandbox: write session input %s: %w", clean, err)
+	}
+	return nil
+}
+
+// WriteSessionWorkspaceFile writes a model-authored file into the session's
+// remote sandbox, provisioning the sandbox on first call. Paths must sit
+// under /workspace and must not land in /workspace/input.
+func (m *SessionBoundManager) WriteSessionWorkspaceFile(
+	ctx context.Context, sessionID, filePath string, content []byte,
+) error {
+	if err := m.requireRemoteBackend(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		return errors.New("sandbox: session ID required for workspace write")
+	}
+	clean, err := cleanSessionWorkspaceWritePath(filePath)
+	if err != nil {
+		return err
+	}
+	handle, err := m.resolveSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	m.ensureSessionWorkspaceDirs(ctx, handle, SessionOutputRoot)
+	if err := ignoreExistingDir(m.client.MakeDir(ctx, handle, path.Dir(clean))); err != nil {
+		return fmt.Errorf("sandbox: create workspace directory: %w", err)
+	}
+	if err := m.client.WriteFile(ctx, handle, clean, content); err != nil {
+		return fmt.Errorf("sandbox: write session file %s: %w", clean, err)
 	}
 	return nil
 }
@@ -968,6 +1011,26 @@ func cleanSessionInputPath(filePath string) (string, error) {
 		"sandbox: session input path %q is outside %s",
 		filePath, SessionInputRoot,
 	)
+}
+
+// cleanSessionWorkspaceWritePath keeps model-authored writes inside the
+// session workspace and out of the attachment tree. Validation is lexical
+// (path.Clean plus prefix checks), matching cleanSessionWorkDir.
+func cleanSessionWorkspaceWritePath(filePath string) (string, error) {
+	clean := path.Clean(strings.TrimSpace(filePath))
+	if !path.IsAbs(clean) || clean == "." || clean == "/" {
+		return "", fmt.Errorf("sandbox: workspace write path %q must be an absolute file path", filePath)
+	}
+	if clean == SessionWorkspaceRoot || clean == SessionOutputRoot || clean == SessionInputRoot {
+		return "", fmt.Errorf("sandbox: workspace write path %q is a directory, not a file", filePath)
+	}
+	if !strings.HasPrefix(clean, SessionWorkspaceRoot+"/") {
+		return "", fmt.Errorf("sandbox: workspace write path %q is outside %s", filePath, SessionWorkspaceRoot)
+	}
+	if strings.HasPrefix(clean, SessionInputRoot+"/") {
+		return "", fmt.Errorf("sandbox: session input %s is read-only", SessionInputRoot)
+	}
+	return clean, nil
 }
 
 // cleanSessionWorkDir keeps shell_exec inside directories we are willing to let

@@ -887,9 +887,6 @@ export default {
     yesterday: '昨天',
     daysAgo: '{days} 天前'
   },
-  echarts: {
-    diagram: '图表',
-  },
   mermaid: {
     diagram: '图表',
     expand: '全屏查看',
@@ -1193,7 +1190,8 @@ export default {
       contextTemplate: '定义如何将检索到的内容格式化后传递给模型',
       model: '选择智能体使用的大语言模型',
       temperature: '控制输出的随机性，0 最确定，1 最随机',
-      maxTokens: '模型生成回复的最大Token数量',
+      maxTokens: '模型生成回复的最大 Token 数。选「默认」时为 2048；选「自定义」后按你填的数保存。',
+      maxTokensAgent: '每一轮推理的最大生成 Token（含工具调用 JSON）。选「默认」时，未绑沙箱为 4096，绑了沙箱（可写/改文件）为 24576。选「自定义」后按你填的数保存，不再自动改。',
       thinking: '启用模型的扩展思考能力（需要模型支持）',
       conversationSection: '配置多轮对话开关与问题改写开关（改写提示词见「提示词」）',
       conversationSectionAgent: '配置每轮携带多少历史对话。智能推理始终为多轮模式。',
@@ -1403,6 +1401,8 @@ export default {
       executeSkillScript: '执行技能脚本',
       listSandboxFiles: '列出沙箱文件',
       readSandboxFile: '读取沙箱文件',
+      writeSandboxFile: '写入沙箱文件',
+      editSandboxFile: '编辑沙箱文件',
       shellExec: '执行沙箱命令',
       dataAnalysis: '数据分析',
       dataSchema: '数据结构',
@@ -1416,7 +1416,10 @@ export default {
     sandboxFiles: {
       found: '找到 {count} 个文件',
       empty: '暂无文件',
-      truncated: '列表已截断'
+      truncated: '列表已截断',
+      wrote: '已写入',
+      edited: '已编辑',
+      replacements: '替换 {count} 处'
     },
     shellExec: {
       workDir: '目录',
@@ -5080,10 +5083,10 @@ export default {
     parserEngine: '解析引擎',
     storageEngine: '存储引擎',
     sandbox: {
-      title: '沙箱',
+      title: '沙箱配置',
       description: '配置智能体运行技能脚本的隔离环境。每个智能体选择一份配置。',
       pageHintTitle: '什么是沙箱？',
-      pageHint: '沙箱是智能体执行技能脚本的隔离环境。一个空间可以添加多份配置（Docker、E2B、CubeSandbox），每个智能体选择一份。技能安装在「技能」页，写入所选配置的镜像；未选择沙箱时不会执行技能脚本。',
+      pageHint: '沙箱是智能体执行技能脚本的隔离环境。一个空间可以添加多份配置（Docker、E2B、CubeSandbox），每个智能体选择一份。技能安装在「技能管理」页，写入所选配置的镜像；未选择沙箱时不会执行技能脚本。',
       editorDescription: '配置空间运行环境，Docker、CubeSandbox 和 E2B 使用同一套管理流程。',
       stepConnection: '连接',
       stepTemplate: '模板',
@@ -5403,7 +5406,7 @@ export default {
       },
     },
     skills: {
-      title: '技能',
+      title: '技能管理',
       description: '技能属于空间目录，可以只登记，也可以装到一份或多份沙箱。智能体只能启用当前沙箱里已就绪的技能。',
       helpTooltip: '目录里的技能可以不装任何沙箱。脚本要跑起来，必须装进智能体所用的那份沙箱镜像。Docker、Cube、E2B 互不通用，装到几份就要装几次。',
       goSandboxSettings: '去配置沙箱',
@@ -5430,6 +5433,9 @@ export default {
       noSandboxToInstall: '没有可写入的沙箱。',
       noInstalls: '尚未装到任何沙箱',
       installedOn: '已安装到',
+      installedOnName: '已安装到 {name}',
+      installedCount: '已安装到 {count} 个沙箱',
+      installPanelGroup: '已安装',
       manageOnSandbox: '管理沙箱「{name}」上的安装',
       manageDrawerDesc: '在沙箱「{name}」上管理启用、变量和卸载。',
       manageEnable: '启用',
@@ -5831,6 +5837,8 @@ export default {
       rewritePromptUser: '改写用户提示词',
       rewritePromptUserPlaceholder: '留空使用系统默认提示词',
       maxCompletionTokens: '最大生成Token数',
+      maxCompletionTokensDefault: '默认',
+      maxCompletionTokensCustom: '自定义',
       fallbackStrategy: '兜底策略',
       fallbackResponse: '固定回复内容',
       fallbackResponsePlaceholder: '抱歉，我无法回答这个问题。',

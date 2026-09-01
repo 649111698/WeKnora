@@ -127,19 +127,6 @@ export function buildMermaidLoadingHtml(): string {
   </div>`;
 }
 
-// ECharts 图表块：模型输出 ```echarts + option JSON，渲染阶段读取画布内
-// 文本并替换为交互式 canvas 图表。
-export function buildEchartsBlockHtml(innerText: string, canvasAttrs = ''): string {
-  const label = escapeHtml(i18n.global.t('echarts.diagram'));
-  const attrs = canvasAttrs ? ` ${canvasAttrs}` : '';
-  return `<div class="chat-echarts-block">
-    <div class="chat-echarts-block__header">
-      <span class="chat-echarts-block__badge">${label}</span>
-    </div>
-    <div class="chat-echarts-block__canvas"${attrs}>${innerText}</div>
-  </div>`;
-}
-
 async function handleCodeCopy(btn: HTMLButtonElement): Promise<void> {
   const code = btn.closest('.chat-code-block')?.querySelector('code')?.textContent ?? '';
   if (!code) return;

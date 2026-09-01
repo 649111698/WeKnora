@@ -885,9 +885,6 @@ export default {
     yesterday: 'Вчера',
     daysAgo: '{days} дней назад'
   },
-  echarts: {
-    diagram: 'График',
-  },
   mermaid: {
     diagram: 'Диаграмма',
     expand: 'На весь экран',
@@ -1191,7 +1188,8 @@ export default {
       contextTemplate: 'Определите формат передачи найденного контента модели',
       model: 'Выберите LLM, используемую агентом',
       temperature: 'Контроль случайности выхода: 0 — наиболее детерминированный, 1 — наиболее случайный',
-      maxTokens: 'Максимальное количество токенов в ответе модели',
+      maxTokens: 'Максимум токенов в ответе. «По умолчанию» — 2048. «Своё» сохраняет введённое число.',
+      maxTokensAgent: 'Максимум токенов за один раунд рассуждения, включая JSON вызовов инструментов. «По умолчанию»: 4096 без песочницы, 24576 с записью/правкой файлов. «Своё» сохраняет введённое число и больше не меняется.',
       thinking: 'Включить расширенное мышление модели (требуется поддержка модели)',
       conversationSection: 'Настройка параметров многооборотного диалога и перефразирования вопросов',
       conversationSectionAgent: 'Объём предыдущего диалога в каждом ходе. Умные рассуждения всегда многооборотные',
@@ -1401,6 +1399,8 @@ export default {
       executeSkillScript: 'Выполнение скрипта навыка',
       listSandboxFiles: 'Список файлов песочницы',
       readSandboxFile: 'Чтение файла песочницы',
+      writeSandboxFile: 'Запись файла песочницы',
+      editSandboxFile: 'Правка файла песочницы',
       shellExec: 'Выполнение команды в песочнице',
       dataAnalysis: 'Анализ данных',
       dataSchema: 'Структура данных',
@@ -1414,7 +1414,10 @@ export default {
     sandboxFiles: {
       found: 'Найдено файлов: {count}',
       empty: 'Нет файлов',
-      truncated: 'Список обрезан'
+      truncated: 'Список обрезан',
+      wrote: 'Записано',
+      edited: 'Изменено',
+      replacements: 'Замен: {count}'
     },
     shellExec: {
       workDir: 'Каталог',
@@ -5078,10 +5081,10 @@ export default {
     parserEngine: 'Движок парсинга',
     storageEngine: 'Движок хранения',
     sandbox: {
-      title: 'Песочница',
+      title: 'Настройка песочницы',
       description: 'Настройка изолированных сред для скриптов навыков. Каждый агент выбирает одну конфигурацию.',
       pageHintTitle: 'Что такое песочница?',
-      pageHint: 'Песочница — изолированная среда, в которой выполняются скрипты навыков агента. В пространстве можно создать несколько конфигураций (Docker, E2B, CubeSandbox); каждый агент выбирает одну. Навыки устанавливаются на странице «Навыки» в образ выбранной конфигурации. Пока конфигурация не выбрана, скрипты не выполняются.',
+      pageHint: 'Песочница — изолированная среда, в которой выполняются скрипты навыков агента. В пространстве можно создать несколько конфигураций (Docker, E2B, CubeSandbox); каждый агент выбирает одну. Навыки устанавливаются на странице «Управление навыками» в образ выбранной конфигурации. Пока конфигурация не выбрана, скрипты не выполняются.',
       editorDescription: 'Configure a workspace runtime. Docker, CubeSandbox, and E2B use the same management flow.',
       stepConnection: 'Connect',
       stepTemplate: 'Template',
@@ -5401,7 +5404,7 @@ export default {
       },
     },
     skills: {
-      title: 'Навыки',
+      title: 'Управление навыками',
       description: 'Навыки живут в каталоге пространства. Их можно только зарегистрировать или установить в одну или несколько песочниц. Агент включает только навыки, которые готовы в выбранной песочнице.',
       helpTooltip: 'Навык из каталога можно не устанавливать никуда. Скрипты запускаются только после установки в образ песочницы агента. Образы Docker, Cube и E2B несовместимы — устанавливайте отдельно в каждую песочницу.',
       goSandboxSettings: 'Настроить песочницы',
@@ -5428,6 +5431,9 @@ export default {
       noSandboxToInstall: 'Нет песочницы для установки.',
       noInstalls: 'Не установлен ни в одну песочницу',
       installedOn: 'Установлен в',
+      installedOnName: 'Установлен в {name}',
+      installedCount: 'Установлен в {count} песочницах',
+      installPanelGroup: 'Установлено',
       manageOnSandbox: 'Управление в песочнице «{name}»',
       manageDrawerDesc: 'В песочнице «{name}» можно включать навык, править переменные и удалять установку.',
       manageEnable: 'Включить',
@@ -5829,6 +5835,8 @@ export default {
       rewritePromptUser: 'Rewrite User Prompt',
       rewritePromptUserPlaceholder: 'Leave empty to use default prompt',
       maxCompletionTokens: 'Max Completion Tokens',
+      maxCompletionTokensDefault: 'По умолчанию',
+      maxCompletionTokensCustom: 'Своё',
       fallbackStrategy: 'Fallback Strategy',
       fallbackResponse: 'Fixed Response',
       fallbackResponsePlaceholder: 'Sorry, I cannot answer this question.',
