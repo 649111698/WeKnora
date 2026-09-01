@@ -149,6 +149,7 @@ import { deleteTemporaryAttachment, uploadTemporaryAttachment } from '@/api/chat
 import { useStream } from '../../api/chat/streame'
 import { useMenuStore } from '@/stores/menu';
 import { useSettingsStore } from '@/stores/settings';
+import { useChatResourcesStore } from '@/stores/chatResources';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useI18n } from 'vue-i18n';
 import { useUIStore } from '@/stores/ui';
@@ -188,6 +189,7 @@ const props = defineProps({
 
 const usemenuStore = useMenuStore();
 const useSettingsStoreInstance = useSettingsStore();
+const chatResourcesStore = useChatResourcesStore();
 
 // Whether the active chat session is using the Agent pipeline (not quick-answer).
 const isAgentStreamSession = () => {
@@ -824,9 +826,26 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     scrollToBottom(true);
 
     // Get agent mode status from settings store (prefer selectedAgentId for builtins)
-    const agentEnabled = props.embeddedMode
+    let agentEnabled = props.embeddedMode
         ? (props.agentId && props.agentId !== 'builtin-quick-answer')
         : useSettingsStoreInstance.isAgentStreamMode;
+    // 自定义智能体的 isAgentEnabled 是选择那一刻的快照布尔位，会经 URL 直入
+    // （只 selectAgent 不 toggleAgent）或旧会话回放等路径滞后成 false。这里
+    // 以智能体自身的 agent_mode 为准（与后端 AgentQA 的 customAgent.IsAgentMode()
+    // 判定一致），否则 smart-reasoning 智能体会被静默降级为普通问答，
+    // MCP/沙箱等工具全部不可用。
+    if (!props.embeddedMode && selectedAgentId
+        && selectedAgentId !== 'builtin-quick-answer'
+        && selectedAgentId !== 'builtin-smart-reasoning') {
+        try {
+            await chatResourcesStore.ensureAgents();
+            const agent = chatResourcesStore.agents.find(a => a.id === selectedAgentId);
+            if (agent?.config?.agent_mode === 'smart-reasoning' && !agentEnabled) {
+                agentEnabled = true;
+                useSettingsStoreInstance.toggleAgent(true);
+            }
+        } catch { /* 列表加载失败时维持原开关，不影响发送 */ }
+    }
 
     // Get web search status from settings store
     const webSearchEnabled = props.embeddedMode ? false : useSettingsStoreInstance.isWebSearchEnabled;
@@ -998,6 +1017,20 @@ onBeforeMount(async () => {
         useSettingsStoreInstance.selectAgent(agentIdFromQuery, sourceTenantIdFromQuery);
     } else if (agentIdFromQuery) {
         useSettingsStoreInstance.selectAgent(agentIdFromQuery, null);
+    }
+    // URL 直入只 selectAgent 不会同步智能体开关；自定义智能体按其
+    // agent_mode 补一次 toggleAgent，避免沿用上一次会话遗留的关闭状态
+    // 把 smart-reasoning 智能体发到普通问答管线（MCP/工具失效）
+    if (agentIdFromQuery
+        && agentIdFromQuery !== 'builtin-quick-answer'
+        && agentIdFromQuery !== 'builtin-smart-reasoning') {
+        try {
+            await chatResourcesStore.ensureAgents();
+            const agent = chatResourcesStore.agents.find(a => a.id === agentIdFromQuery);
+            if (agent) {
+                useSettingsStoreInstance.toggleAgent(agent.config?.agent_mode === 'smart-reasoning');
+            }
+        } catch { /* 列表加载失败时由 sendMsg 的兜底判定覆盖 */ }
     }
 
     if (props.kbIds && props.kbIds.length > 0) {

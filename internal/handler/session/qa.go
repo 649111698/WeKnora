@@ -816,6 +816,16 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		return
 	}
 
+	// A smart-reasoning agent only gets its MCP/sandbox tools on the agent
+	// pipeline. Landing here means the client sent agent_enabled=false for an
+	// agent-mode agent — it will silently degrade to prompt-only chat, so make
+	// the misroute visible instead of debugging "tools not connected" blind.
+	if reqCtx.customAgent != nil && reqCtx.customAgent.IsAgentMode() {
+		logger.Warnf(reqCtx.ctx,
+			"agent-mode agent %s (%s) sent through knowledge pipeline (agent_enabled=false); MCP/sandbox tools are unavailable for this turn",
+			reqCtx.customAgent.ID, reqCtx.customAgent.Name)
+	}
+
 	// Execute normal mode QA, generate title unless disabled
 	h.executeQA(reqCtx, qaModeNormal, !request.DisableTitle)
 }
