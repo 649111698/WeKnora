@@ -7,8 +7,12 @@
         <div class="upload-mask" v-show="ismask">
             <UploadMask></UploadMask>
         </div>
-        <!-- 全局设置模态框，供所有 platform 子路由使用 -->
-        <Settings />
+        <!-- 全局设置模态框，供所有 platform 子路由使用。/platform/settings
+             路由本身会渲染一份 Settings（visible = 路由命中 || store 开关），
+             这里再挂一份等于两个全屏浮层同 z-index 叠放：后渲染者会盖住
+             先渲染者内部弹出的对话框，点击被上层实例的表格吞掉（成员管理
+             的智能体权限弹窗因此选不了智能体）。路由命中时全局实例退位。 -->
+        <Settings v-if="route.path !== '/platform/settings'" />
         <!-- 全局命令面板 (⌘K)，随 platform 路由存活 -->
         <GlobalCommandPalette />
         <!-- 全局右上角"待处理邀请"铃铛。固定定位，z-index 低于抽屉，业务页面
