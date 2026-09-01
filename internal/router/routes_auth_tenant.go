@@ -114,6 +114,9 @@ func RegisterTenantRoutes(
 				// 直建成员：注册关闭的部署里由 Owner 统一开账号并入空间。
 				g.apiKeyRoute(tenantByID, http.MethodPost, "/members/create", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.CreateMember)
 				g.apiKeyRoute(tenantByID, http.MethodPut, "/members/:user_id", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.UpdateMemberRole)
+				// 成员可用的智能体范围：与角色变更同级（Owner+），影响面是该成员
+				// 在对话里能看到/运行哪些本空间自定义智能体。
+				g.apiKeyRoute(tenantByID, http.MethodPut, "/members/:user_id/agent-access", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.UpdateMemberAgentAccess)
 				g.apiKeyRoute(tenantByID, http.MethodDelete, "/members/:user_id", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.RemoveMember)
 				tenantByID.POST("/leave", g.Viewer(), memberHandler.LeaveTenant)
 			}

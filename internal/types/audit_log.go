@@ -22,6 +22,10 @@ const (
 	// AuditActionMemberRoleChanged fires for promote/demote operations.
 	// The Details payload carries old_role and new_role.
 	AuditActionMemberRoleChanged AuditAction = "rbac.member_role_changed"
+	// AuditActionMemberAgentAccessChanged fires when an Owner changes which
+	// custom agents a member may use in chat. The Details payload carries
+	// restricted (bool) and allowed_agent_ids.
+	AuditActionMemberAgentAccessChanged AuditAction = "rbac.member_agent_access_changed"
 	// AuditActionMemberLeft fires on POST /tenants/:id/leave — the
 	// actor and target are the same user.
 	AuditActionMemberLeft AuditAction = "rbac.member_left"

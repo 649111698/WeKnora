@@ -149,6 +149,16 @@ func (r *fakeTenantMemberRepo) UpdateRole(ctx context.Context, userID string, te
 	return errors.New("not found")
 }
 
+func (r *fakeTenantMemberRepo) UpdateAllowedAgentIDs(ctx context.Context, userID string, tenantID uint64, ids types.AgentIDList) error {
+	for _, e := range r.rows {
+		if e.UserID == userID && e.TenantID == tenantID && !e.DeletedAt.Valid {
+			e.AllowedAgentIDs = ids
+			return nil
+		}
+	}
+	return errors.New("not found")
+}
+
 func (r *fakeTenantMemberRepo) SoftDelete(ctx context.Context, userID string, tenantID uint64) error {
 	if r.failSoftDelete != nil {
 		return r.failSoftDelete
@@ -641,5 +651,77 @@ func TestTenantRole_HasPermission(t *testing.T) {
 		if got := c.caller.HasPermission(c.required); got != c.want {
 			t.Errorf("HasPermission(%s, %s) = %v, want %v", c.caller, c.required, got, c.want)
 		}
+	}
+}
+
+// --- per-member agent access (allowed_agent_ids) ---
+
+func TestTenantMemberService_UpdateAllowedAgentIDs(t *testing.T) {
+	svc, repo := newServiceWithRepo()
+	ctx := context.Background()
+	member, err := svc.AddMember(ctx, "u1", 7, types.TenantRoleContributor, nil)
+	if err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	ids := types.AgentIDList{"a1", "a2"}
+	if err := svc.UpdateAllowedAgentIDs(ctx, 7, member.UserID, ids); err != nil {
+		t.Fatalf("UpdateAllowedAgentIDs: %v", err)
+	}
+	got, err := svc.GetMembership(ctx, member.UserID, 7)
+	if err != nil || got == nil {
+		t.Fatalf("GetMembership: %v %v", got, err)
+	}
+	if len(got.AllowedAgentIDs) != 2 || !got.AllowedAgentIDs.Allows("a1") || got.AllowedAgentIDs.Allows("a3") {
+		t.Fatalf("allowed ids = %v, want [a1 a2]", got.AllowedAgentIDs)
+	}
+
+	// nil lifts the restriction (back to SQL NULL semantics)
+	if err := svc.UpdateAllowedAgentIDs(ctx, 7, member.UserID, nil); err != nil {
+		t.Fatalf("UpdateAllowedAgentIDs(nil): %v", err)
+	}
+	got, _ = svc.GetMembership(ctx, member.UserID, 7)
+	if got.AllowedAgentIDs != nil {
+		t.Fatalf("after nil update, allowed ids = %v, want nil", got.AllowedAgentIDs)
+	}
+
+	// empty slice = no custom agent (must stay non-nil)
+	if err := svc.UpdateAllowedAgentIDs(ctx, 7, member.UserID, types.AgentIDList{}); err != nil {
+		t.Fatalf("UpdateAllowedAgentIDs(empty): %v", err)
+	}
+	got, _ = svc.GetMembership(ctx, member.UserID, 7)
+	if got.AllowedAgentIDs == nil || len(got.AllowedAgentIDs) != 0 {
+		t.Fatalf("after empty update, allowed ids = %v, want non-nil empty", got.AllowedAgentIDs)
+	}
+
+	// unknown membership errors instead of silently creating one
+	if err := svc.UpdateAllowedAgentIDs(ctx, 7, "ghost", nil); err == nil {
+		t.Fatal("expected error for unknown membership, got nil")
+	}
+	_ = repo // keep repo referenced for future row-level assertions
+}
+
+func TestAgentIDList_RoundTrip(t *testing.T) {
+	var nilList types.AgentIDList
+	v, err := nilList.Value()
+	if err != nil || v != nil {
+		t.Fatalf("nil Value() = %v, %v; want nil, nil", v, err)
+	}
+	var scanned types.AgentIDList
+	if err := scanned.Scan(nil); err != nil || scanned != nil {
+		t.Fatalf("Scan(nil) = %v, %v; want nil, nil", scanned, err)
+	}
+
+	list := types.AgentIDList{"x", "y"}
+	v, err = list.Value()
+	if err != nil {
+		t.Fatalf("Value(): %v", err)
+	}
+	var out types.AgentIDList
+	if err := out.Scan(v); err != nil {
+		t.Fatalf("Scan(): %v", err)
+	}
+	if len(out) != 2 || !out.Allows("y") || out.Allows("z") {
+		t.Fatalf("round trip = %v, want [x y]", out)
 	}
 }

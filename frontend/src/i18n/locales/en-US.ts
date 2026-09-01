@@ -6572,6 +6572,19 @@ export default {
       confirm: 'Remove',
       success: 'Member removed'
     },
+    agentAccess: {
+      button: 'Agent access',
+      dialogTitle: 'Agent access — {name}',
+      description: "Restrict which of this workspace's custom agents the member can use in chat. Built-in and shared agents are unaffected.",
+      modeAll: 'All agents (default)',
+      modeSelected: 'Only selected agents',
+      selectPlaceholder: 'Select allowed agents',
+      agentCount: '{total} available, {picked} selected',
+      restrictedTag: 'Agent access restricted for this member',
+      saved: 'Agent access updated',
+      saveError: 'Failed to update agent access',
+      loadError: 'Failed to load agents'
+    },
     leave: {
       confirmTitle: 'Leave this workspace?',
       confirmBody: 'You will lose access to all knowledge bases and agents in this workspace. You can be re-invited later.',

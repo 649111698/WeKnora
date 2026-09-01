@@ -48,6 +48,10 @@ type TenantMemberService interface {
 	// enforcing the "cannot demote the last active Owner" invariant.
 	UpdateRole(ctx context.Context, userID string, tenantID uint64, newRole types.TenantRole) error
 
+	// UpdateAllowedAgentIDs sets which of the tenant's own custom agents the
+	// member may use in chat. nil means unrestricted, empty slice means none.
+	UpdateAllowedAgentIDs(ctx context.Context, tenantID uint64, userID string, ids types.AgentIDList) error
+
 	// RemoveMember soft-deletes the membership while enforcing the
 	// "cannot remove the last active Owner" invariant.
 	RemoveMember(ctx context.Context, userID string, tenantID uint64) error

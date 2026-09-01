@@ -35,6 +35,10 @@ type CustomAgentHandler struct {
 	// sandboxConfigs validates an agent's sandbox backend selection. Optional —
 	// nil in partially-wired unit tests, where the selection is left unchecked.
 	sandboxConfigs sandboxConfigLookup
+	// memberService enforces per-member agent access (Owner restricts which
+	// custom agents a member may use). Optional — nil in partially-wired unit
+	// tests, where the listing stays unfiltered.
+	memberService interfaces.TenantMemberService
 }
 
 // NewCustomAgentHandler creates a new custom agent handler instance
@@ -44,6 +48,7 @@ func NewCustomAgentHandler(
 	disabledRepo interfaces.TenantDisabledSharedAgentRepository,
 	userService interfaces.UserService,
 	sandboxConfigs *service.TenantSandboxConfigService,
+	memberService interfaces.TenantMemberService,
 ) *CustomAgentHandler {
 	return &CustomAgentHandler{
 		service:        service,
@@ -51,6 +56,7 @@ func NewCustomAgentHandler(
 		disabledRepo:   disabledRepo,
 		userService:    userService,
 		sandboxConfigs: sandboxConfigs,
+		memberService:  memberService,
 	}
 }
 
@@ -236,6 +242,16 @@ func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 		agents = filtered
 	}
 
+	// Per-member agent access (Owner-set allowlist on tenant_members).
+	// NULL keeps every agent visible; a set list hides every custom agent
+	// outside it. Built-in agents stay visible so quick-answer /
+	// smart-reasoning can never disappear from the conversation dropdown.
+	// API-key requests carry no user membership and are not filtered.
+	if err := h.filterAgentsByMemberAccess(ctx, c, &agents); err != nil {
+		c.Error(err)
+		return
+	}
+
 	// Per-tenant "disabled by me" for own agents (only affects this tenant's conversation dropdown)
 	tenantIDVal, exists := c.Get(types.TenantIDContextKey.String())
 	if !exists {
@@ -268,6 +284,45 @@ func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 		"data":                   agents,
 		"disabled_own_agent_ids": disabledOwnIDs,
 	})
+}
+
+// filterAgentsByMemberAccess narrows agents to the caller's allowlist when
+// the Owner has set one (tenant_members.allowed_agent_ids). Built-in agents
+// and API-key requests (no user membership) pass through untouched; a member
+// without a membership row is likewise unfiltered, matching GetMembership's
+// (nil, nil) semantics for foreign viewers.
+func (h *CustomAgentHandler) filterAgentsByMemberAccess(ctx context.Context, c *gin.Context, agents *[]*types.CustomAgent) error {
+	if h.memberService == nil {
+		return nil
+	}
+	callerUserIDVal, _ := c.Get(types.UserIDContextKey.String())
+	callerUserID, _ := callerUserIDVal.(string)
+	if callerUserID == "" {
+		return nil
+	}
+	tenantIDVal, _ := c.Get(types.TenantIDContextKey.String())
+	tenantID, ok := tenantIDVal.(uint64)
+	if !ok || tenantID == 0 {
+		return nil
+	}
+	member, err := h.memberService.GetMembership(ctx, callerUserID, tenantID)
+	if err != nil {
+		logger.Warnf(ctx, "member access lookup failed, listing unfiltered: tenant=%d user=%s err=%v",
+			tenantID, callerUserID, err)
+		return nil
+	}
+	if member == nil || member.AllowedAgentIDs == nil {
+		return nil
+	}
+	allowed := member.AllowedAgentIDs
+	filtered := make([]*types.CustomAgent, 0, len(*agents))
+	for _, ag := range *agents {
+		if ag.IsBuiltin || allowed.Allows(ag.ID) {
+			filtered = append(filtered, ag)
+		}
+	}
+	*agents = filtered
+	return nil
 }
 
 // enrichAgentCreatorNames 批量把 agent.CreatedBy 解析成展示名。失败吞掉，

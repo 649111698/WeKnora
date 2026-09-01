@@ -17,6 +17,12 @@ export interface TenantMember {
   status: TenantMemberStatus
   invited_by?: string | null
   joined_at: string
+  /**
+   * 成员可用的本空间自定义智能体 ID 列表。
+   * null = 未限制（全部可用）；数组（含空数组）= 仅列表内可用。
+   * 内置与共享智能体不受此限制影响。
+   */
+  allowed_agent_ids?: string[] | null
 }
 
 export interface ListMembersResponse {
@@ -151,6 +157,24 @@ export async function updateMemberRole(
   role: TenantRole,
 ): Promise<SimpleResponse> {
   return (await put(`/api/v1/tenants/${tenantId}/members/${userId}`, { role })) as unknown as SimpleResponse
+}
+
+/**
+ * 设置成员在对话中可访问的本空间自定义智能体。
+ * Backend: PUT /api/v1/tenants/:id/members/:user_id/agent-access (Owner+)。
+ *
+ * allowedAgentIds 传 null 表示清除限制（全部可用，写库为 SQL NULL）；
+ * 传数组（可为空）表示仅这些智能体可用。内置与共享智能体不受影响。
+ */
+export async function updateMemberAgentAccess(
+  tenantId: number,
+  userId: string,
+  allowedAgentIds: string[] | null,
+): Promise<SimpleResponse> {
+  return (await put(
+    `/api/v1/tenants/${tenantId}/members/${userId}/agent-access`,
+    { allowed_agent_ids: allowedAgentIds },
+  )) as unknown as SimpleResponse
 }
 
 /**

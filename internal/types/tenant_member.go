@@ -1,6 +1,9 @@
 package types
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -99,11 +102,67 @@ type TenantMember struct {
 	// InvitedBy records the user ID of the admin who created this row via
 	// an invitation flow. Nil for rows created by self-service registration.
 	InvitedBy *string `json:"invited_by,omitempty" gorm:"type:varchar(36)"`
+	// AllowedAgentIDs restricts which of the tenant's own custom agents the
+	// member may use in chat. NULL means unrestricted (the default for all
+	// pre-existing memberships); an empty slice means no custom agent at all.
+	// Built-in agents and agents shared into the tenant are never affected.
+	AllowedAgentIDs AgentIDList `json:"allowed_agent_ids,omitempty" gorm:"type:jsonb"`
 	// JoinedAt is when the membership became active.
 	JoinedAt  time.Time      `json:"joined_at"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"deleted_at" gorm:"index"`
+}
+
+// AgentIDList is a JSONB-backed string slice. nil marshals to SQL NULL (the
+// "unrestricted" marker), so the three states stay distinguishable:
+// NULL = all agents allowed, [] = none, ["a","b"] = exactly those.
+type AgentIDList []string
+
+// Value implements driver.Valuer.
+func (l AgentIDList) Value() (driver.Value, error) {
+	if l == nil {
+		return nil, nil
+	}
+	return json.Marshal([]string(l))
+}
+
+// Scan implements sql.Scanner.
+func (l *AgentIDList) Scan(value interface{}) error {
+	if value == nil {
+		*l = nil
+		return nil
+	}
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New("AgentIDList: unsupported scan source type")
+	}
+	if len(bytes) == 0 {
+		*l = nil
+		return nil
+	}
+	out := []string{}
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return err
+	}
+	*l = out
+	return nil
+}
+
+// Allows reports whether agentID is usable under this list. Built-in agents
+// bypass the check at the call site; this helper only answers set membership.
+func (l AgentIDList) Allows(agentID string) bool {
+	for _, id := range l {
+		if id == agentID {
+			return true
+		}
+	}
+	return false
 }
 
 // TableName binds TenantMember to the tenant_members table.
@@ -134,4 +193,8 @@ type TenantMemberResponse struct {
 	Status    TenantMemberStatus `json:"status"`
 	InvitedBy *string            `json:"invited_by,omitempty"`
 	JoinedAt  time.Time          `json:"joined_at"`
+	// AllowedAgentIDs mirrors TenantMember.AllowedAgentIDs. nil (JSON null)
+	// means unrestricted; present (even empty) means the member is restricted
+	// to exactly these tenant-owned custom agents in chat.
+	AllowedAgentIDs []string `json:"allowed_agent_ids"`
 }

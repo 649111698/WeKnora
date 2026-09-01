@@ -44,6 +44,11 @@ type TenantMemberRepository interface {
 	// gorm.ErrRecordNotFound if no active row matches.
 	UpdateRole(ctx context.Context, userID string, tenantID uint64, role types.TenantRole) error
 
+	// UpdateAllowedAgentIDs sets the per-member custom-agent allowlist.
+	// nil = SQL NULL (unrestricted), empty slice = no custom agent.
+	// Returns gorm.ErrRecordNotFound if no active row matches.
+	UpdateAllowedAgentIDs(ctx context.Context, userID string, tenantID uint64, ids types.AgentIDList) error
+
 	// SoftDelete marks the active membership as deleted. The user record
 	// itself is untouched.
 	SoftDelete(ctx context.Context, userID string, tenantID uint64) error

@@ -362,7 +362,12 @@
             <t-table row-key="user_id" :data="members" :columns="columns" size="medium" hover stripe :loading="loading">
               <template #member="{ row }">
                 <div class="member-cell">
-                  <span class="member-name">{{ memberPrimary(row) }}</span>
+                  <span class="member-name">
+                    {{ memberPrimary(row) }}
+                    <t-tooltip v-if="isAgentRestricted(row)" :content="$t('tenantMember.agentAccess.restrictedTag')" placement="top">
+                      <t-icon name="lock-on" class="member-agent-lock" />
+                    </t-tooltip>
+                  </span>
                   <span v-if="memberSecondary(row)" class="member-email">{{ memberSecondary(row) }}</span>
                 </div>
               </template>
@@ -385,6 +390,13 @@
               </template>
               <template #joined_at="{ row }">{{ formatDate(row.joined_at) }}</template>
               <template #actions="{ row }">
+                <t-tooltip
+                  v-if="canManage && row.user_id !== currentUserId"
+                  :content="$t('tenantMember.agentAccess.button')" placement="top">
+                  <t-button shape="square" variant="text" size="small" @click.stop="openAgentAccess(row)">
+                    <template #icon><t-icon name="lock-on" :class="{ 'agent-access-restricted': isAgentRestricted(row) }" /></template>
+                  </t-button>
+                </t-tooltip>
                 <t-popconfirm
                   v-if="canManage && row.user_id !== currentUserId"
                   :content="$t('tenantMember.remove.confirmBody', { name: row.username || row.email })"
@@ -541,6 +553,44 @@
         </div>
       </div>
     </t-drawer>
+
+    <!-- 智能体访问权限：限制成员在对话里能使用哪些本空间自定义智能体 -->
+    <t-dialog
+      v-model:visible="agentAccessVisible"
+      :header="$t('tenantMember.agentAccess.dialogTitle', { name: agentAccessTargetName })"
+      width="480px"
+      :confirm-btn="{ content: $t('common.save'), loading: agentAccessSaving, disabled: agentAccessMode === 'selected' && agentAccessSelected.length === 0 && !agentOptionsLoadedOnce }"
+      :cancel-btn="{ content: t('common.cancel') }"
+      @confirm="saveAgentAccess">
+      <div class="agent-access-dialog">
+        <p class="agent-access-desc">{{ $t('tenantMember.agentAccess.description') }}</p>
+        <t-radio-group v-model="agentAccessMode" variant="default-radio" class="agent-access-mode">
+          <t-radio value="all" allow-uncheck="false">{{ $t('tenantMember.agentAccess.modeAll') }}</t-radio>
+          <t-radio value="selected" allow-uncheck="false">{{ $t('tenantMember.agentAccess.modeSelected') }}</t-radio>
+        </t-radio-group>
+        <template v-if="agentAccessMode === 'selected'">
+          <t-alert v-if="agentOptionsError" theme="error" :message="agentOptionsError" class="agent-access-error" />
+          <t-select
+            v-model="agentAccessSelected"
+            multiple
+            clearable
+            filterable
+            :loading="agentOptionsLoading"
+            :placeholder="$t('tenantMember.agentAccess.selectPlaceholder')"
+            class="agent-access-select">
+            <t-option v-for="a in agentOptions" :key="a.id" :value="a.id" :label="a.name">
+              <div class="agent-access-option">
+                <span class="agent-access-option-name">{{ a.name }}</span>
+                <span v-if="a.description" class="agent-access-option-desc">{{ a.description }}</span>
+              </div>
+            </t-option>
+          </t-select>
+          <p class="agent-access-count">
+            {{ $t('tenantMember.agentAccess.agentCount', { total: agentOptions.length, picked: agentAccessSelected.length }) }}
+          </p>
+        </template>
+      </div>
+    </t-dialog>
   </div>
 </template>
 
@@ -555,11 +605,13 @@ import { auditActionLabel } from '@/i18n/auditActionLabel'
 import {
   listMembers,
   updateMemberRole,
+  updateMemberAgentAccess,
   removeMember,
   createMember,
   type TenantMember,
   type TenantRole,
 } from '@/api/tenant/members'
+import { listAgents, type CustomAgent } from '@/api/agent'
 import {
   listTenantInvitations,
   createInvitation,
@@ -683,6 +735,72 @@ const currentRole = computed<TenantRole | ''>(() => (authStore.currentTenantRole
 const canManage = computed(
   () => currentRole.value === 'owner' || authStore.canAccessAllTenants === true,
 )
+
+// --- 智能体访问权限（成员可用哪些本空间自定义智能体） ---
+// allowed_agent_ids: null = 未限制；数组（含空）= 仅列表内可用。
+// 服务端在 /agents 列表与发送问答两处强制执行，这里只是配置入口。
+const agentAccessVisible = ref(false)
+const agentAccessTarget = ref<TenantMember | null>(null)
+const agentAccessMode = ref<'all' | 'selected'>('all')
+const agentAccessSelected = ref<string[]>([])
+const agentAccessSaving = ref(false)
+// 租户自有（非内置）智能体，作为「指定智能体」多选的选项来源。
+// Owner 自己的 allowlist 一般是 null，拉到的列表是完整的。
+const agentOptions = ref<CustomAgent[]>([])
+const agentOptionsLoading = ref(false)
+const agentOptionsError = ref('')
+const agentOptionsLoadedOnce = ref(false)
+
+const agentAccessTargetName = computed(() =>
+  agentAccessTarget.value ? memberPrimary(agentAccessTarget.value) : '',
+)
+
+function isAgentRestricted(row: TenantMember): boolean {
+  return Array.isArray(row.allowed_agent_ids)
+}
+
+function openAgentAccess(row: TenantMember) {
+  agentAccessTarget.value = row
+  agentAccessMode.value = Array.isArray(row.allowed_agent_ids) ? 'selected' : 'all'
+  agentAccessSelected.value = Array.isArray(row.allowed_agent_ids) ? [...row.allowed_agent_ids] : []
+  agentAccessVisible.value = true
+  void loadAgentOptions()
+}
+
+async function loadAgentOptions(force = false) {
+  if (agentOptionsLoading.value) return
+  if (agentOptionsLoadedOnce.value && !force) return
+  agentOptionsLoading.value = true
+  agentOptionsError.value = ''
+  try {
+    const resp = await listAgents({ creator: 'all' })
+    agentOptions.value = (resp?.data || []).filter((a) => !a.is_builtin)
+    agentOptionsLoadedOnce.value = true
+  } catch (e: any) {
+    agentOptionsError.value = e?.message || t('tenantMember.agentAccess.loadError')
+  } finally {
+    agentOptionsLoading.value = false
+  }
+}
+
+async function saveAgentAccess() {
+  const target = agentAccessTarget.value
+  if (!target || !activeTenantId.value) return
+  agentAccessSaving.value = true
+  try {
+    const allowed = agentAccessMode.value === 'all' ? null : [...agentAccessSelected.value]
+    await updateMemberAgentAccess(activeTenantId.value, target.user_id, allowed)
+    // 就地更新当前页行数据，避免整页刷新
+    const row = members.value.find((m) => m.user_id === target.user_id)
+    if (row) row.allowed_agent_ids = allowed
+    agentAccessVisible.value = false
+    MessagePlugin.success(t('tenantMember.agentAccess.saved'))
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || t('tenantMember.agentAccess.saveError'))
+  } finally {
+    agentAccessSaving.value = false
+  }
+}
 // Admin+ (and cross-tenant superusers) can view the audit log. Mirrors
 // the server's g.Admin() guard on /tenants/:id/audit-log so we don't
 // render a tab that would just 403.
@@ -767,7 +885,7 @@ const columns = computed(() => [
   { colKey: 'member', title: t('tenantMember.columns.member'), ellipsis: true, minWidth: 132 },
   { colKey: 'role', title: t('tenantMember.columns.role'), width: 128 },
   { colKey: 'joined_at', title: t('tenantMember.columns.joinedAt'), width: 154 },
-  { colKey: 'actions', title: t('tenantMember.columns.operations'), width: 88, align: 'left' },
+  { colKey: 'actions', title: t('tenantMember.columns.operations'), width: 112, align: 'left' },
 ])
 
 function memberPrimary(row: { username?: string; email?: string }) {
@@ -2633,5 +2751,63 @@ watch(
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden !important;
+}
+
+/* 智能体访问权限弹窗 */
+.agent-access-desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--td-text-color-secondary);
+}
+
+.agent-access-mode {
+  margin-bottom: 12px;
+}
+
+.agent-access-select {
+  width: 100%;
+}
+
+.agent-access-error {
+  margin-bottom: 8px;
+}
+
+.agent-access-count {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+
+.agent-access-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.agent-access-option-name {
+  font-size: 13px;
+}
+
+.agent-access-option-desc {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+
+/* 成员名旁的受限标识与操作列图标的受限态 */
+.member-agent-lock {
+  font-size: 12px;
+  color: var(--td-warning-color);
+  vertical-align: -1px;
+  margin-left: 4px;
+}
+
+.agent-access-restricted {
+  color: var(--td-warning-color);
 }
 </style>

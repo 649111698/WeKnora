@@ -37,6 +37,9 @@ type Handler struct {
 	// not support artifact collection; handlers must check before using.
 	artifactCollector *service.ArtifactCollector
 	memoryService     interfaces.MemoryService // Service for cross-session long-term memory
+	// memberService enforces per-member agent access at send time. Optional —
+	// nil keeps the previous unrestricted behaviour.
+	memberService interfaces.TenantMemberService
 }
 
 // NewHandler creates a new instance of Handler with all necessary dependencies
@@ -59,6 +62,7 @@ func NewHandler(
 	temporaryDocuments interfaces.TemporaryDocumentService,
 	artifactCollector *service.ArtifactCollector,
 	memoryService interfaces.MemoryService,
+	memberService interfaces.TenantMemberService,
 ) *Handler {
 	return &Handler{
 		sessionService:       sessionService,
@@ -77,6 +81,7 @@ func NewHandler(
 		temporaryDocuments:   temporaryDocuments,
 		artifactCollector:    artifactCollector,
 		memoryService:        memoryService,
+		memberService:        memberService,
 		attachmentProcessor: NewAttachmentProcessor(
 			fileService,
 			documentReader,

@@ -137,11 +137,12 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 	resp := make([]types.TenantMemberResponse, 0, len(members))
 	for _, m := range members {
 		row := types.TenantMemberResponse{
-			UserID:    m.UserID,
-			Role:      m.Role,
-			Status:    m.Status,
-			InvitedBy: m.InvitedBy,
-			JoinedAt:  m.JoinedAt,
+			UserID:          m.UserID,
+			Role:            m.Role,
+			Status:          m.Status,
+			InvitedBy:       m.InvitedBy,
+			JoinedAt:        m.JoinedAt,
+			AllowedAgentIDs: m.AllowedAgentIDs,
 		}
 		if u, ok := usersByID[m.UserID]; ok && u != nil {
 			row.Email = u.Email
@@ -358,6 +359,80 @@ func (h *TenantMemberHandler) UpdateMemberRole(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// updateMemberAgentAccessRequest is the JSON body for
+// PUT /tenants/:id/members/:user_id/agent-access.
+//
+// allowed_agent_ids has three states: absent/null = unrestricted (all of the
+// tenant's custom agents), [] = no custom agent, ["id", ...] = exactly those.
+type updateMemberAgentAccessRequest struct {
+	// AllowedAgentIDs uses a pointer so "field absent" and "empty array" are
+	// distinguishable on the wire.
+	AllowedAgentIDs *[]string `json:"allowed_agent_ids"`
+}
+
+// UpdateMemberAgentAccess godoc
+// @Summary      设置成员可用的智能体
+// @Description  Owner 设置成员在对话中可访问的本空间自定义智能体；null 清除限制（全部可用），空数组表示全部不可用。内置与共享智能体不受影响
+// @Tags         空间成员
+// @Accept       json
+// @Produce      json
+// @Param        id       path  string                          true  "空间 ID"
+// @Param        user_id  path  string                          true  "用户 ID"
+// @Param        request  body  updateMemberAgentAccessRequest  true  "允许的智能体 ID 列表"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      404  {object}  errors.AppError  "成员不存在"
+// @Security     Bearer
+// @Router       /tenants/{id}/members/{user_id}/agent-access [put]
+func (h *TenantMemberHandler) UpdateMemberAgentAccess(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID, ok := parseTenantIDFromPath(c)
+	if !ok {
+		return
+	}
+	userID := strings.TrimSpace(c.Param("user_id"))
+	if userID == "" {
+		c.Error(apperrors.NewValidationError("user_id is required"))
+		return
+	}
+
+	var req updateMemberAgentAccessRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
+		return
+	}
+
+	var ids types.AgentIDList
+	if req.AllowedAgentIDs != nil {
+		seen := make(map[string]struct{}, len(*req.AllowedAgentIDs))
+		ids = make(types.AgentIDList, 0, len(*req.AllowedAgentIDs))
+		for _, id := range *req.AllowedAgentIDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+
+	if err := h.memberService.UpdateAllowedAgentIDs(ctx, tenantID, userID, ids); err != nil {
+		switch {
+		case errors.Is(err, service.ErrMembershipNotFound):
+			c.Error(apperrors.NewNotFoundError("membership not found"))
+		default:
+			logger.Errorf(ctx, "UpdateAllowedAgentIDs failed: user=%s tenant=%d err=%v",
+				userID, tenantID, err)
+			c.Error(apperrors.NewInternalServerError("failed to update member agent access").WithDetails(err.Error()))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "allowed_agent_ids": ids})
 }
 
 // RemoveMember godoc

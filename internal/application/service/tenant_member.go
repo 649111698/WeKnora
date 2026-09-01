@@ -353,6 +353,51 @@ func (s *tenantMemberService) UpdateRole(
 	return nil
 }
 
+// UpdateAllowedAgentIDs sets the member's custom-agent allowlist. nil lifts
+// the restriction (back to all agents); an empty slice locks the member out
+// of every custom agent. Built-in and shared agents are out of scope here —
+// the enforcement sites ignore them by design.
+func (s *tenantMemberService) UpdateAllowedAgentIDs(
+	ctx context.Context,
+	tenantID uint64,
+	userID string,
+	ids types.AgentIDList,
+) error {
+	current, err := s.repo.Get(ctx, userID, tenantID)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return ErrMembershipNotFound
+	}
+	if err := s.repo.UpdateAllowedAgentIDs(ctx, userID, tenantID, ids); err != nil {
+		return err
+	}
+	s.emitAgentAccessAudit(ctx, tenantID, userID, ids)
+	return nil
+}
+
+func (s *tenantMemberService) emitAgentAccessAudit(
+	ctx context.Context,
+	tenantID uint64,
+	targetUserID string,
+	ids types.AgentIDList,
+) {
+	details, _ := json.Marshal(map[string]any{
+		"restricted":         ids != nil,
+		"allowed_agent_ids":  ids,
+	})
+	s.emitAudit(ctx, &types.AuditLog{
+		TenantID:     tenantID,
+		ActorUserID:  auditActor(ctx),
+		ActorRole:    auditActorRole(ctx),
+		Action:       types.AuditActionMemberAgentAccessChanged,
+		TargetType:   "tenant_member",
+		TargetUserID: targetUserID,
+		Details:      details,
+	})
+}
+
 // emitRoleChangeAudit packs the old/new role into Details so the
 // audit-log UI can render "promoted Alice from contributor to admin"
 // without a separate column per role transition.

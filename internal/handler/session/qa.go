@@ -550,6 +550,13 @@ func (h *Handler) resolveAgent(
 	if customAgent == nil && sourceTenantID == 0 {
 		agent, err := h.customAgentService.GetAgentByID(ctx, agentID)
 		if err == nil {
+			if !h.memberMayUseOwnAgent(ctx, c, agent) {
+				// 无权访问的自有智能体按「不存在」处理：不泄露存在性，
+				// 也不会带着无权智能体的提示词/工具继续跑。
+				logger.Warnf(ctx, "Agent %s denied by member agent access, user=%s tenant=%d",
+					secutils.SanitizeForLog(agentID), userIDStr(c), currentTenantID)
+				return nil, 0, false
+			}
 			customAgent = agent
 			logger.Infof(ctx, "Using own agent: ID=%s, Name=%s, AgentMode=%s",
 				customAgent.ID, customAgent.Name, customAgent.Config.AgentMode)
@@ -563,6 +570,44 @@ func (h *Handler) resolveAgent(
 	}
 
 	return customAgent, effectiveTenantID, sharedAgentReadOnly
+}
+
+// memberMayUseOwnAgent reports whether the caller may run this tenant-owned
+// agent under their membership allowlist (tenant_members.allowed_agent_ids).
+// Built-in agents, members without a restriction (NULL) and membership-less
+// callers (API keys) are always allowed. Lookup failures fail open with a
+// warning — an access-control column must not take chat down with it.
+func (h *Handler) memberMayUseOwnAgent(ctx context.Context, c *gin.Context, agent *types.CustomAgent) bool {
+	if h.memberService == nil || agent == nil || agent.IsBuiltin {
+		return true
+	}
+	userID := userIDStr(c)
+	if userID == "" {
+		return true
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || tenantID == 0 {
+		return true
+	}
+	if agent.TenantID != 0 && agent.TenantID != tenantID {
+		return true // foreign agent: shared-agent permissions govern it, not this check
+	}
+	member, err := h.memberService.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		logger.Warnf(ctx, "member access lookup failed, allowing agent: user=%s tenant=%d err=%v",
+			userID, tenantID, err)
+		return true
+	}
+	if member == nil || member.AllowedAgentIDs == nil {
+		return true
+	}
+	return member.AllowedAgentIDs.Allows(agent.ID)
+}
+
+func userIDStr(c *gin.Context) string {
+	v, _ := c.Get(types.UserIDContextKey.String())
+	s, _ := v.(string)
+	return s
 }
 
 // mergeKnowledgeTargets merges request KB/knowledge IDs with @mentioned items into deduplicated slices.

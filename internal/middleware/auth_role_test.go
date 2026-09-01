@@ -135,6 +135,11 @@ func (f *fakeMemberService) UpdateRole(
 ) error {
 	return nil
 }
+func (f *fakeMemberService) UpdateAllowedAgentIDs(
+	ctx context.Context, tenantID uint64, userID string, ids types.AgentIDList,
+) error {
+	return nil
+}
 func (f *fakeMemberService) RemoveMember(ctx context.Context, userID string, tenantID uint64) error {
 	return nil
 }

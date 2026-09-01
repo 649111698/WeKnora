@@ -283,6 +283,19 @@ export default {
       confirm: '제거',
       success: '멤버를 제거했습니다'
     },
+    agentAccess: {
+      button: '에이전트 권한',
+      dialogTitle: '에이전트 권한 — {name}',
+      description: '이 멤버가 대화에서 사용할 수 있는 워크스페이스 사용자 지정 에이전트를 제한합니다. 기본 제공 및 공유 에이전트는 영향을 받지 않습니다.',
+      modeAll: '모든 에이전트(기본값)',
+      modeSelected: '선택한 에이전트만',
+      selectPlaceholder: '허용할 에이전트 선택',
+      agentCount: '총 {total}개 중 {picked}개 선택됨',
+      restrictedTag: '이 멤버의 에이전트 접근이 제한되었습니다',
+      saved: '에이전트 권한이 업데이트되었습니다',
+      saveError: '에이전트 권한 업데이트 실패',
+      loadError: '에이전트 목록을 불러오지 못했습니다'
+    },
     add: {
       button: '멤버 초대',
       dialogTitle: '멤버 초대',

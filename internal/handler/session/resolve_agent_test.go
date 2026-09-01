@@ -156,3 +156,106 @@ func TestResolveAgent_FallsBackToLocalAgentWithoutSourceSelector(t *testing.T) {
 	require.Equal(t, uint64(0), effectiveTenantID)
 	require.False(t, sharedReadOnly)
 }
+
+// resolveMemberStub answers GetMembership with a fixed row so the
+// per-member agent access check can be exercised without a database.
+type resolveMemberStub struct {
+	member *types.TenantMember
+}
+
+func (s *resolveMemberStub) AddMember(context.Context, string, uint64, types.TenantRole, *string) (*types.TenantMember, error) {
+	panic("not implemented")
+}
+func (s *resolveMemberStub) EnsureOwner(context.Context, string, uint64) (*types.TenantMember, error) {
+	panic("not implemented")
+}
+func (s *resolveMemberStub) GetMembership(_ context.Context, _ string, _ uint64) (*types.TenantMember, error) {
+	return s.member, nil
+}
+func (s *resolveMemberStub) ListByUser(context.Context, string) ([]*types.TenantMember, error) {
+	panic("not implemented")
+}
+func (s *resolveMemberStub) ListByTenant(context.Context, uint64) ([]*types.TenantMember, error) {
+	panic("not implemented")
+}
+func (s *resolveMemberStub) ListMembersPage(context.Context, uint64, string, int, int) ([]*types.TenantMember, int64, error) {
+	panic("not implemented")
+}
+func (s *resolveMemberStub) HasAnyMembers(context.Context, uint64) (bool, error) {
+	panic("not implemented")
+}
+func (s *resolveMemberStub) UpdateRole(context.Context, string, uint64, types.TenantRole) error {
+	panic("not implemented")
+}
+func (s *resolveMemberStub) UpdateAllowedAgentIDs(context.Context, uint64, string, types.AgentIDList) error {
+	panic("not implemented")
+}
+func (s *resolveMemberStub) RemoveMember(context.Context, string, uint64) error {
+	panic("not implemented")
+}
+
+func TestResolveAgent_DeniesOwnAgentOutsideMemberAllowlist(t *testing.T) {
+	cases := []struct {
+		name   string
+		member *types.TenantMember
+		wantOK bool
+	}{
+		{
+			name:   "no membership row allows",
+			member: nil,
+			wantOK: true,
+		},
+		{
+			name:   "null allowlist allows",
+			member: &types.TenantMember{UserID: "user-1", TenantID: 7},
+			wantOK: true,
+		},
+		{
+			name: "allowlist containing the agent allows",
+			member: &types.TenantMember{UserID: "user-1", TenantID: 7,
+				AllowedAgentIDs: types.AgentIDList{"agent-1"}},
+			wantOK: true,
+		},
+		{
+			name: "allowlist without the agent denies",
+			member: &types.TenantMember{UserID: "user-1", TenantID: 7,
+				AllowedAgentIDs: types.AgentIDList{"other-agent"}},
+			wantOK: false,
+		},
+		{
+			name: "empty allowlist denies",
+			member: &types.TenantMember{UserID: "user-1", TenantID: 7,
+				AllowedAgentIDs: types.AgentIDList{}},
+			wantOK: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, ctx := newResolveAgentTestContext(7)
+			own := &types.CustomAgent{ID: "agent-1", TenantID: 7, Name: "Own"}
+			h := &Handler{
+				customAgentService: &resolveOwnAgentStub{agent: own},
+				memberService:      &resolveMemberStub{member: tc.member},
+			}
+			agent, _, _ := h.resolveAgent(ctx, c, "agent-1", 0)
+			if tc.wantOK {
+				require.NotNil(t, agent)
+			} else {
+				require.Nil(t, agent)
+			}
+		})
+	}
+}
+
+func TestResolveAgent_BuiltinAgentsBypassMemberAllowlist(t *testing.T) {
+	c, ctx := newResolveAgentTestContext(7)
+	builtin := &types.CustomAgent{ID: "builtin-smart-reasoning", TenantID: 7, IsBuiltin: true}
+	h := &Handler{
+		customAgentService: &resolveOwnAgentStub{agent: builtin},
+		memberService: &resolveMemberStub{member: &types.TenantMember{
+			UserID: "user-1", TenantID: 7, AllowedAgentIDs: types.AgentIDList{},
+		}},
+	}
+	agent, _, _ := h.resolveAgent(ctx, c, "builtin-smart-reasoning", 0)
+	require.NotNil(t, agent)
+}

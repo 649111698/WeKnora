@@ -33,7 +33,11 @@ var versionedSQLiteColumns = map[string][]string{
 	"mcp_oauth_tokens":   {"principal_type", "principal_id"}, // 000064
 }
 
-const expectedSQLiteMigrationVersion = 14
+// sqliteTenantMemberColumns lists tenant_members columns added by fork-owned
+// migrations beyond the SQLite baseline (000093 member agent access).
+var sqliteTenantMemberColumns = []string{"allowed_agent_ids"}
+
+const expectedSQLiteMigrationVersion = 15
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)
@@ -60,6 +64,14 @@ func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 				column,
 			)
 		}
+	}
+	for _, column := range sqliteTenantMemberColumns {
+		require.Truef(
+			t,
+			sqliteColumnExists(t, db, "tenant_members", column),
+			"SQLite migrations must add column tenant_members.%s",
+			column,
+		)
 	}
 
 	assertSQLiteShareLinkInvitationsWork(t, db)

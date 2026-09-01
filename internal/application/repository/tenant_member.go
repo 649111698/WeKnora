@@ -161,6 +161,27 @@ func (r *tenantMemberRepository) UpdateRole(ctx context.Context, userID string, 
 	return nil
 }
 
+// UpdateAllowedAgentIDs sets the per-member custom-agent allowlist. A nil
+// slice writes SQL NULL (= unrestricted); an empty slice writes '[]' (= no
+// custom agent). The value goes through AgentIDList.Valuer, so the JSONB
+// column and the Go states stay in sync.
+func (r *tenantMemberRepository) UpdateAllowedAgentIDs(ctx context.Context, userID string, tenantID uint64, ids types.AgentIDList) error {
+	res := r.db.WithContext(ctx).
+		Model(&types.TenantMember{}).
+		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
+		Updates(map[string]any{
+			"allowed_agent_ids": ids,
+			"updated_at":        time.Now(),
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // SoftDelete marks the membership row as deleted. GORM's soft-delete
 // support populates DeletedAt automatically.
 func (r *tenantMemberRepository) SoftDelete(ctx context.Context, userID string, tenantID uint64) error {

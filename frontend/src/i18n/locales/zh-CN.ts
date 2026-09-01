@@ -283,6 +283,19 @@ export default {
       confirm: '移除',
       success: '已移除成员'
     },
+    agentAccess: {
+      button: '智能体权限',
+      dialogTitle: '智能体权限 — {name}',
+      description: '限制该成员在对话中可以使用哪些本空间的自定义智能体。内置智能体与共享智能体不受影响。',
+      modeAll: '全部智能体（默认）',
+      modeSelected: '仅指定的智能体',
+      selectPlaceholder: '选择可用的智能体',
+      agentCount: '共 {total} 个可选，已选 {picked} 个',
+      restrictedTag: '该成员的智能体访问已受限',
+      saved: '智能体权限已更新',
+      saveError: '更新智能体权限失败',
+      loadError: '智能体列表加载失败'
+    },
     add: {
       button: '邀请成员',
       dialogTitle: '邀请成员',
