@@ -42,6 +42,13 @@ type TenantService interface {
 	GetBrandingLogo(ctx context.Context, tenantID uint64) (*types.TenantBrandingAsset, error)
 	// SaveBrandingLogo upserts the raw logo bytes for a tenant.
 	SaveBrandingLogo(ctx context.Context, tenantID uint64, contentType string, data []byte) error
+	// SetBrandingConfig writes the white-label branding column verbatim —
+	// nil persists SQL NULL (clear). Updates(struct) would skip the zero
+	// value and silently keep the previous branding.
+	SetBrandingConfig(ctx context.Context, tenantID uint64, cfg *types.BrandingConfig) error
+	// SetDefaultMemberAgentIDs writes the new-member default agent allowlist
+	// verbatim; nil persists SQL NULL (no default = unrestricted joins).
+	SetDefaultMemberAgentIDs(ctx context.Context, tenantID uint64, ids types.AgentIDList) error
 }
 
 // TenantRepository defines the tenant repository interface
@@ -68,6 +75,10 @@ type TenantRepository interface {
 	GetBrandingLogo(ctx context.Context, tenantID uint64) (*types.TenantBrandingAsset, error)
 	// SaveBrandingLogo upserts the raw logo bytes for a tenant.
 	SaveBrandingLogo(ctx context.Context, tenantID uint64, contentType string, data []byte) error
+	// SetBrandingConfig — see TenantService.SetBrandingConfig.
+	SetBrandingConfig(ctx context.Context, tenantID uint64, cfg *types.BrandingConfig) error
+	// SetDefaultMemberAgentIDs — see TenantService.SetDefaultMemberAgentIDs.
+	SetDefaultMemberAgentIDs(ctx context.Context, tenantID uint64, ids types.AgentIDList) error
 }
 
 type TenantAPIKeyCreateRequest struct {

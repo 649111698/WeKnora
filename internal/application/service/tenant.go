@@ -377,3 +377,16 @@ func (s *tenantService) GetBrandingLogo(ctx context.Context, tenantID uint64) (*
 func (s *tenantService) SaveBrandingLogo(ctx context.Context, tenantID uint64, contentType string, data []byte) error {
 	return s.repo.SaveBrandingLogo(ctx, tenantID, contentType, data)
 }
+
+// SetBrandingConfig persists the white-label branding column verbatim
+// (nil clears to SQL NULL). See TenantRepository.SetBrandingConfig for why
+// this is not folded into UpdateTenant.
+func (s *tenantService) SetBrandingConfig(ctx context.Context, tenantID uint64, cfg *types.BrandingConfig) error {
+	return s.repo.SetBrandingConfig(ctx, tenantID, cfg)
+}
+
+// SetDefaultMemberAgentIDs persists the new-member default agent allowlist
+// verbatim (nil = no default, joins unrestricted).
+func (s *tenantService) SetDefaultMemberAgentIDs(ctx context.Context, tenantID uint64, ids types.AgentIDList) error {
+	return s.repo.SetDefaultMemberAgentIDs(ctx, tenantID, ids)
+}

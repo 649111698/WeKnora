@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -205,4 +206,30 @@ func (r *tenantRepository) SaveBrandingLogo(ctx context.Context, tenantID uint64
 			}),
 		}).
 		Create(&asset).Error
+}
+
+// SetBrandingConfig writes tenants.branding_config verbatim via an explicit
+// column update: gorm's Updates(struct) skips nil (zero) fields, so the old
+// "clear branding" path silently kept the previous JSON. nil cfg ⇒ SQL NULL.
+func (r *tenantRepository) SetBrandingConfig(ctx context.Context, tenantID uint64, cfg *types.BrandingConfig) error {
+	return r.db.WithContext(ctx).
+		Model(&types.Tenant{}).
+		Where("id = ?", tenantID).
+		Updates(map[string]any{
+			"branding_config": cfg,
+			"updated_at":      time.Now(),
+		}).Error
+}
+
+// SetDefaultMemberAgentIDs writes tenants.default_member_agent_ids verbatim;
+// nil ids ⇒ SQL NULL (joins unrestricted). Same zero-value rationale as
+// SetBrandingConfig.
+func (r *tenantRepository) SetDefaultMemberAgentIDs(ctx context.Context, tenantID uint64, ids types.AgentIDList) error {
+	return r.db.WithContext(ctx).
+		Model(&types.Tenant{}).
+		Where("id = ?", tenantID).
+		Updates(map[string]any{
+			"default_member_agent_ids": ids,
+			"updated_at":               time.Now(),
+		}).Error
 }

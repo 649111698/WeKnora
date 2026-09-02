@@ -2154,24 +2154,20 @@ func (h *TenantHandler) updateTenantBrandingConfigInternal(c *gin.Context) {
 		return
 	}
 
-	if cfg == (types.BrandingConfig{}) {
-		tenant.BrandingConfig = nil // 全空 = 清除白标，回退默认
-	} else {
-		tenant.BrandingConfig = &cfg
+	// Explicit column write: Updates(struct) skips the nil zero value, so
+	// a full clear (cfg == {}) would silently keep the previous branding.
+	var persist *types.BrandingConfig
+	if cfg != (types.BrandingConfig{}) {
+		persist = &cfg
 	}
-	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
-	if err != nil {
-		if appErr, ok := errors.IsAppError(err); ok {
-			c.Error(appErr)
-		} else {
-			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to update branding config").WithDetails(err.Error()))
-		}
+	if err := h.service.SetBrandingConfig(ctx, tenant.ID, persist); err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError("Failed to update branding config").WithDetails(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    updatedTenant.BrandingConfig.ResolvedBranding(),
+		"data":    cfg.ResolvedBranding(),
 		"message": "Branding configuration updated successfully",
 	})
 }
@@ -2405,9 +2401,9 @@ func (h *TenantHandler) updateTenantMemberAgentDefaultsInternal(c *gin.Context) 
 		return
 	}
 
-	tenant.DefaultMemberAgentIDs = ids // nil = 清除默认
-	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
-	if err != nil {
+	// Explicit column write so nil (清除默认) persists SQL NULL —
+	// Updates(struct) would skip the zero value and keep the old list.
+	if err := h.service.SetDefaultMemberAgentIDs(ctx, tenant.ID, ids); err != nil {
 		if appErr, ok := errors.IsAppError(err); ok {
 			c.Error(appErr)
 		} else {
@@ -2417,8 +2413,8 @@ func (h *TenantHandler) updateTenantMemberAgentDefaultsInternal(c *gin.Context) 
 		return
 	}
 	var respIDs any
-	if updatedTenant.DefaultMemberAgentIDs != nil {
-		respIDs = []string(updatedTenant.DefaultMemberAgentIDs)
+	if ids != nil {
+		respIDs = []string(ids)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

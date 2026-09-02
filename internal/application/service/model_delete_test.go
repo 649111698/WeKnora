@@ -286,3 +286,10 @@ func (s *stubTenantServiceForModelDelete) GetBrandingLogo(context.Context, uint6
 func (s *stubTenantServiceForModelDelete) SaveBrandingLogo(context.Context, uint64, string, []byte) error {
 	return nil
 }
+
+func (s *stubTenantServiceForModelDelete) SetBrandingConfig(context.Context, uint64, *types.BrandingConfig) error {
+	return nil
+}
+func (s *stubTenantServiceForModelDelete) SetDefaultMemberAgentIDs(context.Context, uint64, types.AgentIDList) error {
+	return nil
+}

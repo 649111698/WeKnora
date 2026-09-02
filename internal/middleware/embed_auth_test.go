@@ -405,3 +405,10 @@ func (f *fakeTenantService) GetBrandingLogo(context.Context, uint64) (*types.Ten
 func (f *fakeTenantService) SaveBrandingLogo(context.Context, uint64, string, []byte) error {
 	return nil
 }
+
+func (f *fakeTenantService) SetBrandingConfig(context.Context, uint64, *types.BrandingConfig) error {
+	return nil
+}
+func (f *fakeTenantService) SetDefaultMemberAgentIDs(context.Context, uint64, types.AgentIDList) error {
+	return nil
+}
