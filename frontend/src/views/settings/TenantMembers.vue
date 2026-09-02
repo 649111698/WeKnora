@@ -837,6 +837,8 @@ async function loadDefaultAgents() {
     if (Array.isArray(ids)) {
       defaultAgentMode.value = 'selected'
       defaultAgentSelected.value = [...ids]
+      // 已配置默认时选项也要拉：否则多选框在选项到位前显示的是 UUID
+      void loadAgentOptions()
     } else {
       defaultAgentMode.value = 'all'
       defaultAgentSelected.value = []
