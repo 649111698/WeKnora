@@ -199,6 +199,13 @@ func (s *tenantMemberService) AddMember(
 			member.AllowedAgentIDs = append(types.AgentIDList(nil), tenant.DefaultMemberAgentIDs...)
 		}
 	}
+	// 访客（Viewer）在未配置租户默认时，默认不可用任何自定义智能体：
+	// 只有显式授予（租户默认或逐成员设置）后才可见。注意必须是「空列表」
+	// 而非 nil——nil 表示不限制，空列表才是全部禁用。Owner 与
+	// Admin/Contributor 不受影响（未配置默认时不限制）。
+	if role == types.TenantRoleViewer && member.AllowedAgentIDs == nil {
+		member.AllowedAgentIDs = types.AgentIDList{}
+	}
 	if err := s.repo.Create(ctx, member); err != nil {
 		// TOCTOU race: a concurrent AddMember / EnsureOwner slipped past
 		// the Get above. The DB's partial unique index on

@@ -788,15 +788,39 @@ func TestAddMemberOwnerAndNoDefaultStayUnrestricted(t *testing.T) {
 		t.Fatalf("owner must stay unrestricted, got %v", memberByUser(t, repo, "owner-u").AllowedAgentIDs)
 	}
 
-	// No default configured (nil) → ordinary member also unrestricted.
+	// No default configured (nil): viewer joins with NO custom agents
+	// (empty list, not nil), contributor stays unrestricted.
 	svc2, repo2 := newServiceWithRepo()
 	s2 := svc2.(*tenantMemberService)
 	s2.tenantRepo = &defaultAgentsTenantRepo{tenant: &types.Tenant{ID: 7}}
 	if _, err := svc2.AddMember(context.Background(), "u2", 7, types.TenantRoleViewer, nil); err != nil {
 		t.Fatalf("AddMember viewer: %v", err)
 	}
-	if memberByUser(t, repo2, "u2").AllowedAgentIDs != nil {
-		t.Fatalf("no default configured: member must be unrestricted, got %v", memberByUser(t, repo2, "u2").AllowedAgentIDs)
+	v := memberByUser(t, repo2, "u2").AllowedAgentIDs
+	if v == nil || len(v) != 0 {
+		t.Fatalf("viewer with no default must join with an empty (deny-all-custom) list, got %v", v)
+	}
+	if _, err := svc2.AddMember(context.Background(), "u3", 7, types.TenantRoleContributor, nil); err != nil {
+		t.Fatalf("AddMember contributor: %v", err)
+	}
+	if memberByUser(t, repo2, "u3").AllowedAgentIDs != nil {
+		t.Fatalf("contributor with no default must stay unrestricted, got %v", memberByUser(t, repo2, "u3").AllowedAgentIDs)
+	}
+}
+
+func TestAddMemberViewerWithTenantDefaultGetsDefault(t *testing.T) {
+	// A configured tenant default wins over the viewer deny-all fallback.
+	svc, repo := newServiceWithRepo()
+	s := svc.(*tenantMemberService)
+	s.tenantRepo = &defaultAgentsTenantRepo{tenant: &types.Tenant{
+		ID: 7, DefaultMemberAgentIDs: types.AgentIDList{"agent-1"},
+	}}
+	if _, err := svc.AddMember(context.Background(), "u4", 7, types.TenantRoleViewer, nil); err != nil {
+		t.Fatalf("AddMember viewer: %v", err)
+	}
+	got := memberByUser(t, repo, "u4").AllowedAgentIDs
+	if len(got) != 1 || got[0] != "agent-1" {
+		t.Fatalf("viewer must inherit the tenant default, got %v", got)
 	}
 }
 
@@ -805,10 +829,20 @@ func TestAddMemberDefaultLookupFailureFailsOpen(t *testing.T) {
 	s := svc.(*tenantMemberService)
 	s.tenantRepo = &defaultAgentsTenantRepo{err: errors.New("db hiccup")}
 
+	// Joining must never be blocked by the lookup failure...
 	if _, err := svc.AddMember(context.Background(), "u3", 7, types.TenantRoleViewer, nil); err != nil {
 		t.Fatalf("lookup failure must not block joining: %v", err)
 	}
-	if memberByUser(t, repo, "u3").AllowedAgentIDs != nil {
-		t.Fatalf("failed lookup must join unrestricted, got %v", memberByUser(t, repo, "u3").AllowedAgentIDs)
+	// ...but a viewer still lands on the deny-all-custom fallback (empty
+	// list), while higher roles fail open to unrestricted.
+	v := memberByUser(t, repo, "u3").AllowedAgentIDs
+	if v == nil || len(v) != 0 {
+		t.Fatalf("viewer on failed lookup must join with empty list, got %v", v)
+	}
+	if _, err := svc.AddMember(context.Background(), "u5", 7, types.TenantRoleContributor, nil); err != nil {
+		t.Fatalf("lookup failure must not block joining: %v", err)
+	}
+	if memberByUser(t, repo, "u5").AllowedAgentIDs != nil {
+		t.Fatalf("contributor on failed lookup must join unrestricted, got %v", memberByUser(t, repo, "u5").AllowedAgentIDs)
 	}
 }
