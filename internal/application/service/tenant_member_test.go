@@ -267,7 +267,7 @@ func newServiceWithRepo() (interfaces.TenantMemberService, *fakeTenantMemberRepo
 	// tests pre-date PR 6 and exercise membership invariants only. The
 	// service's audit and RemoveMember-cleanup hooks are nil-safe, so
 	// passing nil keeps existing coverage intact without forcing stubs.
-	return NewTenantMemberService(r, nil, nil, nil), r
+	return NewTenantMemberService(r, nil, nil, nil, nil), r
 }
 
 // cleanupUserRepo is a minimal UserRepository used to assert that
@@ -348,7 +348,7 @@ func TestTenantMemberService_RemoveMember_ClearsStaleHomeAndRevokesTokens(t *tes
 		},
 	}}
 	tokenRepo := &cleanupTokenRepo{}
-	svc := NewTenantMemberService(memberRepo, nil, userRepo, tokenRepo)
+	svc := NewTenantMemberService(memberRepo, nil, userRepo, tokenRepo, nil)
 	ctx := context.Background()
 
 	if _, err := svc.EnsureOwner(ctx, "owner", 7); err != nil {
@@ -385,7 +385,7 @@ func TestTenantMemberService_RemoveMember_RevokesTokensEvenWhenHomeUnchanged(t *
 		"contrib": {ID: "contrib", TenantID: 1},
 	}}
 	tokenRepo := &cleanupTokenRepo{}
-	svc := NewTenantMemberService(memberRepo, nil, userRepo, tokenRepo)
+	svc := NewTenantMemberService(memberRepo, nil, userRepo, tokenRepo, nil)
 	ctx := context.Background()
 
 	if _, err := svc.EnsureOwner(ctx, "owner", 7); err != nil {
@@ -723,5 +723,92 @@ func TestAgentIDList_RoundTrip(t *testing.T) {
 	}
 	if len(out) != 2 || !out.Allows("y") || out.Allows("z") {
 		t.Fatalf("round trip = %v, want [x y]", out)
+	}
+}
+
+// defaultAgentsTenantRepo is a minimal TenantRepository used to exercise the
+// copy-on-join seeding of allowed_agent_ids from the tenant-level default.
+type defaultAgentsTenantRepo struct {
+	interfaces.TenantRepository
+	tenant *types.Tenant
+	err    error
+}
+
+func (r *defaultAgentsTenantRepo) GetTenantByID(context.Context, uint64) (*types.Tenant, error) {
+	return r.tenant, r.err
+}
+
+// memberByUser fetches the stored row for assertions.
+func memberByUser(t *testing.T, r *fakeTenantMemberRepo, userID string) *types.TenantMember {
+	t.Helper()
+	for _, e := range r.rows {
+		if e.UserID == userID {
+			cp := *e
+			return &cp
+		}
+	}
+	t.Fatalf("no stored row for %s", userID)
+	return nil
+}
+
+func TestAddMemberSeedsAllowedAgentsFromTenantDefault(t *testing.T) {
+	def := types.AgentIDList{"agent-1", "agent-2"}
+	tenant := &types.Tenant{ID: 7, DefaultMemberAgentIDs: def}
+
+	svc, repo := newServiceWithRepo()
+	s := svc.(*tenantMemberService)
+	s.tenantRepo = &defaultAgentsTenantRepo{tenant: tenant}
+
+	if _, err := svc.AddMember(context.Background(), "u1", 7, types.TenantRoleViewer, nil); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+	got := memberByUser(t, repo, "u1").AllowedAgentIDs
+	if len(got) != 2 || got[0] != "agent-1" || got[1] != "agent-2" {
+		t.Fatalf("non-owner member must inherit tenant default, got %v", got)
+	}
+	// Copy-on-join: the member owns its list; mutating the default later
+	// must not leak into the member row.
+	def[0] = "mutated"
+	if memberByUser(t, repo, "u1").AllowedAgentIDs[0] != "agent-1" {
+		t.Fatalf("member allowlist must be a copy, not a reference")
+	}
+}
+
+func TestAddMemberOwnerAndNoDefaultStayUnrestricted(t *testing.T) {
+	// Owner is exempt even when a default is configured.
+	svc, repo := newServiceWithRepo()
+	s := svc.(*tenantMemberService)
+	s.tenantRepo = &defaultAgentsTenantRepo{tenant: &types.Tenant{
+		ID: 7, DefaultMemberAgentIDs: types.AgentIDList{"agent-1"},
+	}}
+	if _, err := svc.AddMember(context.Background(), "owner-u", 7, types.TenantRoleOwner, nil); err != nil {
+		t.Fatalf("AddMember owner: %v", err)
+	}
+	if memberByUser(t, repo, "owner-u").AllowedAgentIDs != nil {
+		t.Fatalf("owner must stay unrestricted, got %v", memberByUser(t, repo, "owner-u").AllowedAgentIDs)
+	}
+
+	// No default configured (nil) → ordinary member also unrestricted.
+	svc2, repo2 := newServiceWithRepo()
+	s2 := svc2.(*tenantMemberService)
+	s2.tenantRepo = &defaultAgentsTenantRepo{tenant: &types.Tenant{ID: 7}}
+	if _, err := svc2.AddMember(context.Background(), "u2", 7, types.TenantRoleViewer, nil); err != nil {
+		t.Fatalf("AddMember viewer: %v", err)
+	}
+	if memberByUser(t, repo2, "u2").AllowedAgentIDs != nil {
+		t.Fatalf("no default configured: member must be unrestricted, got %v", memberByUser(t, repo2, "u2").AllowedAgentIDs)
+	}
+}
+
+func TestAddMemberDefaultLookupFailureFailsOpen(t *testing.T) {
+	svc, repo := newServiceWithRepo()
+	s := svc.(*tenantMemberService)
+	s.tenantRepo = &defaultAgentsTenantRepo{err: errors.New("db hiccup")}
+
+	if _, err := svc.AddMember(context.Background(), "u3", 7, types.TenantRoleViewer, nil); err != nil {
+		t.Fatalf("lookup failure must not block joining: %v", err)
+	}
+	if memberByUser(t, repo, "u3").AllowedAgentIDs != nil {
+		t.Fatalf("failed lookup must join unrestricted, got %v", memberByUser(t, repo, "u3").AllowedAgentIDs)
 	}
 }

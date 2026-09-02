@@ -177,6 +177,28 @@
            渲染，loading / error / empty / 表格作为下方的内容状态切换。
            这样搜索时输入框不会被卸载，避免焦点丢失与页面抖动。 -->
       <div class="members-list-wrap">
+        <!-- 新成员默认可访问的智能体（租户级）：加入时复制为成员自己的
+             允许列表，已存在成员不受影响。仅管理入口可见。 -->
+        <div v-if="canManage" class="default-agents-bar">
+          <span class="default-agents-bar__label">{{ $t('tenantMember.defaultAgents.label') }}</span>
+          <t-radio-group v-model="defaultAgentMode" variant="default-radio" size="medium"
+            @change="onDefaultAgentModeChange">
+            <t-radio value="all">{{ $t('tenantMember.defaultAgents.modeAll') }}</t-radio>
+            <t-radio value="selected">{{ $t('tenantMember.defaultAgents.modeSelected') }}</t-radio>
+          </t-radio-group>
+          <t-select v-if="defaultAgentMode === 'selected'" v-model="defaultAgentSelected" multiple
+            clearable filterable size="medium" :loading="agentOptionsLoading"
+            :placeholder="$t('tenantMember.defaultAgents.selectPlaceholder')" class="default-agents-bar__select">
+            <t-option v-for="a in agentOptions" :key="a.id" :value="a.id" :label="a.name">
+              {{ a.name }}
+            </t-option>
+          </t-select>
+          <t-button size="medium" variant="outline" :loading="defaultAgentSaving"
+            :disabled="!defaultAgentLoaded || (defaultAgentMode === 'selected' && defaultAgentSelected.length === 0)"
+            @click="saveDefaultAgents">
+            {{ $t('common.save') }}
+          </t-button>
+        </div>
         <div class="members-list-header">
           <div class="members-list-titlewrap">
             <span class="members-list-title">{{ $t('tenantMember.listTitle') }}</span>
@@ -579,10 +601,7 @@
             :placeholder="$t('tenantMember.agentAccess.selectPlaceholder')"
             class="agent-access-select">
             <t-option v-for="a in agentOptions" :key="a.id" :value="a.id" :label="a.name">
-              <div class="agent-access-option">
-                <span class="agent-access-option-name">{{ a.name }}</span>
-                <span v-if="a.description" class="agent-access-option-desc">{{ a.description }}</span>
-              </div>
+              {{ a.name }}
             </t-option>
           </t-select>
           <p class="agent-access-count">
@@ -606,6 +625,8 @@ import {
   listMembers,
   updateMemberRole,
   updateMemberAgentAccess,
+  getMemberAgentDefaults,
+  updateMemberAgentDefaults,
   removeMember,
   createMember,
   type TenantMember,
@@ -799,6 +820,48 @@ async function saveAgentAccess() {
     MessagePlugin.error(e?.message || t('tenantMember.agentAccess.saveError'))
   } finally {
     agentAccessSaving.value = false
+  }
+}
+
+// --- 新成员默认可访问的智能体（租户级 default_member_agent_ids） ---
+// null = 未设默认（新成员不限制）；数组 = 新成员加入时复制为允许列表。
+// 仅影响之后加入的非 Owner 成员，已存在成员不会被回填。
+const defaultAgentMode = ref<'all' | 'selected'>('all')
+const defaultAgentSelected = ref<string[]>([])
+const defaultAgentSaving = ref(false)
+const defaultAgentLoaded = ref(false)
+
+async function loadDefaultAgents() {
+  try {
+    const ids = await getMemberAgentDefaults()
+    if (Array.isArray(ids)) {
+      defaultAgentMode.value = 'selected'
+      defaultAgentSelected.value = [...ids]
+    } else {
+      defaultAgentMode.value = 'all'
+      defaultAgentSelected.value = []
+    }
+    defaultAgentLoaded.value = true
+  } catch {
+    // 读取失败不打扰成员列表，保存按钮保持禁用
+  }
+}
+
+function onDefaultAgentModeChange(v: string | number | boolean) {
+  if (v === 'selected') void loadAgentOptions()
+}
+
+async function saveDefaultAgents() {
+  if (defaultAgentMode.value === 'selected' && defaultAgentSelected.value.length === 0) return
+  defaultAgentSaving.value = true
+  try {
+    const ids = defaultAgentMode.value === 'all' ? null : [...defaultAgentSelected.value]
+    await updateMemberAgentDefaults(ids)
+    MessagePlugin.success(t('tenantMember.defaultAgents.saved'))
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || t('tenantMember.defaultAgents.saveFailed'))
+  } finally {
+    defaultAgentSaving.value = false
   }
 }
 // Admin+ (and cross-tenant superusers) can view the audit log. Mirrors
@@ -1688,6 +1751,7 @@ watch(
       invitationsTotal.value = 0
       loadMembers()
       loadInvitations()
+      loadDefaultAgents()
     }
   },
   { immediate: true },
@@ -1850,6 +1914,32 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* 租户级默认智能体配置条：一行紧凑布局 */
+.default-agents-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--td-component-border);
+  border-radius: 6px;
+  background: var(--td-bg-color-container);
+}
+
+.default-agents-bar__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+  white-space: nowrap;
+}
+
+.default-agents-bar__select {
+  min-width: 260px;
+  max-width: 420px;
+  flex: 1;
 }
 
 .members-list-header {
@@ -2777,26 +2867,6 @@ watch(
   margin: 8px 0 0;
   font-size: 12px;
   color: var(--td-text-color-placeholder);
-}
-
-.agent-access-option {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 2px 0;
-}
-
-.agent-access-option-name {
-  font-size: 13px;
-}
-
-.agent-access-option-desc {
-  font-size: 12px;
-  color: var(--td-text-color-placeholder);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 360px;
 }
 
 /* 成员名旁的受限标识与操作列图标的受限态 */

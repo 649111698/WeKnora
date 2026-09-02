@@ -318,6 +318,14 @@ export default {
       saveError: '更新智能体权限失败',
       loadError: '智能体列表加载失败'
     },
+    defaultAgents: {
+      label: '新成员默认智能体',
+      modeAll: '全部（默认）',
+      modeSelected: '仅指定的智能体',
+      selectPlaceholder: '选择默认可访问的智能体',
+      saved: '默认智能体已更新',
+      saveFailed: '更新默认智能体失败'
+    },
     add: {
       button: '邀请成员',
       dialogTitle: '邀请成员',

@@ -6620,6 +6620,14 @@ export default {
       saveError: 'Failed to update agent access',
       loadError: 'Failed to load agents'
     },
+    defaultAgents: {
+      label: 'Default agents for new members',
+      modeAll: 'All (default)',
+      modeSelected: 'Selected agents only',
+      selectPlaceholder: 'Select default accessible agents',
+      saved: 'Default agents updated',
+      saveFailed: 'Failed to update default agents'
+    },
     leave: {
       confirmTitle: 'Leave this workspace?',
       confirmBody: 'You will lose access to all knowledge bases and agents in this workspace. You can be re-invited later.',

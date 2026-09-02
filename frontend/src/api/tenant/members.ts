@@ -178,6 +178,31 @@ export async function updateMemberAgentAccess(
 }
 
 /**
+ * 新成员默认可访问的智能体（租户级）。新加入的非 Owner 成员会在加入时
+ * 复制该列表作为自己的 allowed_agent_ids；已存在成员不受影响。
+ * Backend: GET /api/v1/tenants/kv/member-agent-defaults (Viewer+)。
+ */
+export async function getMemberAgentDefaults(): Promise<string[] | null> {
+  const resp = (await get('/api/v1/tenants/kv/member-agent-defaults')) as unknown as {
+    data?: { default_member_agent_ids?: string[] | null }
+  }
+  return resp?.data?.default_member_agent_ids ?? null
+}
+
+/**
+ * 更新新成员默认可访问的智能体。
+ * Backend: PUT /api/v1/tenants/kv/member-agent-defaults (Admin+)。
+ *
+ * ids 传 null 清除默认（新成员不限制）；传非空数组指定默认列表。
+ */
+export async function updateMemberAgentDefaults(ids: string[] | null): Promise<SimpleResponse> {
+  return (await put(
+    '/api/v1/tenants/kv/member-agent-defaults',
+    { default_member_agent_ids: ids },
+  )) as unknown as SimpleResponse
+}
+
+/**
  * Remove a member from the tenant.
  * Backend: DELETE /api/v1/tenants/:id/members/:user_id (Owner+).
  *

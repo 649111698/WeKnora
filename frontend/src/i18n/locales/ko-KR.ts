@@ -318,6 +318,14 @@ export default {
       saveError: '에이전트 권한 업데이트 실패',
       loadError: '에이전트 목록을 불러오지 못했습니다'
     },
+    defaultAgents: {
+      label: '새 구성원 기본 에이전트',
+      modeAll: '전체(기본)',
+      modeSelected: '지정한 에이전트만',
+      selectPlaceholder: '기본 접근 가능한 에이전트 선택',
+      saved: '기본 에이전트가 업데이트되었습니다',
+      saveFailed: '기본 에이전트 업데이트 실패'
+    },
     add: {
       button: '멤버 초대',
       dialogTitle: '멤버 초대',

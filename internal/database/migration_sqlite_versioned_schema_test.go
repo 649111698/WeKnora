@@ -37,7 +37,7 @@ var versionedSQLiteColumns = map[string][]string{
 // migrations beyond the SQLite baseline (000093 member agent access).
 var sqliteTenantMemberColumns = []string{"allowed_agent_ids"}
 
-const expectedSQLiteMigrationVersion = 17
+const expectedSQLiteMigrationVersion = 18
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

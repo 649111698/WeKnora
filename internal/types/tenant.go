@@ -131,6 +131,11 @@ type Tenant struct {
 	// BrandingConfig tenant-wide white-label appearance (welcome title,
 	// login copy, logo). nil = stock WeKnora texts and logo.
 	BrandingConfig *BrandingConfig `yaml:"branding_config" json:"branding_config,omitempty" gorm:"type:jsonb"`
+	// DefaultMemberAgentIDs seeds tenant_members.allowed_agent_ids when a
+	// non-Owner member joins (add/create/invite/SSO JIT). nil = no default:
+	// new members stay unrestricted until edited per member. Existing
+	// members are never retro-fitted by this field.
+	DefaultMemberAgentIDs AgentIDList `yaml:"default_member_agent_ids" json:"default_member_agent_ids,omitempty" gorm:"type:jsonb"`
 	// Creation time
 	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`
 	// Last updated time

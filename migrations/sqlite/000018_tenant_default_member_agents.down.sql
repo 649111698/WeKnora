@@ -1,0 +1,2 @@
+-- SQLite cannot DROP COLUMN portably in old baselines; recreate without it is
+-- overkill for a dev-only store. No-op downgrade.

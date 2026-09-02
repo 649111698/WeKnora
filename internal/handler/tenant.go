@@ -1354,6 +1354,9 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 	case "branding-config":
 		h.GetTenantBrandingConfig(c)
 		return
+	case "member-agent-defaults":
+		h.GetTenantMemberAgentDefaults(c)
+		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
 		c.Error(errors.NewBadRequestError("unsupported key"))
@@ -1416,6 +1419,9 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 		return
 	case "branding-config":
 		h.updateTenantBrandingConfigInternal(c)
+		return
+	case "member-agent-defaults":
+		h.updateTenantMemberAgentDefaultsInternal(c)
 		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
@@ -2325,6 +2331,100 @@ func (h *TenantHandler) GetTenantBrandingLogo(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("ETag", etag)
 	c.Data(http.StatusOK, asset.ContentType, asset.Data)
+}
+
+// GetTenantMemberAgentDefaults godoc
+// @Summary      获取新成员默认可访问的智能体
+// @Description  读取空间级默认智能体允许列表：新加入的非 Owner 成员会复制该列表作为其 allowed_agent_ids。null 表示未设置默认（新成员不限制）。
+// @Tags         空间管理
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /tenants/kv/member-agent-defaults [get]
+func (h *TenantHandler) GetTenantMemberAgentDefaults(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+	var ids any
+	if tenant.DefaultMemberAgentIDs != nil {
+		ids = []string(tenant.DefaultMemberAgentIDs)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    gin.H{"default_member_agent_ids": ids},
+	})
+}
+
+// updateTenantMemberAgentDefaultsInternal sets the tenant-level default
+// agent allowlist copied into new members on join. nil / empty body value
+// clears the default (new members unrestricted); a non-empty deduped ID
+// list caps new members to those agents. Existing members are untouched.
+func (h *TenantHandler) updateTenantMemberAgentDefaultsInternal(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req struct {
+		DefaultMemberAgentIDs *[]string `json:"default_member_agent_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse request parameters", err)
+		c.Error(errors.NewValidationError("Invalid request data").WithDetails(err.Error()))
+		return
+	}
+
+	var ids types.AgentIDList
+	if req.DefaultMemberAgentIDs != nil {
+		if len(*req.DefaultMemberAgentIDs) > 100 {
+			c.Error(errors.NewBadRequestError("default_member_agent_ids must contain at most 100 entries"))
+			return
+		}
+		seen := make(map[string]struct{}, len(*req.DefaultMemberAgentIDs))
+		ids = make(types.AgentIDList, 0, len(*req.DefaultMemberAgentIDs))
+		for _, id := range *req.DefaultMemberAgentIDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+		if len(ids) == 0 {
+			c.Error(errors.NewBadRequestError("default_member_agent_ids must list at least one agent, or be null to clear the default"))
+			return
+		}
+	}
+
+	tenant, _ := types.TenantInfoFromContext(ctx)
+	if tenant == nil {
+		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		return
+	}
+
+	tenant.DefaultMemberAgentIDs = ids // nil = 清除默认
+	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+		} else {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to update member agent defaults").WithDetails(err.Error()))
+		}
+		return
+	}
+	var respIDs any
+	if updatedTenant.DefaultMemberAgentIDs != nil {
+		respIDs = []string(updatedTenant.DefaultMemberAgentIDs)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    gin.H{"default_member_agent_ids": respIDs},
+		"message": "Member agent defaults updated successfully",
+	})
 }
 
 func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {

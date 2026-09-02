@@ -75,14 +75,16 @@ const (
 
 // tenantMemberService implements interfaces.TenantMemberService.
 type tenantMemberService struct {
-	repo      interfaces.TenantMemberRepository
-	audit     interfaces.AuditLogService     // optional; nil ⇒ no audit, business ops still succeed
-	userRepo  interfaces.UserRepository      // optional; used to clear stale home-tenant pointers
-	tokenRepo interfaces.AuthTokenRepository // optional; used to revoke sessions after removal
+	repo       interfaces.TenantMemberRepository
+	audit      interfaces.AuditLogService     // optional; nil ⇒ no audit, business ops still succeed
+	userRepo   interfaces.UserRepository      // optional; used to clear stale home-tenant pointers
+	tokenRepo  interfaces.AuthTokenRepository // optional; used to revoke sessions after removal
+	tenantRepo interfaces.TenantRepository    // optional; seeds new members from tenant default agent allowlist
 }
 
 // NewTenantMemberService constructs the service. Wired up via the DI
 // container alongside the other application services. The auditService
+// and tenantRepo parameters are optional (nil-safe).
 // is optional — passing nil disables durable audit but keeps the
 // underlying mutations working, so a container reshuffle that
 // constructs tenant_member before audit_log won't crash and tests
@@ -100,12 +102,14 @@ func NewTenantMemberService(
 	audit interfaces.AuditLogService,
 	userRepo interfaces.UserRepository,
 	tokenRepo interfaces.AuthTokenRepository,
+	tenantRepo interfaces.TenantRepository,
 ) interfaces.TenantMemberService {
 	return &tenantMemberService{
-		repo:      repo,
-		audit:     audit,
-		userRepo:  userRepo,
-		tokenRepo: tokenRepo,
+		repo:       repo,
+		audit:      audit,
+		userRepo:   userRepo,
+		tokenRepo:  tokenRepo,
+		tenantRepo: tenantRepo,
 	}
 }
 
@@ -180,6 +184,20 @@ func (s *tenantMemberService) AddMember(
 		Status:    types.TenantMemberStatusActive,
 		InvitedBy: invitedBy,
 		JoinedAt:  time.Now(),
+	}
+	// Seed the new member from the tenant-level default agent allowlist
+	// (tenants.default_member_agent_ids, set in 成员管理). Copy-on-join: the
+	// row carries its own list, so later edits to the default never
+	// retro-fit existing members, and per-member overrides stay explicit.
+	// Owners are exempt — they administer the tenant and its agents.
+	// Lookup failure fails open (unrestricted) so a settings-table hiccup
+	// can never block someone from joining.
+	if role != types.TenantRoleOwner && s.tenantRepo != nil {
+		if tenant, tErr := s.tenantRepo.GetTenantByID(ctx, tenantID); tErr != nil {
+			logger.Warnf(ctx, "default agent allowlist lookup failed, joining unrestricted: tenant=%d err=%v", tenantID, tErr)
+		} else if tenant != nil && tenant.DefaultMemberAgentIDs != nil {
+			member.AllowedAgentIDs = append(types.AgentIDList(nil), tenant.DefaultMemberAgentIDs...)
+		}
 	}
 	if err := s.repo.Create(ctx, member); err != nil {
 		// TOCTOU race: a concurrent AddMember / EnsureOwner slipped past
