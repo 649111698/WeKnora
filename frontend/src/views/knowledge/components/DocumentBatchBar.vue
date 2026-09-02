@@ -164,6 +164,9 @@ const folderPickerVisible = ref(false);
 
 .batch-bar-actions {
   flex-shrink: 0;
+  // 按钮组超出条宽时必须在组内换行；不设上限它会按内容伸到 600px+，
+  // 把末尾按钮顶出批量条。
+  max-width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
