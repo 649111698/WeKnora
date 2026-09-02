@@ -41,7 +41,9 @@ function isSafeLiteRestoreTarget(path: string) {
 function hasPendingOIDCCallback() {
   if (typeof window === 'undefined') return false
   const hash = window.location.hash || ''
-  return hash.includes('oidc_result=') || hash.includes('oidc_error=')
+  // oidc_code：登录回调落地的一次性换取码（App.vue 消费）；oidc_result：
+  // 旧版回调直传 payload。两者都必须先放行，避免守卫先把落地页重定向走。
+  return hash.includes('oidc_result=') || hash.includes('oidc_code=') || hash.includes('oidc_error=')
 }
 
 const router = createRouter({

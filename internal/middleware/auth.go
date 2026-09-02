@@ -51,6 +51,9 @@ var noAuthAPI = map[string][]string{
 	"/api/v1/auth/oidc/url":           {"GET"},
 	"/api/v1/auth/oidc/start":         {"GET"},
 	"/api/v1/auth/oidc/callback":      {"GET"},
+	// 登录回调落地后 SPA 用片段携带的一次性短码换回登录 payload；
+	// 此刻用户尚未建立会话，短码本身（256 位随机、2 分钟、一次性）即凭证。
+	"/api/v1/auth/oidc/result": {"GET"},
 	// 企微/飞书内置浏览器 SSO 免登：平台回跳不带 WeKnora token，
 	// 由平台 code 本身完成认证（首次登录自动创建访客账号）。
 	"/api/v1/auth/sso/config":         {"GET"},

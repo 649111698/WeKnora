@@ -456,8 +456,15 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("payload_encode_failed"))
 		return
 	}
-
-	c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_result="+urlQueryEscape(payload))
+	// 落地 URL 只带一次性短码（见 oidcCallbackFragment 注释），payload 由
+	// SPA 启动后调 /auth/oidc/result 换回。
+	fragment, err := oidcCallbackFragment(payload)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to stage OIDC callback payload: %v", err)
+		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("payload_store_failed"))
+		return
+	}
+	c.Redirect(http.StatusFound, frontendRedirectURI+fragment)
 }
 
 func encodeOIDCCallbackPayload(resp *types.OIDCCallbackResponse) (string, error) {

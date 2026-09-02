@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 
@@ -103,13 +104,51 @@ func (h *AuthHandler) ssoRedirectCallback(c *gin.Context, platform string, login
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("payload_encode_failed"))
 		return
 	}
+	fragment, err := oidcCallbackFragment(payload)
+	if err != nil {
+		logger.Errorf(ctx, "[SSO] failed to stage callback payload: %v", err)
+		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("payload_store_failed"))
+		return
+	}
 	// login_target（苍穹门户菜单免登链接携带，如 /platform/creatChat）
 	// 随回调片段透传，App.vue 收到后转存到既有的 SSO 深链机制。
-	fragment := "#oidc_result=" + urlQueryEscape(payload)
 	if target := sanitizeLoginTarget(c.Query("login_target")); target != "" {
 		fragment += "&sso_redirect=" + urlQueryEscape(target)
 	}
 	c.Redirect(http.StatusFound, frontendRedirectURI+fragment)
+}
+
+// oidcCallbackFragment builds the post-login redirect fragment. The payload
+// is staged server-side and only a short one-time code travels in the URL:
+// iOS WeCom's built-in browser refuses to run page JS when the landing URL
+// carries a multi-KB #oidc_result fragment, so keep the fragment tiny.
+func oidcCallbackFragment(payload string) (string, error) {
+	code, err := storeOIDCHandoffPayload(payload)
+	if err != nil {
+		return "", err
+	}
+	return "#oidc_code=" + code, nil
+}
+
+// GetOIDCHandoffResult godoc
+// @Summary      一次性换取登录回调结果
+// @Description  用回调片段携带的一次性 code 换回登录 payload（base64url JSON）。code 2 分钟过期、取一次即焚
+// @Tags         认证
+// @Produce      json
+// @Param        code  query  string  true  "回调片段携带的一次性换取码"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  errors.AppError  "code 无效或已过期"
+// @Router       /auth/oidc/result [get]
+func (h *AuthHandler) GetOIDCHandoffResult(c *gin.Context) {
+	payload, ok := consumeOIDCHandoffPayload(c.Query("code"))
+	if !ok {
+		c.Error(errors.NewBadRequestError("invalid or expired code"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    gin.H{"payload": payload},
+	})
 }
 
 // SSOWeComCallback godoc

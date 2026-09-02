@@ -176,8 +176,12 @@ const handleGlobalOIDCCallback = async () => {
   const oidcError = params.get('oidc_error')
   const oidcErrorDescription = params.get('oidc_error_description')
   const oidcResult = params.get('oidc_result')
+  // iOS 企微内置浏览器对带多 KB hash 的页面不执行 JS（白屏），后端登录
+  // 回调只带一次性短码，这里调接口换回 payload；旧版直传 payload 的
+  // #oidc_result= 仍保留兼容。
+  const oidcCode = params.get('oidc_code')
 
-  if (!oidcError && !oidcResult) return
+  if (!oidcError && !oidcResult && !oidcCode) return
 
   if (oidcError) {
     clearOIDCCallbackState('/login')
@@ -187,14 +191,22 @@ const handleGlobalOIDCCallback = async () => {
   }
 
   try {
-    if (!oidcResult) {
+    let encoded = oidcResult
+    if (!encoded && oidcCode) {
+      const res: any = await get('/api/v1/auth/oidc/result', { params: { code: oidcCode } })
+      if (!res?.success || !res?.data?.payload) {
+        throw new Error(res?.message || 'OIDC login failed')
+      }
+      encoded = res.data.payload as string
+    }
+    if (!encoded) {
       clearOIDCCallbackState('/login')
       await router.replace('/login')
       MessagePlugin.error('OIDC login failed')
       return
     }
 
-    const response = decodeOIDCResult(oidcResult)
+    const response = decodeOIDCResult(encoded)
     if (response.success) {
       // 苍穹门户菜单免登：后端回调片段携带落地页（login_target 透传），
       // 转存到既有的 SSO 深链机制，由 persistOIDCLoginResponse 统一消费。
