@@ -77,7 +77,7 @@ export default {
     },
     branding: {
       title: '品牌外观（白标）',
-      description: '自定义本空间的欢迎语、登录页文案与 Logo。留空使用默认文案；Logo 支持图片地址（https:// 或 /api 开头）。保存后立即生效。',
+      description: '自定义本空间的欢迎语、登录页文案与 Logo。留空使用默认文案；Logo 可直接上传图片（立即生效），也可以填图片地址（https:// 或 /api 开头）。',
       welcomeTitle: '新对话欢迎语',
       welcomeTitlePlaceholder: '例如：Hi，我是模管家，模具数据智能助手',
       welcomeTitleHint: '新建对话页面顶部显示的欢迎标题，留空显示默认文案。',
@@ -90,7 +90,11 @@ export default {
       logoUrl: 'Logo 地址',
       logoUrlPlaceholder: 'https://example.com/logo.png',
       logoUrlHint: '登录页与侧边栏共用；留空显示默认 Logo。',
-      saveFailed: '保存品牌配置失败'
+      saveFailed: '保存品牌配置失败',
+      uploadButton: '上传 Logo',
+      uploadSuccess: 'Logo 已上传并生效',
+      uploadFailed: 'Logo 上传失败',
+      uploadTooLarge: 'Logo 图片不能超过 2MB'
     },
 
   platformApiKeys: {

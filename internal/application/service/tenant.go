@@ -365,3 +365,15 @@ func (s *tenantService) validateStorageBucketUniqueness(ctx context.Context, ten
 
 	return nil
 }
+
+// GetBrandingLogo loads a tenant's uploaded logo asset; (nil, nil) means the
+// tenant never uploaded one. Public route GET /api/v1/branding/logo/:tenant_id.
+func (s *tenantService) GetBrandingLogo(ctx context.Context, tenantID uint64) (*types.TenantBrandingAsset, error) {
+	return s.repo.GetBrandingLogo(ctx, tenantID)
+}
+
+// SaveBrandingLogo upserts the raw logo bytes; the handler layers the
+// content sniffing and size cap before calling this.
+func (s *tenantService) SaveBrandingLogo(ctx context.Context, tenantID uint64, contentType string, data []byte) error {
+	return s.repo.SaveBrandingLogo(ctx, tenantID, contentType, data)
+}

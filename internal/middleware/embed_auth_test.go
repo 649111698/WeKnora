@@ -398,3 +398,10 @@ func TestEmbedAuthSessionTokenMismatch(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", w.Code, http.StatusUnauthorized, w.Body.String())
 	}
 }
+
+func (f *fakeTenantService) GetBrandingLogo(context.Context, uint64) (*types.TenantBrandingAsset, error) {
+	return nil, nil
+}
+func (f *fakeTenantService) SaveBrandingLogo(context.Context, uint64, string, []byte) error {
+	return nil
+}

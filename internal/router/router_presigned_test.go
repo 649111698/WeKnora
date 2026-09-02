@@ -235,3 +235,10 @@ func TestPresignedFile_MissingFile_404(t *testing.T) {
 		t.Fatalf("status = %d, want %d", got, want)
 	}
 }
+
+func (s *stubTenantService) GetBrandingLogo(context.Context, uint64) (*types.TenantBrandingAsset, error) {
+	return nil, nil
+}
+func (s *stubTenantService) SaveBrandingLogo(context.Context, uint64, string, []byte) error {
+	return nil
+}

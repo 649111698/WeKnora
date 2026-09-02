@@ -57,6 +57,12 @@ func RegisterTenantRoutes(
 		apiKeyPlatform(types.APIKeyCapabilitySystemTenantsRead, types.APIKeyCapabilitySystemTenantsManage),
 		g.CrossTenant(), handler.SearchTenants)
 
+	// Public branding logo read: the login page renders the workspace logo
+	// before authentication (same trust level as GET /auth/config), so this
+	// route carries no auth guard. Content is constrained to sniffed raster
+	// images (no SVG) and the URL leaks only the numeric tenant ID.
+	r.GET("/branding/logo/:tenant_id", handler.GetTenantBrandingLogo)
+
 	// 空间路由组
 	tenantRoutes := r.Group("/tenants")
 	{
@@ -101,6 +107,11 @@ func RegisterTenantRoutes(
 			tenantByID.GET("/api-principal-config", g.Owner(), handler.GetAPIPrincipalConfig)
 			tenantByID.PUT("/api-principal-config", g.Owner(), handler.UpdateAPIPrincipalConfig)
 			tenantByID.POST("/api-principal-test-token", g.Owner(), handler.CreateAPIPrincipalTestToken)
+			// 白标 Logo 上传：与 PUT /tenants/kv/branding-config 同级的管理动作
+			// （Admin+）。上传后 handler 会把 branding_config.logo_url 指向
+			// 公开读取端点并立即生效，无需再点保存。
+			g.apiKeyRoute(tenantByID, http.MethodPost, "/branding/logo",
+				apiKeyManageTenantSettings(apiKeyFullAccess()), g.Admin(), handler.UploadTenantBrandingLogo)
 
 			// Tenant member management (PR 3 of #1303). Listing is
 			// Viewer+ so any active member can see the roster; mutation

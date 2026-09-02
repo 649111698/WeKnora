@@ -170,3 +170,39 @@ func (r *tenantRepository) BulkSetStorageQuota(ctx context.Context, quotaBytes i
 	}
 	return res.RowsAffected, nil
 }
+
+// GetBrandingLogo loads a tenant's uploaded logo asset. Returns
+// (nil, nil) when the tenant never uploaded one — the caller treats
+// that as a plain 404, not an error.
+func (r *tenantRepository) GetBrandingLogo(ctx context.Context, tenantID uint64) (*types.TenantBrandingAsset, error) {
+	var asset types.TenantBrandingAsset
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		First(&asset).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &asset, nil
+}
+
+// SaveBrandingLogo upserts the logo bytes for a tenant. The row is
+// tenant_id-keyed, so re-upload replaces in place; gorm's OnConflict
+// needs all non-key columns spelled out in DoUpdates.
+func (r *tenantRepository) SaveBrandingLogo(ctx context.Context, tenantID uint64, contentType string, data []byte) error {
+	asset := types.TenantBrandingAsset{
+		TenantID:    tenantID,
+		ContentType: contentType,
+		Data:        data,
+	}
+	return r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "tenant_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"content_type", "data", "updated_at",
+			}),
+		}).
+		Create(&asset).Error
+}

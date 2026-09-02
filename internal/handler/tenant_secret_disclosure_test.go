@@ -176,3 +176,10 @@ func TestPutTenantParserConfigAdminPreservesRedactedSecrets(t *testing.T) {
 	assert.Equal(t, "parser-secret-123", tenant.ParserEngineConfig.MinerUAPIKey)
 	assert.Equal(t, "https://example.com/mineru", tenant.ParserEngineConfig.MinerUEndpoint)
 }
+
+func (s *stubTenantService) GetBrandingLogo(context.Context, uint64) (*types.TenantBrandingAsset, error) {
+	return nil, nil
+}
+func (s *stubTenantService) SaveBrandingLogo(context.Context, uint64, string, []byte) error {
+	return nil
+}

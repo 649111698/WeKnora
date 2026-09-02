@@ -94,6 +94,12 @@ func (f *flowTenantSvc) GetTenantByID(context.Context, uint64) (*types.Tenant, e
 func (f *flowTenantSvc) CreateTenant(context.Context, *types.Tenant) (*types.Tenant, error) {
 	return nil, nil
 }
+func (f *flowTenantSvc) GetBrandingLogo(context.Context, uint64) (*types.TenantBrandingAsset, error) {
+	return nil, nil
+}
+func (f *flowTenantSvc) SaveBrandingLogo(context.Context, uint64, string, []byte) error {
+	return nil
+}
 func (f *flowTenantSvc) GetTenantsByIDs(context.Context, []uint64) (map[uint64]*types.Tenant, error) {
 	return nil, nil
 }

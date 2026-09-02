@@ -38,6 +38,10 @@ type TenantService interface {
 	GetTenantByIDForUser(ctx context.Context, tenantID uint64, userID string) (*types.Tenant, error)
 	// GetWeKnoraCloudCredentials returns the decrypted WeKnoraCloud credentials for the current tenant.
 	GetWeKnoraCloudCredentials(ctx context.Context) *types.WeKnoraCloudCredentials
+	// GetBrandingLogo loads a tenant's uploaded logo asset (nil, nil = none).
+	GetBrandingLogo(ctx context.Context, tenantID uint64) (*types.TenantBrandingAsset, error)
+	// SaveBrandingLogo upserts the raw logo bytes for a tenant.
+	SaveBrandingLogo(ctx context.Context, tenantID uint64, contentType string, data []byte) error
 }
 
 // TenantRepository defines the tenant repository interface
@@ -60,6 +64,10 @@ type TenantRepository interface {
 	AdjustStorageUsed(ctx context.Context, tenantID uint64, delta int64) error
 	// BulkSetStorageQuota — see TenantService.BulkSetStorageQuota.
 	BulkSetStorageQuota(ctx context.Context, quotaBytes int64) (int64, error)
+	// GetBrandingLogo loads a tenant's uploaded logo asset (nil, nil = none).
+	GetBrandingLogo(ctx context.Context, tenantID uint64) (*types.TenantBrandingAsset, error)
+	// SaveBrandingLogo upserts the raw logo bytes for a tenant.
+	SaveBrandingLogo(ctx context.Context, tenantID uint64, contentType string, data []byte) error
 }
 
 type TenantAPIKeyCreateRequest struct {

@@ -77,7 +77,7 @@ export default {
     },
     branding: {
       title: 'Branding (white-label)',
-      description: "Customize this workspace's welcome title, login copy and logo. Empty fields fall back to defaults; the logo accepts an image URL (https:// or /api-prefixed). Takes effect immediately after saving.",
+      description: "Customize this workspace's welcome title, login copy and logo. Empty fields fall back to defaults. Upload a logo image directly (applies immediately) or fill in an image URL (https:// or /api-prefixed).",
       welcomeTitle: 'New-chat welcome title',
       welcomeTitlePlaceholder: 'e.g. Hi, I am MoldKeeper — your data assistant',
       welcomeTitleHint: 'Shown at the top of the new-chat page; empty shows the default.',
@@ -90,7 +90,11 @@ export default {
       logoUrl: 'Logo URL',
       logoUrlPlaceholder: 'https://example.com/logo.png',
       logoUrlHint: 'Shared by the login page and sidebar; empty shows the default logo.',
-      saveFailed: 'Failed to save branding'
+      saveFailed: 'Failed to save branding',
+      uploadButton: 'Upload logo',
+      uploadSuccess: 'Logo uploaded and applied',
+      uploadFailed: 'Logo upload failed',
+      uploadTooLarge: 'Logo image must be under 2MB'
     },
 
   menu: {

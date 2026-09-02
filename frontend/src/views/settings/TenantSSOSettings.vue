@@ -189,8 +189,19 @@
         </div>
         <div class="sso-field">
           <label class="sso-field__label">{{ t('tenantSSO.branding.logoUrl') }}</label>
-          <t-input v-model="branding.logo_url" :placeholder="t('tenantSSO.branding.logoUrlPlaceholder')"
-            :disabled="saving" />
+          <div class="branding-logo-row">
+            <img v-if="branding.logo_url" :src="branding.logo_url" :alt="t('tenantSSO.branding.logoUrl')"
+              class="branding-logo-preview" />
+            <div v-else class="branding-logo-preview branding-logo-preview--empty">Logo</div>
+            <t-input v-model="branding.logo_url" :placeholder="t('tenantSSO.branding.logoUrlPlaceholder')"
+              :disabled="saving || logoUploading" class="branding-logo-input" />
+            <t-button variant="outline" size="medium" :loading="logoUploading" :disabled="saving"
+              @click="logoFileInput?.click()">
+              {{ t('tenantSSO.branding.uploadButton') }}
+            </t-button>
+            <input ref="logoFileInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp"
+              class="branding-logo-file" @change="onLogoFileChosen" />
+          </div>
           <p class="sso-field__hint">{{ t('tenantSSO.branding.logoUrlHint') }}</p>
         </div>
       </div>
@@ -205,13 +216,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { get, put } from '@/utils/request'
+import { get, postUpload, put } from '@/utils/request'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '@/stores/auth'
 import { useBrandingStore } from '@/stores/branding'
 
 const { t } = useI18n()
 const brandingStore = useBrandingStore()
+const authStore = useAuthStore()
 
 const SECRET_MASK = '***'
 
@@ -236,6 +249,45 @@ const branding = reactive({
   sidebar_title: '',
   logo_url: '',
 })
+
+// Logo 上传：立即生效（后端直接落库并回写 branding_config.logo_url），
+// 不依赖页面底部的「保存」按钮；保存时 PUT 会带上当前 logo_url，两边一致。
+const logoFileInput = ref<HTMLInputElement>()
+const logoUploading = ref(false)
+const LOGO_MAX_BYTES = 2 * 1024 * 1024
+
+const onLogoFileChosen = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 允许连续选择同一个文件重新上传
+  input.value = ''
+  if (!file) return
+  if (file.size > LOGO_MAX_BYTES) {
+    MessagePlugin.error(t('tenantSSO.branding.uploadTooLarge'))
+    return
+  }
+  const tenantId = Number(authStore.currentTenantId ?? 0)
+  if (!tenantId) {
+    MessagePlugin.error(t('tenantSSO.branding.uploadFailed'))
+    return
+  }
+  logoUploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const resp: any = await postUpload(`/api/v1/tenants/${tenantId}/branding/logo`, fd)
+    if (resp?.data) {
+      branding.logo_url = resp.data.logo_url || ''
+      // 上传即生效：应用点（登录页/侧边栏/欢迎页）立即读新 Logo
+      brandingStore.apply(resp.data)
+    }
+    MessagePlugin.success(t('tenantSSO.branding.uploadSuccess'))
+  } catch (e: any) {
+    MessagePlugin.error(e?.response?.data?.error?.message || e?.response?.data?.error || t('tenantSSO.branding.uploadFailed'))
+  } finally {
+    logoUploading.value = false
+  }
+}
 
 const wecomSecretConfigured = ref(false)
 const feishuSecretConfigured = ref(false)
@@ -499,5 +551,37 @@ onMounted(loadConfig)
 .sso-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.branding-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.branding-logo-preview {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--td-bg-color-container, #f3f3f3);
+}
+
+.branding-logo-preview--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--td-text-color-placeholder, #a0a0a0);
+}
+
+.branding-logo-input {
+  flex: 1;
+}
+
+.branding-logo-file {
+  display: none;
 }
 </style>

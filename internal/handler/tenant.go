@@ -2,8 +2,11 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -2165,6 +2168,163 @@ func (h *TenantHandler) updateTenantBrandingConfigInternal(c *gin.Context) {
 		"data":    updatedTenant.BrandingConfig.ResolvedBranding(),
 		"message": "Branding configuration updated successfully",
 	})
+}
+
+// brandingLogoMaxBytes caps uploaded logos. Logos are tiny decorative
+// images; 2 MB leaves headroom for photos used as logos while keeping
+// the DB row small. Enforced on the multipart header AND while reading.
+const brandingLogoMaxBytes = 2 * 1024 * 1024
+
+// brandingLogoURL is the canonical served path for a tenant's uploaded
+// logo. The PUT branding-config validation already allows "/"-prefixed
+// paths, so this needs no extra allowlisting.
+func brandingLogoURL(tenantID uint64) string {
+	return fmt.Sprintf("/api/v1/branding/logo/%d", tenantID)
+}
+
+// sniffBrandingImage validates the uploaded bytes are a raster image we
+// are willing to serve and returns the content type. SVG is deliberately
+// excluded (script-in-SVG risks when rendered from same-origin). WebP
+// has no entry in http.DetectContentType, so its RIFF/WEBP magic is
+// checked manually.
+func sniffBrandingImage(data []byte) (string, bool) {
+	if len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP" {
+		return "image/webp", true
+	}
+	ct := http.DetectContentType(data)
+	switch ct {
+	case "image/png", "image/jpeg", "image/gif":
+		return ct, true
+	}
+	return "", false
+}
+
+// UploadTenantBrandingLogo godoc
+// @Summary      上传空间 Logo（白标品牌外观）
+// @Description  上传图片作为本空间 Logo，立即生效并把 logo_url 指向公开读取端点 /api/v1/branding/logo/:tenant_id。支持 PNG/JPEG/GIF/WebP，最大 2MB。
+// @Tags         空间管理
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        id   path  int64  true  "空间 ID"
+// @Param        file formData file true "Logo 图片"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  errors.AppError
+// @Security     Bearer
+// @Router       /tenants/{id}/branding/logo [post]
+func (h *TenantHandler) UploadTenantBrandingLogo(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	tenantID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || tenantID == 0 {
+		c.Error(errors.NewBadRequestError("Invalid tenant id"))
+		return
+	}
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.Error(errors.NewBadRequestError("获取上传文件失败（表单字段名必须为 file）"))
+		return
+	}
+	defer file.Close()
+	if header.Size > brandingLogoMaxBytes {
+		c.Error(errors.NewBadRequestError("Logo 图片不能超过 2MB"))
+		return
+	}
+
+	// Read with a hard cap: header.Size is client-controlled metadata.
+	data, err := io.ReadAll(io.LimitReader(file, brandingLogoMaxBytes+1))
+	if err != nil {
+		c.Error(errors.NewBadRequestError("读取上传文件失败"))
+		return
+	}
+	if len(data) == 0 {
+		c.Error(errors.NewBadRequestError("上传文件为空"))
+		return
+	}
+	if len(data) > brandingLogoMaxBytes {
+		c.Error(errors.NewBadRequestError("Logo 图片不能超过 2MB"))
+		return
+	}
+
+	contentType, ok := sniffBrandingImage(data)
+	if !ok {
+		c.Error(errors.NewBadRequestError("只支持 PNG / JPEG / GIF / WebP 图片"))
+		return
+	}
+
+	if err := h.service.SaveBrandingLogo(ctx, tenantID, contentType, data); err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError("保存 Logo 失败").WithDetails(err.Error()))
+		return
+	}
+
+	// Point branding_config.logo_url at the served asset so the login
+	// page and sidebar pick it up. Preserve the other branding fields.
+	tenant, err := h.service.GetTenantByID(ctx, tenantID)
+	if err != nil || tenant == nil {
+		c.Error(errors.NewInternalServerError("Failed to load tenant for branding update"))
+		return
+	}
+	cfg := tenant.BrandingConfig.ResolvedBranding()
+	if tenant.BrandingConfig != nil {
+		cfg = *tenant.BrandingConfig
+	}
+	cfg.LogoURL = brandingLogoURL(tenantID)
+	tenant.BrandingConfig = &cfg
+	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError("Failed to update branding config").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    updatedTenant.BrandingConfig.ResolvedBranding(),
+		"message": "Logo uploaded successfully",
+	})
+}
+
+// GetTenantBrandingLogo godoc
+// @Summary      读取空间 Logo（公开）
+// @Description  返回上传的空间 Logo 图片字节。登录页在鉴权前渲染 Logo，所以该端点公开（与 /auth/config 同级）；tenant_id 是数字 ID，不含敏感信息，内容经图片魔数校验。
+// @Tags         空间管理
+// @Produce      image/png
+// @Param        tenant_id path int64 true "空间 ID"
+// @Success      200 {file} bytes
+// @Failure      404 {object} errors.AppError
+// @Router       /branding/logo/{tenant_id} [get]
+func (h *TenantHandler) GetTenantBrandingLogo(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	tenantID, err := strconv.ParseUint(c.Param("tenant_id"), 10, 64)
+	if err != nil || tenantID == 0 {
+		c.Error(errors.NewBadRequestError("Invalid tenant id"))
+		return
+	}
+
+	asset, err := h.service.GetBrandingLogo(ctx, tenantID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError("Failed to load branding logo"))
+		return
+	}
+	if asset == nil {
+		c.Error(errors.NewNotFoundError("Branding logo not found"))
+		return
+	}
+
+	// ETag = content hash: browsers revalidate cheaply (304) and a
+	// re-upload under the same URL invalidates immediately.
+	sum := sha256.Sum256(asset.Data)
+	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	if c.Request.Header.Get("If-None-Match") == etag {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	c.Header("Cache-Control", "no-cache")
+	c.Header("ETag", etag)
+	c.Data(http.StatusOK, asset.ContentType, asset.Data)
 }
 
 func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {

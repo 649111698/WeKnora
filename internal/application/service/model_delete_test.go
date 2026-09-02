@@ -279,3 +279,10 @@ func TestFormatModelInUseMessage(t *testing.T) {
 		formatModelInUseMessage(0, 0, true),
 	)
 }
+
+func (s *stubTenantServiceForModelDelete) GetBrandingLogo(context.Context, uint64) (*types.TenantBrandingAsset, error) {
+	return nil, nil
+}
+func (s *stubTenantServiceForModelDelete) SaveBrandingLogo(context.Context, uint64, string, []byte) error {
+	return nil
+}

@@ -77,7 +77,7 @@ export default {
     },
     branding: {
       title: '브랜딩(화이트라벨)',
-      description: '워크스페이스의 환영 문구, 로그인 페이지 문구와 로고를 사용자 지정합니다. 비워 두면 기본값이 사용되고, 로고는 이미지 URL(https:// 또는 /api 접두사)을 지원합니다. 저장 후 즉시 적용됩니다.',
+      description: '워크스페이스의 환영 문구, 로그인 페이지 문구와 로고를 사용자 지정합니다. 비워 두면 기본값이 사용됩니다. 로고는 이미지를 직접 업로드(즉시 적용)하거나 이미지 URL(https:// 또는 /api 접두사)을 입력할 수 있습니다.',
       welcomeTitle: '새 대화 환영 문구',
       welcomeTitlePlaceholder: '예: Hi, 저는 몰드키퍼 데이터 어시스턴트입니다',
       welcomeTitleHint: '새 대화 페이지 상단에 표시되며, 비워 두면 기본 문구가 표시됩니다.',
@@ -90,7 +90,11 @@ export default {
       logoUrl: '로고 URL',
       logoUrlPlaceholder: 'https://example.com/logo.png',
       logoUrlHint: '로그인 페이지와 사이드바에서 공용으로 사용되며, 비워 두면 기본 로고가 표시됩니다.',
-      saveFailed: '브랜딩 저장 실패'
+      saveFailed: '브랜딩 저장 실패',
+      uploadButton: '로고 업로드',
+      uploadSuccess: '로고가 업로드되어 적용되었습니다',
+      uploadFailed: '로고 업로드 실패',
+      uploadTooLarge: '로고 이미지는 2MB 이하여야 합니다'
     },
 
   platformApiKeys: {
