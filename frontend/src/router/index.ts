@@ -59,6 +59,14 @@ const router = createRouter({
       component: () => import("../views/auth/Login.vue"),
       meta: { requiresAuth: false, requiresInit: false }
     },
+    // SSO/OIDC 回调落地的中转页：App.vue 在此期间用一次性 code 换取会话，
+    // 页面本身不发任何请求（见 SsoProcessing.vue 注释）。
+    {
+      path: "/sso/processing",
+      name: "ssoProcessing",
+      component: () => import("../views/auth/SsoProcessing.vue"),
+      meta: { requiresAuth: false, requiresInit: false }
+    },
     // Embed chat is a separate entry (embed.html + embed-main.ts), not this SPA.
     {
       path: "/register",
@@ -315,6 +323,14 @@ router.beforeEach(async (to, from, next) => {
   // OIDC 回跳登录结果依赖 App.vue 在挂载后消费 URL hash。
   // 如果这里先按“未登录”拦截到 /login，会导致回调结果没有机会落盘。
   if (hasPendingOIDCCallback()) {
+    // 未登录时先停在中转页：回调换取是一次异步请求，若直接放行到业务页
+    // （如 / → /platform/knowledge-bases 的重定向），业务页会在会话建立
+    // 前挂载并发起未授权请求，触发 401→刷新→登出竞态。已登录（重登）则
+    // 维持原目标页直接消费。
+    if (to.path !== '/sso/processing' && !authStore.isLoggedIn) {
+      next('/sso/processing')
+      return
+    }
     next()
     return
   }

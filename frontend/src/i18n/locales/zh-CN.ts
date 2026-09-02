@@ -4660,6 +4660,7 @@ export default {
     password: '密码',
     confirmPassword: '确认密码',
     loginSuccessTitle: '登录成功',
+    ssoProcessing: '正在完成登录，请稍候…',
     loginSuccessContent: '欢迎，你已进入 {name}',
     loggingIn: '登录中...',
     register: '注册',

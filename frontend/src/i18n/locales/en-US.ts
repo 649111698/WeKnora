@@ -2216,6 +2216,7 @@ export default {
     password: 'Password',
     confirmPassword: 'Confirm Password',
     loginSuccessTitle: 'Login successful',
+    ssoProcessing: 'Completing sign-in…',
     loginSuccessContent: 'Welcome back. You are now in {name}',
     loggingIn: 'Logging in...',
     register: 'Register',

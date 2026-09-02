@@ -4658,6 +4658,7 @@ export default {
     password: '비밀번호',
     confirmPassword: '비밀번호 확인',
     loginSuccessTitle: '로그인 성공',
+    ssoProcessing: '로그인을 완료하는 중입니다…',
     loginSuccessContent: '환영합니다. {name} 에 입장했습니다',
     loggingIn: '로그인 중...',
     register: '회원가입',

@@ -4658,6 +4658,7 @@ export default {
     password: 'Пароль',
     confirmPassword: 'Подтвердите пароль',
     loginSuccessTitle: 'Вход выполнен',
+    ssoProcessing: 'Завершаем вход…',
     loginSuccessContent: 'С возвращением. Вы вошли в {name}',
     loggingIn: 'Вход...',
     register: 'Регистрация',
