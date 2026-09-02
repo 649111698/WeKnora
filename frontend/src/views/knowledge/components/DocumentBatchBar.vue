@@ -8,6 +8,11 @@ defineProps<{
   deleteLoading?: boolean;
   reparseLoading?: boolean;
   tagLoading?: boolean;
+  /** Batch download of the original files (ZIP) — hidden when download is not allowed. */
+  canDownload?: boolean;
+  downloadLoading?: boolean;
+  /** Move the selection to another knowledge base — hidden without mutate permission. */
+  canMoveKb?: boolean;
   // When true the bar stays visible even with 0 selections, so users can exit
   // batch mode from here without selecting anything first.
   visible?: boolean;
@@ -21,6 +26,8 @@ const emit = defineEmits<{
   (e: 'delete'): void;
   (e: 'reparse'): void;
   (e: 'batchTag'): void;
+  (e: 'download'): void;
+  (e: 'moveKb'): void;
   (e: 'moveToFolder', folderPath: string): void;
 }>();
 
@@ -56,6 +63,20 @@ const folderPickerVisible = ref(false);
             @click="emit('batchTag')">
             <template #icon><t-icon name="discount" size="14px" /></template>
             {{ t('knowledgeBase.batchTag') }}
+          </t-button>
+
+          <t-button v-if="canMoveKb" theme="default" variant="outline" size="small"
+            :disabled="count === 0 || deleteLoading || reparseLoading || tagLoading || downloadLoading"
+            @click="emit('moveKb')">
+            <template #icon><t-icon name="arrow-right-arrow-left" size="14px" /></template>
+            {{ t('knowledgeBase.moveToKnowledgeBase') }}
+          </t-button>
+
+          <t-button v-if="canDownload" theme="default" variant="outline" size="small"
+            :disabled="count === 0 || deleteLoading || reparseLoading || tagLoading" :loading="downloadLoading"
+            @click="emit('download')">
+            <template #icon><t-icon name="download" size="14px" /></template>
+            {{ t('knowledgeBase.batchDownload') }}
           </t-button>
 
           <t-popup v-if="showMoveToFolder" v-model:visible="folderPickerVisible" trigger="click"

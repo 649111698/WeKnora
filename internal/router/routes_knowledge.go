@@ -120,6 +120,11 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		k.PUT("/image/:id/:chunk_id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
 		kRead.GET("/search", g.Viewer(), handler.SearchKnowledge)
 		kRead.GET("/move/progress/:task_id", g.Viewer(), handler.GetKnowledgeMoveProgress)
+		// Batch download streams the same original files as /:id/download but
+		// bound to a kb_id in the body; the handler re-applies the editor-or-
+		// admin download boundary itself (validateKnowledgeBaseAccessWithKBID),
+		// so the route mirrors the Contributor guard above.
+		kRead.POST("/batch-download", g.Contributor(), handler.BatchDownloadKnowledgeFiles)
 		// Batch / cross-KB content writes: JWT Contributor+, or an API key
 		// with the ingest capability (or full access). Each handler binds the
 		// operation to a single (move: source+target) KB and rejects any KB

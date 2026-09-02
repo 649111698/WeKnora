@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -1429,6 +1431,164 @@ func (h *KnowledgeHandler) BatchDeleteKnowledge(c *gin.Context) {
 			"deleted_count": len(ids),
 		},
 	})
+}
+
+// BatchDownloadKnowledgeRequest is the body schema for POST /knowledge/batch-download.
+type BatchDownloadKnowledgeRequest struct {
+	KBID string   `json:"kb_id" binding:"required"`
+	IDs  []string `json:"ids"  binding:"required"`
+}
+
+// BatchDownloadKnowledgeFiles godoc
+// @Summary      批量下载知识原始文件
+// @Description  按 ID 列表打包下载单个知识库下多个知识条目的原始文件（ZIP 流式响应）
+// @Tags         知识管理
+// @Accept       json
+// @Produce      application/zip
+// @Param        request  body      BatchDownloadKnowledgeRequest  true  "批量下载请求"
+// @Success      200  {file}    file    "ZIP 文件内容"
+// @Failure      400  {object}  errors.AppError  "请求参数错误"
+// @Failure      403  {object}  errors.AppError  "权限不足"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /knowledge/batch-download [post]
+func (h *KnowledgeHandler) BatchDownloadKnowledgeFiles(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req BatchDownloadKnowledgeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError("Invalid request parameters: " + err.Error()))
+		return
+	}
+
+	ids := dedupeKnowledgeIDs(req.IDs)
+	if len(ids) == 0 {
+		c.Error(errors.NewBadRequestError("ids cannot be empty"))
+		return
+	}
+	const maxBatch = 200
+	if len(ids) > maxBatch {
+		c.Error(errors.NewBadRequestError(fmt.Sprintf("too many ids (max %d per batch)", maxBatch)))
+		return
+	}
+
+	// Same permission surface as the single-document download route: the
+	// original source files are more sensitive than parsed content, so tenant
+	// Viewers and org-shared Viewer access are rejected; effective editor or
+	// admin access is required.
+	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccessWithKBID(c, req.KBID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+		c.Error(errors.NewForbiddenError("No permission to download knowledge files"))
+		return
+	}
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
+
+	// Validate every id exists and belongs to the requested KB before the
+	// 200-byte-one streaming starts, mirroring BatchDeleteKnowledge.
+	knowledgeList, err := h.kgService.GetKnowledgeBatch(ctx, effectiveTenantID, ids)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+	if len(knowledgeList) != len(ids) {
+		c.Error(errors.NewBadRequestError("One or more knowledge entries not found"))
+		return
+	}
+	byID := make(map[string]*types.Knowledge, len(knowledgeList))
+	for _, k := range knowledgeList {
+		byID[k.ID] = k
+		if k.KnowledgeBaseID != kbID {
+			c.Error(errors.NewBadRequestError(
+				fmt.Sprintf("Knowledge %s does not belong to knowledge base %s",
+					secutils.SanitizeForLog(k.ID), secutils.SanitizeForLog(kbID))))
+			return
+		}
+	}
+	// Keep the caller's id order inside the archive.
+	ordered := make([]*types.Knowledge, 0, len(ids))
+	for _, id := range ids {
+		if k, ok := byID[id]; ok {
+			ordered = append(ordered, k)
+		}
+	}
+
+	logger.Infof(ctx, "Batch knowledge download started, kb_id: %s, count: %d",
+		secutils.SanitizeForLog(kbID), len(ordered))
+
+	c.Header("Content-Description", "File Transfer")
+	c.Header("Content-Transfer-Encoding", "binary")
+	zipName := fmt.Sprintf("weknora-documents-%s.zip", time.Now().Format("20060102-150405"))
+	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": zipName}))
+	c.Header("Content-Type", "application/zip")
+	c.Header("Expires", "0")
+	c.Header("Cache-Control", "must-revalidate")
+	c.Header("Pragma", "public")
+
+	// Once the ZIP starts streaming the status is already 200, so a file that
+	// fails to open mid-batch is skipped and recorded in an errors report at
+	// the end of the archive instead of aborting the whole download.
+	usedNames := make(map[string]int, len(ordered))
+	var skipped []string
+	c.Stream(func(w io.Writer) bool {
+		zw := zip.NewWriter(w)
+		for _, k := range ordered {
+			file, filename, openErr := h.kgService.GetKnowledgeFile(ctx, k.ID)
+			if openErr != nil {
+				logger.Errorf(ctx, "Batch download: failed to open file for knowledge %s: %v",
+					secutils.SanitizeForLog(k.ID), openErr)
+				skipped = append(skipped, fmt.Sprintf("%s (%s): %v", k.ID, k.FileName, openErr))
+				continue
+			}
+			entry, createErr := zw.Create(uniqueZipEntryName(filename, k.ID, usedNames))
+			if createErr != nil {
+				file.Close()
+				skipped = append(skipped, fmt.Sprintf("%s (%s): %v", k.ID, k.FileName, createErr))
+				continue
+			}
+			if _, copyErr := io.Copy(entry, file); copyErr != nil {
+				logger.Errorf(ctx, "Batch download: failed to copy file for knowledge %s: %v",
+					secutils.SanitizeForLog(k.ID), copyErr)
+				skipped = append(skipped, fmt.Sprintf("%s (%s): %v", k.ID, k.FileName, copyErr))
+			}
+			file.Close()
+		}
+		if len(skipped) > 0 {
+			if report, reportErr := zw.Create("_download-errors.txt"); reportErr == nil {
+				fmt.Fprintln(report, "The following files could not be included in this archive:")
+				for _, line := range skipped {
+					fmt.Fprintln(report, line)
+				}
+			}
+		}
+		if closeErr := zw.Close(); closeErr != nil {
+			logger.Errorf(ctx, "Batch download: failed to finalize zip: %v", closeErr)
+		}
+		return false
+	})
+}
+
+// uniqueZipEntryName flattens a stored file name to a single archive path
+// element and de-duplicates collisions ("报告.pdf" -> "报告 (2).pdf") so one
+// document can never shadow another inside a batch archive.
+func uniqueZipEntryName(filename, fallbackID string, used map[string]int) string {
+	name := strings.TrimSpace(strings.ReplaceAll(filename, "\\", "/"))
+	name = path.Base(name)
+	if name == "" || name == "." || name == "/" {
+		name = fallbackID
+	}
+	count := used[name]
+	used[name] = count + 1
+	if count == 0 {
+		return name
+	}
+	ext := path.Ext(name)
+	// count is the number of previous collisions; the second file gets "(2)".
+	return fmt.Sprintf("%s (%d)%s", strings.TrimSuffix(name, ext), count+1, ext)
 }
 
 // ClearKnowledgeBaseContents godoc

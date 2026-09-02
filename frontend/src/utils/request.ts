@@ -257,6 +257,14 @@ export async function getDown(url: string): Promise<Blob> {
   return res
 }
 
+// POST returning a binary body (e.g. batch downloads that take an id list).
+export async function postDown(url: string, data = {}): Promise<Blob> {
+  const res = await instance.post<Blob>(url, data, {
+    responseType: "blob",
+  }) as unknown as Blob;
+  return res
+}
+
 export function postUpload(
   url: string,
   data = {},

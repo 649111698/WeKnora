@@ -39,6 +39,7 @@ import {
   moveKnowledgeToFolder,
   renameKnowledgeFolder,
   downKnowledgeDetails,
+  batchDownloadKnowledge,
   type KnowledgeFolderTree,
 } from "@/api/knowledge-base/index";
 import { knowledgeSpansPayloadHasTrace } from '@/utils/knowledgeTrace';
@@ -50,6 +51,7 @@ import KbUploadSourceDropdown from './components/KbUploadSourceDropdown.vue';
 import KbFolderTree from './components/KbFolderTree.vue';
 import TagEditDialog from './components/TagEditDialog.vue';
 import BatchTagDialog from './components/BatchTagDialog.vue';
+import BatchMoveDialog from './components/BatchMoveDialog.vue';
 import KbTagManageDrawer from './components/KbTagManageDrawer.vue';
 import type { KnowledgeProcessOverrides } from '@/types/knowledgeProcess';
 import { useUploadConfirmStore, type UploadConfirmResult } from '@/stores/uploadConfirm';
@@ -440,6 +442,11 @@ const batchDeleting = ref(false);
 const batchReparsing = ref(false);
 const batchTagging = ref(false);
 const batchTagDialogVisible = ref(false);
+const batchDownloading = ref(false);
+const batchMoveDialogVisible = ref(false);
+const batchMoveTargets = ref<any[]>([]);
+const batchMoveLoading = ref(false);
+const batchMoveSubmitting = ref(false);
 const batchTagPreSelectedIds = computed(() => {
   const ids = Array.from(selectedIds.value);
   if (ids.length === 0) return [];
@@ -1556,6 +1563,94 @@ const stopMovePoll = () => {
   if (movePollTimer) {
     clearInterval(movePollTimer);
     movePollTimer = null;
+  }
+};
+
+// Batch move: open the target picker for the whole selection. Only documents
+// that finished parsing can be moved (same rule as the single-document move,
+// enforced by the backend too), so the confirm handler filters them out.
+const openBatchMoveDialog = async () => {
+  if (selectedIds.value.size === 0) return;
+  batchMoveDialogVisible.value = true;
+  batchMoveLoading.value = true;
+  batchMoveTargets.value = [];
+  try {
+    const res: any = await listMoveTargets(kbId.value);
+    batchMoveTargets.value = res.data || [];
+  } catch {
+    batchMoveTargets.value = [];
+  } finally {
+    batchMoveLoading.value = false;
+  }
+};
+
+const handleBatchMoveConfirm = async ({ targetKbId, mode }: { targetKbId: string; targetKbName: string; mode: 'reuse_vectors' | 'reparse' }) => {
+  if (!targetKbId || batchMoveSubmitting.value) return;
+  const movable = Array.from(selectedIds.value).filter((id) => {
+    const card = cardList.value.find((c) => c.id === id);
+    return card && card.parse_status === 'completed';
+  });
+  const skipped = selectedIds.value.size - movable.length;
+  if (movable.length === 0) {
+    MessagePlugin.warning(t('knowledgeBase.batchMoveNoCompleted'));
+    return;
+  }
+  if (skipped > 0) {
+    MessagePlugin.info(t('knowledgeBase.batchMoveSkippedNotCompleted', { count: skipped }));
+  }
+  batchMoveSubmitting.value = true;
+  try {
+    const res: any = await moveKnowledge({
+      knowledge_ids: movable,
+      source_kb_id: kbId.value,
+      target_kb_id: targetKbId,
+      mode,
+    });
+    const taskId = res.data?.task_id;
+    MessagePlugin.info(t('knowledgeBase.moveStarted'));
+    batchMoveDialogVisible.value = false;
+    // The move runs as a background task with its own progress polling, so the
+    // dialog's submit state can be released as soon as the task is accepted.
+    batchMoveSubmitting.value = false;
+    handleBatchCancel();
+
+    if (taskId) {
+      startMovePoll(taskId);
+    } else {
+      batchMoveSubmitting.value = false;
+      resetPage();
+      loadKnowledgeFiles(kbId.value);
+      void loadFolderTree(kbId.value);
+    }
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || t('knowledgeBase.moveFailed'));
+    batchMoveSubmitting.value = false;
+  }
+};
+
+// Batch download: the backend streams a single ZIP of the original files.
+const handleBatchDownload = async () => {
+  if (selectedIds.value.size === 0 || batchDownloading.value) return;
+  batchDownloading.value = true;
+  try {
+    const blob = await batchDownloadKnowledge(kbId.value, Array.from(selectedIds.value));
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const ts = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    link.style.display = 'none';
+    link.href = objectUrl;
+    link.download = `weknora-documents-${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    nextTick(() => {
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    });
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || t('file.downloadFailed'));
+  } finally {
+    batchDownloading.value = false;
   }
 };
 
@@ -2676,8 +2771,10 @@ async function createNewSession(value: string): Promise<void> {
                 <DocumentBatchBar :count="selectedIds.size" :delete-loading="batchDeleting"
                   :reparse-loading="batchReparsing" :tag-loading="batchTagging" :visible="batchMode || selectedIds.size > 0"
                   :show-move-to-folder="canEdit" :folder-options="folderOptions"
+                  :can-download="canDownloadKnowledge" :download-loading="batchDownloading"
+                  :can-move-kb="canMutateKnowledge"
                   @cancel="handleBatchCancel" @delete="confirmBatchDelete" @reparse="confirmBatchReparse"
-                  @batch-tag="handleBatchTag"
+                  @batch-tag="handleBatchTag" @download="handleBatchDownload" @move-kb="openBatchMoveDialog"
                   @move-to-folder="(path: string) => moveKnowledgeIntoFolder(Array.from(selectedIds), path)" />
               </div>
             </div>
@@ -2719,6 +2816,12 @@ async function createNewSession(value: string): Promise<void> {
     :confirm-loading="batchTagging"
     @update:visible="batchTagDialogVisible = $event" @confirm="onBatchTagConfirm"
     @tag-created="loadTags(kbId, true)" @open-manage="openTagManageFromBatchDialog" />
+
+  <!-- 批量移动到其他知识库弹窗 -->
+  <BatchMoveDialog :visible="batchMoveDialogVisible"
+    :count="selectedIds.size" :targets="batchMoveTargets"
+    :loading="batchMoveLoading" :submitting="batchMoveSubmitting"
+    @update:visible="batchMoveDialogVisible = $event" @confirm="handleBatchMoveConfirm" />
 
   <KbTagManageDrawer
     v-if="!isFAQ"

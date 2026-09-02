@@ -1,4 +1,4 @@
-import { get, post, put, del, postUpload, getDown } from "../../utils/request";
+import { get, post, put, del, postUpload, getDown, postDown } from "../../utils/request";
 import type { KnowledgeProcessOverrides } from '@/types/knowledgeProcess';
 import type { AuditLog, AuditOutcome, ListAuditLogResponse } from '@/api/tenant/audit-log';
 
@@ -376,6 +376,11 @@ export function batchDeleteKnowledge(kbId: string, ids: string[]) {
 
 export function downKnowledgeDetails(id: string) {
   return getDown(`/api/v1/knowledge/${id}/download`);
+}
+
+// 批量下载原始文件（ZIP）。后端校验所有 id 隶属于 kb_id 且具有下载权限。
+export function batchDownloadKnowledge(kbId: string, ids: string[]) {
+  return postDown(`/api/v1/knowledge/batch-download`, { kb_id: kbId, ids });
 }
 
 export function previewKnowledgeFile(id: string) {
