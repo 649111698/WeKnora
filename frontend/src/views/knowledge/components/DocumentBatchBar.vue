@@ -68,7 +68,7 @@ const folderPickerVisible = ref(false);
           <t-button v-if="canMoveKb" theme="default" variant="outline" size="small"
             :disabled="count === 0 || deleteLoading || reparseLoading || tagLoading || downloadLoading"
             @click="emit('moveKb')">
-            <template #icon><t-icon name="arrow-right-arrow-left" size="14px" /></template>
+            <template #icon><t-icon name="swap" size="14px" /></template>
             {{ t('knowledgeBase.moveToKnowledgeBase') }}
           </t-button>
 
@@ -114,7 +114,8 @@ const folderPickerVisible = ref(false);
   position: relative;
   z-index: 5;
   width: 100%;
-  max-width: 560px;
+  // 6 个操作按钮单行约 750px；放不下时靠下面的 wrap 换行，不再溢出容器。
+  max-width: min(760px, 100%);
   margin: 0 auto;
   padding: 0 4px;
   box-sizing: border-box;
@@ -122,9 +123,10 @@ const folderPickerVisible = ref(false);
 
 .batch-bar-inner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   padding: 8px 12px;
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-stroke);
@@ -136,8 +138,8 @@ const folderPickerVisible = ref(false);
   display: flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
-  flex: 1;
+  // 按内容参与换行计算：放不下时整个按钮组换到第二行，而不是把计数文字挤出容器。
+  flex: 0 1 auto;
 }
 
 .batch-bar-count {
@@ -152,6 +154,7 @@ const folderPickerVisible = ref(false);
   padding: 0 6px !important;
   height: 28px !important;
   font-size: 12px;
+  white-space: nowrap;
   color: var(--td-text-color-secondary) !important;
 
   &:hover {
@@ -166,6 +169,11 @@ const folderPickerVisible = ref(false);
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+
+  // 按钮文字不允许折行，避免窄屏下按钮被竖排挤变形。
+  :deep(.t-button) {
+    white-space: nowrap;
+  }
 }
 
 .batch-bar-fade-enter-active,

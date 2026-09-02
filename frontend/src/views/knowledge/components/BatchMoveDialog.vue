@@ -4,7 +4,7 @@
     <template #header>
       <div class="batch-move-heading">
         <div class="batch-move-heading-row">
-          <t-icon name="arrow-right-arrow-left" size="16px" class="batch-move-heading-icon" aria-hidden="true" />
+          <t-icon name="swap" size="16px" class="batch-move-heading-icon" aria-hidden="true" />
           <span class="batch-move-title">{{ $t('knowledgeBase.moveToKnowledgeBase') }}</span>
         </div>
         <p class="batch-move-subtitle">{{ $t('knowledgeBase.batchMoveSubtitle', { count }) }}</p>
