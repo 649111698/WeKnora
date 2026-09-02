@@ -327,8 +327,10 @@ router.beforeEach(async (to, from, next) => {
     // （如 / → /platform/knowledge-bases 的重定向），业务页会在会话建立
     // 前挂载并发起未授权请求，触发 401→刷新→登出竞态。已登录（重登）则
     // 维持原目标页直接消费。
+    // 重定向必须原样携带 hash：App.vue 靠它消费回调结果，guard 传纯路径
+    // 会把 hash 丢掉，回调就永远无法落盘。
     if (to.path !== '/sso/processing' && !authStore.isLoggedIn) {
-      next('/sso/processing')
+      next({ path: '/sso/processing', hash: to.hash, replace: true })
       return
     }
     next()
