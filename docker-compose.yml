@@ -46,6 +46,10 @@ services:
       - ./config/config.yaml:/app/config/config.yaml
       # Optional: mount custom skills directory (allows adding skills without rebuilding image)
       - ./skills/preloaded:/app/skills/preloaded
+      # Docker 沙箱默认关闭（见 WEKNORA_SANDBOX_DOCKER_ENABLED）。需要本机 daemon 时
+      # 同时设 true 并挂载实际 socket——这等同宿主机 root，仅私有化单机。
+      # 入口脚本会按 socket GID 把 appuser 加入对应组（compose group_add 在 gosu 后无效）。
+      # - /var/run/docker.sock:/var/run/docker.sock
       # Optional: declarative built-in models. Copy config/builtin_models.yaml.example
       # to config/builtin_models.yaml, edit it for your deployment, then
       # uncomment the line below. See docs/BUILTIN_MODELS.md.
@@ -87,6 +91,9 @@ services:
       # 文档处理语言（问题/摘要生成）。优先级：此环境变量（部署级覆盖，非空即生效）
       # > Accept-Language 请求头 > 内置默认值 (zh-CN)。留空则跟随请求方 Accept-Language。
       - WEKNORA_LANGUAGE=${WEKNORA_LANGUAGE:-}
+      # Docker 沙箱默认关闭：本机 docker.sock 等同宿主机 root。
+      # 系统管理员也可在「设置 → 系统设置」打开（立即生效）。未落库时读本变量。
+      - WEKNORA_SANDBOX_DOCKER_ENABLED=${WEKNORA_SANDBOX_DOCKER_ENABLED:-false}
       # gin 信任的代理 CIDR（逗号分隔）；显式设为空字符串则禁用代理信任。
       # 默认信任 loopback + 私网段（容器网络内 nginx 已覆盖）
       # - WEKNORA_TRUSTED_PROXIES=${WEKNORA_TRUSTED_PROXIES:-}
@@ -111,6 +118,8 @@ services:
       # 认证 / 空间 / RBAC / 审计
       # 禁止新用户注册（生产建议 true）
       - DISABLE_REGISTRATION=${DISABLE_REGISTRATION:-false}
+      # 开启后密码必须包含大小写字母、数字和特殊字符，特殊字符包含：!@#$%^&*()_+-=[]{}|;:,.<>?
+      - WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED=${WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED:-false}
       # 公开注册后的默认空间策略：create_personal（默认，自动创建个人空间）/ tenantless
       - WEKNORA_AUTH_DEFAULT_TENANT_MODE=${WEKNORA_AUTH_DEFAULT_TENANT_MODE:-create_personal}
       # 是否允许普通用户登录后主动创建空间（默认 true；false 仅能邀请加入，超管不受影响）
@@ -351,6 +360,7 @@ services:
       - OIDC_AUTH_AUTHORIZATION_ENDPOINT=${OIDC_AUTH_AUTHORIZATION_ENDPOINT:-}
       - OIDC_AUTH_TOKEN_ENDPOINT=${OIDC_AUTH_TOKEN_ENDPOINT:-}
       - OIDC_AUTH_USER_INFO_ENDPOINT=${OIDC_AUTH_USER_INFO_ENDPOINT:-}
+      - OIDC_AUTH_JWKS_URI=${OIDC_AUTH_JWKS_URI:-}
       - OIDC_AUTH_SCOPES=${OIDC_AUTH_SCOPES:-}
       - OIDC_USER_INFO_MAPPING_USER_NAME=${OIDC_USER_INFO_MAPPING_USER_NAME:-}
       - OIDC_USER_INFO_MAPPING_EMAIL=${OIDC_USER_INFO_MAPPING_EMAIL:-}
@@ -369,7 +379,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # Sandbox 镜像：仅用于 build/pull，非常驻服务；app 执行 Skills 时按需 docker run 该镜像，用毕即释
+  # Sandbox 镜像：仅用于 build/pull，非常驻。Docker 沙箱默认关闭，需
+  # WEKNORA_SANDBOX_DOCKER_ENABLED=true 并挂载 docker.sock 后，app 才会按会话创建容器。
   sandbox:
     image: wechatopenai/weknora-sandbox:${WEKNORA_VERSION:-latest}
     container_name: WeKnora-sandbox

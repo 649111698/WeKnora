@@ -825,7 +825,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "修改当前用户的登录密码。新密码须满足 8–32 位且同时包含字母与数字；成功后所有会话被撤销，需重新登录。",
+                "description": "修改当前用户的登录密码。新密码须满足 8–32 位且同时包含字母与数字；开启复杂密码后还需包含大小写与特殊字符。成功后所有会话被撤销，需重新登录。",
                 "consumes": [
                     "application/json"
                 ],
@@ -874,7 +874,7 @@ const docTemplate = `{
         },
         "/auth/config": {
             "get": {
-                "description": "返回当前部署的注册模式等公开认证配置，供前端决定是否展示注册入口",
+                "description": "返回当前部署的注册模式与密码复杂度开关，供前端决定是否展示注册入口以及密码校验规则",
                 "consumes": [
                     "application/json"
                 ],
@@ -1370,7 +1370,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "为当前用户在目标空间重新签发访问令牌；要求该用户在目标空间存在 active 成员关系",
+                "description": "为当前用户在目标空间重新签发访问令牌；要求该用户在目标空间存在 active 成员关系（跨租户超级用户除外）。\n成功换签会把目标空间写入「最近活跃租户」偏好，下次登录与 refresh 都落在该空间（refresh JWT 不含 tenant_id）。\n该偏好是账号级的：一次换签会改变该用户所有设备的下次登录/refresh 落点。偏好写入失败则整次换签失败，不会发出新 token。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1414,7 +1414,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "无该空间成员关系",
+                        "description": "无该空间成员关系或偏好写入失败",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -19908,6 +19908,7 @@ const docTemplate = `{
                 "siliconflow",
                 "jina",
                 "openrouter",
+                "litellm",
                 "requesty",
                 "nvidia",
                 "novita",
@@ -19927,6 +19928,7 @@ const docTemplate = `{
                 "ModelSourceNvidia": "NVIDIA model",
                 "ModelSourceOpenAI": "OpenAI model",
                 "ModelSourceOpenRouter": "OpenRouter model",
+                "ModelSourceLiteLLM": "LiteLLM proxy model",
                 "ModelSourceRemote": "Remote model",
                 "ModelSourceRequesty": "Requesty model",
                 "ModelSourceSiliconFlow": "SiliconFlow model",
@@ -19948,6 +19950,7 @@ const docTemplate = `{
                 "SiliconFlow model",
                 "Jina AI model",
                 "OpenRouter model",
+                "LiteLLM proxy model",
                 "Requesty model",
                 "NVIDIA model",
                 "Novita AI model",
@@ -19968,6 +19971,7 @@ const docTemplate = `{
                 "ModelSourceSiliconFlow",
                 "ModelSourceJina",
                 "ModelSourceOpenRouter",
+                "ModelSourceLiteLLM",
                 "ModelSourceRequesty",
                 "ModelSourceNvidia",
                 "ModelSourceNovita",
@@ -22014,7 +22018,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "last_active_tenant_id": {
-                    "description": "LastActiveTenantID remembers the last workspace the user actively\nswitched into, so a fresh login (new device, cleared browser, new\nrefresh token) lands them back in that workspace instead of always\nbouncing to their home workspace. Login / RefreshToken validate that\nthe workspace still exists and the user still has an active membership\n(or CanAccessAllTenants) before honouring this preference; an\ninvalid pointer is best-effort cleared and the user falls back to\nhome.\n\nnil  = no preference (use user.TenantID, i.e. home)\n*0   = \"clear preference\" sentinel for the partial-update endpoint\n       (UpdateUserPreferences turns this into nil). Otherwise treat\n       a stored *0 the same as nil.\n*N   = preferred workspace id.",
+                    "description": "LastActiveTenantID remembers the last workspace the user actively\nswitched into, so a fresh login (new device, cleared browser, new\nrefresh token) lands them back in that workspace instead of always\nbouncing to their home workspace. Written by the SPA's preferences\nPUT and by service-level SwitchTenant (including when switching\nhome, which stores the home ID). Login / RefreshToken validate that\nthe workspace still exists and the user still has an active membership\n(or CanAccessAllTenants) before honouring this preference; an\ninvalid pointer is best-effort cleared and the user falls back to\nhome. Refresh JWT claims have no tenant_id, so RefreshToken\nre-resolves from this field.\n\nnil  = no preference (use user.TenantID, i.e. home)\n*0   = \"clear preference\" sentinel for the partial-update endpoint\n       (UpdateUserPreferences turns this into nil). Otherwise treat\n       a stored *0 the same as nil.\n*N   = preferred workspace id.",
                     "type": "integer"
                 },
                 "oidc_only_login": {
@@ -24765,7 +24769,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "last_active_tenant_id": {
-                    "description": "LastActiveTenantID lets the SPA persist \"after a fresh login,\ndrop me back into this workspace\" across devices. Send a positive\nworkspace id to set / replace, or 0 to clear. Membership is validated\nat next login, not here. Nil = field omitted from the PATCH and\nstays untouched.",
+                    "description": "LastActiveTenantID lets clients persist \"after a fresh login,\ndrop me back into this workspace\" across devices. The SPA sends\nthis after every tenant switch; POST /auth/switch-tenant records\nthe same preference server-side. Send a positive workspace id to\nset / replace, or 0 to clear. Membership is validated at next\nlogin, not here. Nil = field omitted from the PATCH and stays\nuntouched.",
                     "type": "integer"
                 }
             }

@@ -33,8 +33,9 @@ import (
 // is guaranteed to either match the active tenant or carry a
 // cross-tenant superuser bypass.
 type TenantMemberHandler struct {
-	memberService interfaces.TenantMemberService
-	userService   interfaces.UserService
+	memberService    interfaces.TenantMemberService
+	userService      interfaces.UserService
+	systemSettingSvc interfaces.SystemSettingService
 }
 
 // NewTenantMemberHandler wires the dependencies. PR 1 already provides
@@ -45,11 +46,19 @@ type TenantMemberHandler struct {
 func NewTenantMemberHandler(
 	memberService interfaces.TenantMemberService,
 	userService interfaces.UserService,
+	systemSettingSvc interfaces.SystemSettingService,
 ) *TenantMemberHandler {
 	return &TenantMemberHandler{
-		memberService: memberService,
-		userService:   userService,
+		memberService:    memberService,
+		userService:      userService,
+		systemSettingSvc: systemSettingSvc,
 	}
+}
+
+// complexPasswordEnabled mirrors AuthHandler/SystemHandler so the direct-add
+// member path enforces the same password switch as registration.
+func (h *TenantMemberHandler) complexPasswordEnabled(ctx context.Context) bool {
+	return service.ResolveComplexPasswordEnabled(ctx, nil, h.systemSettingSvc)
 }
 
 // addMemberRequest is the JSON body for POST /tenants/:id/members.
@@ -566,7 +575,7 @@ func (h *TenantMemberHandler) CreateMember(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("cannot create a member as owner; adjust the role after creation"))
 		return
 	}
-	if err := service.ValidatePasswordPolicy(req.Password); err != nil {
+	if err := service.ValidatePasswordPolicy(req.Password, h.complexPasswordEnabled(ctx)); err != nil {
 		c.Error(apperrors.NewValidationError(err.Error()))
 		return
 	}

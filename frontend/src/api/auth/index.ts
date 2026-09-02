@@ -262,6 +262,8 @@ export async function getOIDCConfig(): Promise<OIDCConfigResponse> {
 export interface AuthConfigResponse {
   success: boolean
   registration_mode: 'self_serve' | 'invite_only' | string
+  /** 是否启用复杂密码（大小写字母、数字、特殊字符） */
+  complex_password_enabled: boolean
   /** 当前租户的水印配置（租户级，后端按 Host 匹配租户登录域名解析） */
   watermark?: {
     enabled: boolean
@@ -282,7 +284,7 @@ export async function getAuthConfig(): Promise<AuthConfigResponse> {
     const response = await get('/api/v1/auth/config')
     return response as unknown as AuthConfigResponse
   } catch {
-    return { success: false, registration_mode: 'self_serve' }
+    return { success: false, registration_mode: 'self_serve', complex_password_enabled: false }
   }
 }
 

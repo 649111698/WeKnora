@@ -354,7 +354,7 @@ export default {
       currentPlaceholder: '현재 비밀번호를 입력하세요',
       currentRequired: '현재 비밀번호를 입력하세요',
       newLabel: '새 비밀번호',
-      newPlaceholder: '8-32자, 문자와 숫자 포함',
+      newPlaceholder: '새 비밀번호 입력',
       confirmLabel: '새 비밀번호 확인',
       confirmPlaceholder: '새 비밀번호를 다시 입력하세요',
       submit: '비밀번호 업데이트',
@@ -2577,6 +2577,10 @@ export default {
           label: 'OpenRouter',
           description: 'openai/gpt-5.2-chat, google/gemini-3-flash-preview 등'
         },
+        litellm: {
+          label: 'LiteLLM',
+          description: '자체 호스팅 프록시로 OpenAI, Anthropic, Gemini, Bedrock 등 100+ 공급자를 연결합니다. 플레이스홀더 URL을 실제 주소로 바꾸세요. localhost는 SSRF_WHITELIST에 추가해야 합니다.'
+        },
         zhipu: {
           label: 'Zhipu BigModel',
           description: 'glm-4.7, embedding-3, rerank, etc.'
@@ -2845,22 +2849,12 @@ export default {
         emailLabel: '사용자 이메일',
         emailPlaceholder: '비밀번호를 재설정할 사용자의 이메일 입력',
         newPasswordLabel: '새 비밀번호',
-        newPasswordPlaceholder: '8~32자, 문자와 숫자 포함',
+        newPasswordPlaceholder: '새 비밀번호 입력',
         confirmPasswordLabel: '새 비밀번호 확인',
         confirmPasswordPlaceholder: '새 비밀번호를 다시 입력',
         confirmBtn: '재설정 확인',
         success: '비밀번호가 재설정되고 기존 세션이 만료되었습니다',
         failed: '비밀번호 재설정 실패',
-        validation: {
-          emailRequired: '사용자 이메일을 입력하세요',
-          emailInvalid: '올바른 이메일 주소를 입력하세요',
-          passwordRequired: '새 비밀번호를 입력하세요',
-          passwordLength: '비밀번호는 8~32자여야 합니다',
-          passwordLetter: '비밀번호에 문자가 포함되어야 합니다',
-          passwordNumber: '비밀번호에 숫자가 포함되어야 합니다',
-          confirmRequired: '새 비밀번호를 다시 입력하세요',
-          passwordMismatch: '비밀번호가 일치하지 않습니다'
-        }
       },
       admins: {
         label: '시스템 관리자',
@@ -2915,7 +2909,8 @@ export default {
         confirmBtn: '저장 확인',
         cancelBtn: '취소',
         emptyValue: '(비어 있음)',
-        bodyAuthRegistrationMode: '「{label}」을(를) {value}(으)로 변경하려고 합니다.\n\nself_serve로 전환하면 인터넷의 누구나 계정을 만들 수 있습니다. 의도된 동작인지 확인해 주세요.'
+        bodyAuthRegistrationMode: '「{label}」을(를) {value}(으)로 변경하려고 합니다.\n\nself_serve로 전환하면 인터넷의 누구나 계정을 만들 수 있습니다. 의도된 동작인지 확인해 주세요.',
+        bodySandboxDockerEnabled: '켜면 워크스페이스 관리자가 로컬 Docker 데몬을 샌드박스로 지정할 수 있습니다. 로컬 docker.sock은 호스트 root와 같습니다. 데몬을 마운트했거나 TLS가 있는 원격 tcp:// 를 쓰는 프라이빗 단일 노드에서만 사용하세요.'
       },
       enumLabels: {
         auth: {
@@ -2945,14 +2940,19 @@ export default {
           max_owned_per_user: '슈퍼유저가 아닌 사용자가 셀프 서비스로 소유할 수 있는 최대 워크스페이스 수입니다. 워크스페이스 생성 시마다 읽으며 저장 즉시 적용됩니다. 0은 내장 기본값 10을 사용하고, 음수는 제한을 완전히 해제합니다(공개 배포에는 권장하지 않음).',
           self_service_creation_enabled: '비슈퍼유저가 공간을 직접 만들 수 있는지 설정합니다. 비활성화하면 일반 사용자는 초대로만 기존 공간에 참여할 수 있으며, 크로스 워크스페이스 슈퍼유저는 계속 만들 수 있습니다.',
           default_storage_quota_gb: '신규 워크스페이스 생성 시 기본으로 할당되는 저장 용량(GB)으로, 벡터·원본·텍스트·인덱스 등을 포함합니다. 생성 시에만 읽으며, 변경은 이후 생성되는 워크스페이스에만 적용되고 기존 워크스페이스에는 소급되지 않습니다. 0 또는 음수는 내장 기본값 10GB를 사용합니다.',
-          auto_create_api_key: '신규 워크스페이스에 full_access API Key를 자동 생성하고 생성 응답에 평문 token을 반환합니다. 기존 동작에 의존하는 연동에만 사용하세요. 기본값은 비활성화입니다.'
+          auto_create_api_key: '신규 워크스페이스에 full_access API Key를 자동 생성하고 생성 응답에 평문 token을 반환합니다. 기존 동작에 의존하는 연동에만 사용하세요. 기본값은 비활성화입니다.',
+          auto_accept_invitation: '켜면 워크스페이스 관리자가 이메일로 가입된 사용자를 초대할 때 상대가 바로 멤버가 되며, 받은편지함에서 수락할 필요가 없습니다. 끄면 「초대 발송 → 상대가 수락」 흐름을 유지합니다. 저장 즉시 적용됩니다.'
         },
         ssrf: {
           whitelist: 'SSRF 보호 허용 목록입니다. example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1 형식을 입력할 수 있습니다. 저장 즉시 적용됩니다. SSRF_WHITELIST_EXTRA 환경 변수는 배포자가 관리하며 여기서 덮어쓰지 않습니다.'
         },
+        sandbox: {
+          docker_enabled: 'Docker 샌드박스 백엔드를 허용할지 설정합니다. 로컬 docker.sock은 호스트 root와 같으므로 기본값은 꺼짐입니다. 시스템 관리자만 켤 수 있으며 저장 즉시 적용됩니다. 데몬 소켓을 마운트했거나 TLS가 있는 원격 tcp:// 를 쓰는 프라이빗 단일 노드에서만 켜세요.'
+        },
         auth: {
           registration_mode: '셀프 가입 모드입니다. self_serve = 누구나 계정을 만들 수 있음; invite_only = 공개 가입을 끄고 Owner/Admin만 초대 가능. 저장 즉시 적용되며, self_serve는 스팸 가입이 들어올 수 있으니 신중히 사용하세요.',
           default_tenant_mode: '공개 가입 후 공간 초기화 정책입니다. create_personal은 개인 공간을 만들고 Owner를 부여하며, tenantless는 초대 수락 또는 직접 공간 생성 전까지 계정만 만듭니다.',
+          complex_password_enabled: '복잡한 비밀번호를 사용할지 여부입니다. 활성화하면 비밀번호에 대문자, 소문자, 숫자 및 특수 문자가 포함되어야 합니다. 변경 사항은 즉시 적용되며, 새로 가입하는 사용자 또는 비밀번호를 새로 변경하거나 재설정하는 경우에만 적용됩니다. 특수 문자는 다음을 포함합니다: {specialChars}'
         }
       },
       keyLabels: {
@@ -2971,14 +2971,19 @@ export default {
           max_owned_per_user: '사용자당 최대 워크스페이스 수',
           self_service_creation_enabled: '사용자 공간 직접 생성 허용',
           default_storage_quota_gb: '신규 워크스페이스 기본 저장 용량 (GB)',
-          auto_create_api_key: '신규 워크스페이스 API Key 자동 생성'
+          auto_create_api_key: '신규 워크스페이스 API Key 자동 생성',
+          auto_accept_invitation: '등록된 사용자 초대 시 자동 가입'
         },
         ssrf: {
           whitelist: 'SSRF 보호 허용 목록'
         },
+        sandbox: {
+          docker_enabled: 'Docker 샌드박스 사용'
+        },
         auth: {
           registration_mode: '셀프 가입 모드',
           default_tenant_mode: '기본 공간 프로비저닝',
+          complex_password_enabled: '복잡한 비밀번호 사용'
         }
       },
       runtime: {
@@ -3201,7 +3206,7 @@ export default {
         security: {
           tab: '네트워크 보안 {count}',
           title: '네트워크 보안',
-          description: 'SSRF 보호를 우회할 수 있는 신뢰 호스트, IP, 네트워크를 관리합니다.'
+          description: 'SSRF 허용 목록과 Docker 샌드박스 허용 여부(로컬 docker.sock은 호스트 root와 같음)를 관리합니다.'
         },
         runtime: {
           tab: '런타임 및 동시성 {count}',
@@ -4655,7 +4660,7 @@ export default {
     subtitle: 'RAG Q&A, ReAct 에이전트, Wiki 지식베이스 — 대규모 언어 모델 기반 엔터프라이즈 지식 프레임워크',
     registerSubtitle: '계정을 만들고 WeKnora를 시작하세요',
     emailPlaceholder: '이메일 주소 입력',
-    passwordPlaceholder: '비밀번호 입력 (8-32자, 문자와 숫자 포함)',
+    passwordPlaceholder: '비밀번호 입력',
     confirmPasswordPlaceholder: '비밀번호 다시 입력',
     usernamePlaceholder: '사용자명 입력',
     emailRequired: '이메일 주소를 입력해주세요',
@@ -4664,7 +4669,10 @@ export default {
     passwordMinLength: '비밀번호는 최소 8자여야 합니다',
     passwordMaxLength: '비밀번호는 32자를 초과할 수 없습니다',
     passwordMustContainLetter: '비밀번호에 문자가 포함되어야 합니다',
+    passwordMustContainLowercaseLetter: '비밀번호에는 소문자가 포함되어야 합니다',
+    passwordMustContainUppercaseLetter: '비밀번호에는 대문자가 포함되어야 합니다',
     passwordMustContainNumber: '비밀번호에 숫자가 포함되어야 합니다',
+    passwordMustContainSpecialChar: '비밀번호에는 특수문자가 포함되어야 합니다: {specialChars}',
     usernameRequired: '사용자명을 입력해주세요',
     usernameMinLength: '사용자명은 최소 2자여야 합니다',
     usernameMaxLength: '사용자명은 20자를 초과할 수 없습니다',
@@ -5143,6 +5151,10 @@ export default {
         e2b: 'Managed MicroVM service or an E2B-compatible deployment',
         docker: '이 WeKnora 호스트의 Docker에서 세션마다 장수명 컨테이너를 유지합니다. 스크립트와 파일이 같은 컨테이너에 남습니다',
       },
+      dockerDisabledAlert: '이 배포에서는 Docker 샌드박스가 켜져 있지 않습니다',
+      dockerDisabledHint: '로컬 docker.sock은 호스트 root와 같습니다. 단일 머신 프라이빗 설치에서는 시스템 관리자가 설정 → 시스템 설정 → 네트워크 보안에서 켤 수 있습니다.',
+      dockerDisabledCard: '이 배포에서 Docker 샌드박스가 꺼져 있어 이 구성은 컨테이너를 만들지 않습니다',
+      dockerHostRisk: '비우거나 unix:// 를 쓰면 WeKnora가 있는 머신의 Docker 데몬을 사용하며, 그 권한은 해당 머신의 root와 같습니다. 프라이빗 단일 노드에만 쓰세요. 여러 워크스페이스가 같은 호스트를 쓰는 경우에는 Cube 또는 E2B를 쓰세요. 원격 tcp:// 는 TLS 인증서 디렉터리가 필요합니다.',
       addConfig: '샌드박스 추가',
       viewClusterGuide: 'Cluster setup guide',
       configName: 'Config name',
@@ -5874,24 +5886,25 @@ export default {
       fallbackPrompt: '폴백 프롬프트',
       fallbackPromptPlaceholder: '시스템 기본 프롬프트를 사용하려면 비워 두세요.',
       skillsConfig: '스킬',
-      skillsConfigDesc: '스킬 스크립트가 실행될 샌드박스를 고른 뒤, 워크스페이스 카탈로그에서 선택합니다. 해당 샌드박스에 설치되지 않은 스킬은 보이지만 설치 전에는 선택할 수 없습니다.',
-      skillsSelection: '사용 가능한 스킬',
-      skillsSelectionDesc: '목록은 워크스페이스 스킬 카탈로그에서 가져옵니다. 선택한 샌드박스에서 준비된 스킬만 사용할 수 있습니다.',
+      skillsConfigDesc: '먼저 실행 샌드박스를 선택한 뒤 아래 목록에서 스킬을 고르세요. 해당 샌드박스에 없는 스킬은 「설치」가 보이며, 설치한 뒤에만 선택할 수 있습니다.',
+      skillsSelection: '스킬 목록',
+      skillsSelectionDesc: '워크스페이스 카탈로그의 스킬이 모두 표시됩니다. 이 샌드박스에 설치된 것은 바로 쓸 수 있고, 나머지는 먼저 「설치」해야 합니다.',
       skillsAll: '전체',
       skillsSelected: '지정',
       skillsNone: '비활성화',
       selectSkills: '스킬 선택',
-      selectSkillsDesc: '사용할 스킬을 선택하세요. 설치되지 않았거나 아직 준비되지 않은 스킬은 선택할 수 없습니다.',
-      skillsAllListHint: '이 샌드박스에서 준비된 스킬이 사용됩니다. 설치되지 않은 스킬은 설치해야 「전체」에 포함됩니다.',
-      skillsListSummary: '준비됨 {ready}개, 이 샌드박스에서 아직 사용 불가 {pending}개',
-      skillsListSummaryReadyOnly: '준비됨 {ready}개',
+      selectSkillsDesc: '이 에이전트에서 쓸 스킬을 선택하세요. 설치되지 않은 스킬은 선택할 수 없으며, 오른쪽 「설치」를 먼저 누르세요.',
+      skillsAllListHint: '「전체」에는 이 샌드박스에 이미 설치된 스킬만 포함됩니다. 설치되지 않은 스킬은 「설치」한 뒤에야 포함됩니다.',
+      skillsGroupAvailable: '사용 가능',
+      skillsGroupUnavailable: '사용 불가',
       noSkillsAvailable: '워크스페이스 카탈로그에 스킬이 없습니다.',
       skillsNeedSandbox: '먼저 실행 샌드박스를 선택하세요.',
       goSandboxSettings: '샌드박스 관리',
       goSkillSettings: '스킬 관리',
       installToThisSandbox: '이 샌드박스에 설치',
       installShort: '설치',
-      skillNotInstalled: '현재 샌드박스에 설치되지 않음',
+      viewInstallProgress: '진행 상황',
+      skillNotInstalled: '미설치',
       skillNotReady: '아직 준비되지 않음',
       skillDisabledOnSandbox: '이 샌드박스에서 비활성화됨',
       sandboxBackend: '실행 샌드박스',

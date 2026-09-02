@@ -283,8 +283,10 @@ type AuthConfig struct {
 	DefaultTenantMode string `yaml:"default_tenant_mode" json:"default_tenant_mode"`
 	// WatermarkEnabled 打开后前端在全站（含问答 PC/移动端）叠加不可交互的
 	// 平铺文本水印。水印文案支持 {username} 占位符，登录后替换为当前用户名。
-	WatermarkEnabled bool   `yaml:"watermark_enabled" json:"watermark_enabled"`
+	WatermarkEnabled bool `yaml:"watermark_enabled" json:"watermark_enabled"`
 	WatermarkText    string `yaml:"watermark_text"    json:"watermark_text"`
+	// ComplexPasswordEnabled 开启后密码必须包含大小写字母、数字和特殊字符。
+	ComplexPasswordEnabled bool `yaml:"complex_password_enabled" json:"complex_password_enabled"`
 }
 
 // AuthRegistrationMode constants used by handlers and middleware.
@@ -321,6 +323,7 @@ type OIDCAuthConfig struct {
 	AuthorizationEndpoint string               `yaml:"authorization_endpoint" json:"authorization_endpoint"`
 	TokenEndpoint         string               `yaml:"token_endpoint"         json:"token_endpoint"`
 	UserInfoEndpoint      string               `yaml:"user_info_endpoint"     json:"user_info_endpoint"`
+	JwksURI               string               `yaml:"jwks_uri"               json:"jwks_uri"`
 	Scopes                []string             `yaml:"scopes"                 json:"scopes"`
 	UserInfoMapping       *OIDCUserInfoMapping `yaml:"user_info_mapping"      json:"user_info_mapping"`
 }
@@ -656,6 +659,7 @@ func ValidateConfig(cfg *Config) error {
 			errs = append(errs, fmt.Sprintf("auth.registration_mode must be %q or %q, got %q",
 				AuthRegistrationModeSelfServe, AuthRegistrationModeInviteOnly, mode))
 		}
+
 		tenantMode := strings.TrimSpace(cfg.Auth.DefaultTenantMode)
 		if tenantMode != "" && tenantMode != AuthDefaultTenantModeCreatePersonal && tenantMode != AuthDefaultTenantModeTenantless {
 			errs = append(errs, fmt.Sprintf("auth.default_tenant_mode must be %q or %q, got %q",
@@ -741,6 +745,9 @@ func applyOIDCEnvOverrides(cfg *Config) {
 	}
 	if value := strings.TrimSpace(os.Getenv("OIDC_AUTH_USER_INFO_ENDPOINT")); value != "" {
 		cfg.OIDCAuth.UserInfoEndpoint = value
+	}
+	if value := strings.TrimSpace(os.Getenv("OIDC_AUTH_JWKS_URI")); value != "" {
+		cfg.OIDCAuth.JwksURI = value
 	}
 	if value := strings.TrimSpace(os.Getenv("OIDC_AUTH_SCOPES")); value != "" {
 		cfg.OIDCAuth.Scopes = strings.Fields(strings.ReplaceAll(value, ",", " "))
@@ -858,6 +865,7 @@ func applyAgentEnvOverrides(cfg *Config) {
 //
 // Env overrides (when set and non-empty):
 //   - WEKNORA_AUTH_DEFAULT_TENANT_MODE ("create_personal"/"tenantless")
+//   - WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED (boolean)
 //   - WEKNORA_TENANT_SELF_SERVICE_CREATION_ENABLED (boolean)
 //   - WEKNORA_TENANT_ENABLE_RBAC      ("true"/"false", case-insensitive)
 //   - WEKNORA_TENANT_ENABLE_CROSS_TENANT_ACCESS ("true"/"false", case-insensitive).
@@ -908,6 +916,13 @@ func applyAuthAndTenantDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Auth.RegistrationMode) == "" {
 		cfg.Auth.RegistrationMode = AuthRegistrationModeSelfServe
 	}
+
+	if value := strings.TrimSpace(os.Getenv("WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED")); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Auth.ComplexPasswordEnabled = parsed
+		}
+	}
+
 	if value := strings.TrimSpace(os.Getenv("WEKNORA_AUTH_DEFAULT_TENANT_MODE")); value != "" {
 		cfg.Auth.DefaultTenantMode = value
 	}

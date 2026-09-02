@@ -1110,24 +1110,25 @@ export default {
       fallbackPrompt: 'Fallback Prompt',
       fallbackPromptPlaceholder: 'Leave empty to use default prompt',
       skillsConfig: 'Skills',
-      skillsConfigDesc: 'Choose the sandbox that runs skill scripts, then pick from the workspace catalog. Skills not installed on that sandbox are visible but cannot be enabled until they are installed.',
-      skillsSelection: 'Available skills',
-      skillsSelectionDesc: 'The list comes from the workspace skill catalog. Only skills that are ready on the selected sandbox can be enabled.',
+      skillsConfigDesc: 'Select a running sandbox, then pick skills below. Skills not on that sandbox show Install and can only be checked after they are installed.',
+      skillsSelection: 'Skill list',
+      skillsSelectionDesc: 'All workspace skills are listed here. Installed ones can be used now; others need Install first.',
       skillsAll: 'All',
       skillsSelected: 'Selected',
       skillsNone: 'Disabled',
       selectSkills: 'Select skills',
-      selectSkillsDesc: 'Choose which skills to enable. Uninstalled or not-ready skills cannot be checked.',
-      skillsAllListHint: 'Ready skills on this sandbox will be enabled. Uninstalled ones are not included until you install them.',
-      skillsListSummary: '{ready} ready, {pending} not ready on this sandbox',
-      skillsListSummaryReadyOnly: '{ready} ready',
+      selectSkillsDesc: 'Check the skills this agent should use. Uninstalled skills cannot be checked — click Install on the right first.',
+      skillsAllListHint: 'All only includes skills already installed on this sandbox. Uninstalled skills are not added until you install them.',
+      skillsGroupAvailable: 'Available',
+      skillsGroupUnavailable: 'Unavailable',
       noSkillsAvailable: 'The workspace catalog has no skills yet.',
       skillsNeedSandbox: 'Select a sandbox first.',
       goSandboxSettings: 'Manage sandboxes',
       goSkillSettings: 'Manage skills',
       installToThisSandbox: 'Install onto this sandbox',
       installShort: 'Install',
-      skillNotInstalled: 'Not installed on this sandbox',
+      viewInstallProgress: 'View progress',
+      skillNotInstalled: 'Not installed',
       skillNotReady: 'Not ready yet',
       skillDisabledOnSandbox: 'Disabled on this sandbox',
       sandboxBackend: 'Sandbox',
@@ -1197,6 +1198,10 @@ export default {
         e2b: 'Managed MicroVM service or an E2B-compatible deployment',
         docker: 'Keep a long-lived container per session on this WeKnora host; scripts and files stay in that container',
       },
+      dockerDisabledAlert: 'Docker sandbox is not enabled on this deployment',
+      dockerDisabledHint: 'A local docker.sock is equivalent to root on the host. For a single-machine private install, a system admin can enable it under Settings → System settings → Network security.',
+      dockerDisabledCard: 'Docker sandbox is disabled on this deployment; this config will not create containers',
+      dockerHostRisk: 'Empty or unix:// uses the Docker daemon on the WeKnora host, which is equivalent to root on that machine. Use this only for a private single-node install. Prefer Cube or E2B when multiple workspaces share a host. Remote tcp:// endpoints require a TLS certificate directory.',
       addConfig: 'Add sandbox',
       viewClusterGuide: 'Cluster setup guide',
       configName: 'Config name',
@@ -2216,7 +2221,7 @@ export default {
     subtitle: 'RAG Q&A, ReAct Agent and Wiki — an LLM-powered enterprise knowledge framework',
     registerSubtitle: 'Create your account and start using WeKnora',
     emailPlaceholder: 'Enter email address',
-    passwordPlaceholder: 'Enter password (8-32 characters, including letters and numbers)',
+    passwordPlaceholder: 'Enter password',
     confirmPasswordPlaceholder: 'Enter password again',
     usernamePlaceholder: 'Enter username',
     emailRequired: 'Enter email address',
@@ -2225,7 +2230,10 @@ export default {
     passwordMinLength: 'Password must be at least 8 characters',
     passwordMaxLength: 'Password cannot exceed 32 characters',
     passwordMustContainLetter: 'Password must contain letters',
+    passwordMustContainLowercaseLetter: 'Password must contain lowercase letters',
+    passwordMustContainUppercaseLetter: 'Password must contain uppercase letters',
     passwordMustContainNumber: 'Password must contain numbers',
+    passwordMustContainSpecialChar: 'Password must contain special characters: {specialChars}',
     usernameRequired: 'Enter username',
     usernameMinLength: 'Username must be at least 2 characters',
     usernameMaxLength: 'Username cannot exceed 20 characters',
@@ -3723,7 +3731,7 @@ export default {
         security: {
           tab: 'Network security {count}',
           title: 'Network security',
-          description: 'Manage trusted hosts, IPs, and networks that may bypass SSRF protection.'
+          description: 'Manage the SSRF allowlist and whether the Docker sandbox is allowed (a local docker.sock is equivalent to root on the host).'
         },
         other: {
           tab: 'Other {count}',
@@ -3946,15 +3954,20 @@ export default {
         auth: {
           registration_mode: 'Self-service registration mode',
           default_tenant_mode: 'Default workspace provisioning',
+          complex_password_enabled: 'Require complex password'
         },
         ssrf: {
           whitelist: 'SSRF protection allowlist'
+        },
+        sandbox: {
+          docker_enabled: 'Enable Docker sandbox'
         },
         tenant: {
           max_owned_per_user: 'Max workspaces owned per user',
           self_service_creation_enabled: 'Allow self-service workspace creation',
           default_storage_quota_gb: 'Default storage quota for new workspaces (GB)',
-          auto_create_api_key: 'Automatically create an API key for new workspaces'
+          auto_create_api_key: 'Automatically create an API key for new workspaces',
+          auto_accept_invitation: 'Auto-join invited registered users'
         },
         asynq: {
           core_concurrency: 'Guaranteed core parse concurrency',
@@ -3972,15 +3985,20 @@ export default {
         auth: {
           registration_mode: 'Self-service registration mode. self_serve = anyone can register an account; invite_only = public registration is disabled and only Owners/Admins can invite. Takes effect immediately after saving, but use self_serve with care (the public internet will send spam sign-ups).',
           default_tenant_mode: 'Workspace provisioning after public registration. create_personal creates an Owner workspace; tenantless creates only the account until the user accepts an invitation or creates a workspace. Applies to new users only.',
+          complex_password_enabled: 'Whether to require complex passwords. When enabled, passwords must contain uppercase and lowercase letters, numbers, and special characters. Changes take effect immediately and only apply to newly registered users or new password changes/resets. Special characters include {specialChars}'
         },
         ssrf: {
           whitelist: 'SSRF protection allowlist. Accepts entries such as example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1. Takes effect immediately after saving. The SSRF_WHITELIST_EXTRA environment variable is still maintained by the deployer and is not overridden here.'
+        },
+        sandbox: {
+          docker_enabled: 'Allow the Docker sandbox backend. A local docker.sock is equivalent to root on the host, so this stays off by default. Only a system admin can turn it on; the change takes effect immediately. Enable it only on a private single-node install that mounts the daemon socket or uses a TLS-protected remote tcp:// endpoint.'
         },
         tenant: {
           max_owned_per_user: 'Maximum number of workspaces a non-superuser may own via self-service creation. Read on every workspace creation and takes effect immediately after saving. 0 uses the built-in default of 10; a negative value disables the cap entirely (not recommended on public deployments).',
           self_service_creation_enabled: 'Whether non-superusers may create workspaces themselves. When disabled, regular users can only join existing workspaces by invitation; cross-workspace superusers remain exempt. Takes effect immediately.',
           default_storage_quota_gb: 'Default storage quota (GB) assigned when a new workspace is created, covering vectors, originals, text, indexes, and related data. Read only at creation time — changes apply to newly created workspaces only and do not retroactively update existing workspaces. 0 or a negative value uses the built-in default of 10 GB.',
-          auto_create_api_key: 'Automatically creates a full_access API key for a new workspace and returns its plaintext token in the create response. Use only for integrations that depend on the legacy behavior; it is disabled by default and explicit API-key creation is recommended.'
+          auto_create_api_key: 'Automatically creates a full_access API key for a new workspace and returns its plaintext token in the create response. Use only for integrations that depend on the legacy behavior; it is disabled by default and explicit API-key creation is recommended.',
+          auto_accept_invitation: 'When enabled, inviting a registered user by email adds them as a member immediately instead of waiting for inbox confirmation. When off, the invitee must accept from their inbox. Takes effect immediately.'
         },
         asynq: {
           core_concurrency: 'Guaranteed per-process concurrency for document and manual parsing. Core may also borrow the shared elastic pool. Minimum 1; requires a service restart.',
@@ -4010,7 +4028,8 @@ export default {
         confirmBtn: 'Confirm save',
         cancelBtn: 'Cancel',
         emptyValue: '(empty)',
-        bodyAuthRegistrationMode: 'About to change "{label}" to: {value}\n\nIf switched to self_serve, anyone on the public internet can register an account — please confirm this is intended.'
+        bodyAuthRegistrationMode: 'About to change "{label}" to: {value}\n\nIf switched to self_serve, anyone on the public internet can register an account — please confirm this is intended.',
+        bodySandboxDockerEnabled: 'Once on, workspace admins can point a sandbox at the local Docker daemon. A local docker.sock is equivalent to root on the host. Use this only on a private single-node install that mounts the daemon or uses a TLS-protected remote tcp:// endpoint.'
       },
       listConfirm: {
         ssrf: {
@@ -4070,22 +4089,12 @@ export default {
         emailLabel: 'User email',
         emailPlaceholder: 'Enter the email of the user to reset',
         newPasswordLabel: 'New password',
-        newPasswordPlaceholder: '8-32 characters, including letters and numbers',
+        newPasswordPlaceholder: 'Enter new password',
         confirmPasswordLabel: 'Confirm new password',
         confirmPasswordPlaceholder: 'Enter the new password again',
         confirmBtn: 'Confirm reset',
         success: 'Password reset; the user\'s existing sessions were revoked',
         failed: 'Failed to reset password',
-        validation: {
-          emailRequired: 'Enter the user email',
-          emailInvalid: 'Enter a valid email address',
-          passwordRequired: 'Enter a new password',
-          passwordLength: 'Password must be 8-32 characters',
-          passwordLetter: 'Password must contain a letter',
-          passwordNumber: 'Password must contain a number',
-          confirmRequired: 'Enter the new password again',
-          passwordMismatch: 'The passwords do not match'
-        }
       },
       bulkApply: {
         label: 'Apply to all existing workspaces',
@@ -4369,6 +4378,10 @@ export default {
         openrouter: {
           label: 'OpenRouter',
           description: 'openai/gpt-5.2-chat, google/gemini-3-flash-preview, etc.'
+        },
+        litellm: {
+          label: 'LiteLLM',
+          description: 'Self-hosted proxy to 100+ providers (OpenAI, Anthropic, Gemini, Bedrock, etc.). Replace the placeholder URL; loopback hosts need SSRF_WHITELIST.'
         },
         requesty: {
           label: 'Requesty',
@@ -6520,7 +6533,7 @@ export default {
       currentPlaceholder: 'Enter your current password',
       currentRequired: 'Enter your current password',
       newLabel: 'New password',
-      newPlaceholder: '8-32 characters, include letters and numbers',
+      newPlaceholder: 'Enter new password',
       confirmLabel: 'Confirm new password',
       confirmPlaceholder: 'Enter the new password again',
       submit: 'Update password',
