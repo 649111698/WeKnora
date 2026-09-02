@@ -69,6 +69,10 @@ var noAuthAPI = map[string][]string{
 	// before GET to validate Content-Type / Content-Length when rendering
 	// image previews — both verbs must be allowed for image links to work.
 	"/api/v1/files/presigned": {"GET", "HEAD"},
+	// 白标 Logo 公开读取：登录页在鉴权前渲染空间 Logo（与 /auth/config
+	// 同级信任面）。内容由上传时的图片魔数校验限定为光栅图（拒绝 SVG），
+	// 路径只暴露数字空间 ID；HEAD 同样放行，供 IM/浏览器预检。
+	"/api/v1/branding/logo/*": {"GET", "HEAD"},
 }
 
 // 检查请求是否在无需认证的API列表中
