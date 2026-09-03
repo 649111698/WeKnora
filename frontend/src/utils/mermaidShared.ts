@@ -62,6 +62,26 @@ const MERMAID_LIGHT_THEME = {
   critBkgColor: '#fecaca',
   critBorderColor: '#f87171',
   fontSize: '14px',
+  // Categorical chart palette (pie slices, series colors). Without these the
+  // base theme renders every slice in the same muted slate — charts read as
+  // monochrome. AntV-derived hues with adequate light-mode contrast.
+  pie1: '#5B8FF9',
+  pie2: '#61DDAA',
+  pie3: '#F6BD16',
+  pie4: '#F08BB4',
+  pie5: '#7262FD',
+  pie6: '#78D3F8',
+  pie7: '#9661BC',
+  pie8: '#F6903D',
+  pie9: '#008685',
+  pie10: '#E8684A',
+  pie11: '#6DC8EC',
+  pie12: '#A0A6AB',
+  // xychart-beta series palette — mermaid reads xyChart.plotColorPalette from
+  // themeVariables (not top-level config); keep it in sync with the pie slices.
+  xyChart: {
+    plotColorPalette: '#5B8FF9,#61DDAA,#F6BD16,#F08BB4,#7262FD,#78D3F8,#9661BC,#F6903D',
+  },
 }
 
 const MERMAID_DARK_THEME = {
@@ -110,6 +130,23 @@ const MERMAID_DARK_THEME = {
   critBkgColor: '#7f1d1d',
   critBorderColor: '#ef4444',
   fontSize: '14px',
+  // Categorical chart palette, brightened for dark backgrounds.
+  pie1: '#699CFF',
+  pie2: '#7CE8BC',
+  pie3: '#FFD666',
+  pie4: '#FFA9C9',
+  pie5: '#9A8FFF',
+  pie6: '#9BDDFB',
+  pie7: '#B28AD6',
+  pie8: '#FFAA6E',
+  pie9: '#4DBDBA',
+  pie10: '#FF8A6B',
+  pie11: '#93D8F2',
+  pie12: '#B9C0C6',
+  // Brightened xychart-beta series palette for dark backgrounds.
+  xyChart: {
+    plotColorPalette: '#699CFF,#7CE8BC,#FFD666,#FFA9C9,#9A8FFF,#9BDDFB,#B28AD6,#FFAA6E',
+  },
 }
 
 function resolveMermaidThemeVariables() {

@@ -731,6 +731,23 @@ func (s *sessionService) destroyBoundSandbox(ctx context.Context, sessionID stri
 // while still being a reasonable title length in the UI.
 const maxSessionTitleRunes = 100
 
+// isThinkingDisableUnsupportedError reports whether err came from a provider
+// rejecting a "disable thinking" request — e.g. zhipu error 1210 for
+// always-thinking models (“该模型始终思考，不支持关闭思考”). The caller can then
+// retry without the thinking switch and let the model use its default.
+func isThinkingDisableUnsupportedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "1210") ||
+		strings.Contains(msg, "始终思考") ||
+		strings.Contains(msg, "不支持关闭思考") ||
+		strings.Contains(msg, "不支持禁用思考") ||
+		strings.Contains(msg, "does not support disabling thinking") ||
+		strings.Contains(msg, "thinking cannot be disabled")
+}
+
 // sanitizeGeneratedTitle turns a raw title completion into something safe to
 // persist: the reasoning prefix some models emit is dropped, surrounding
 // whitespace is trimmed, and the result is truncated by rune (not byte) so a
@@ -836,6 +853,15 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 		Temperature: 0.3,
 		Thinking:    &thinking,
 	})
+	if err != nil && isThinkingDisableUnsupportedError(err) {
+		// 智谱等"始终思考"模型（如 GLM-5.3-Flash）不接受关闭思考的请求，
+		// 会以 1210 报错。去掉开关重试：标题取 content，reasoning_content
+		// 不会混入结果。
+		logger.Warnf(ctx, "Title model rejects disabled thinking, retrying with the model default: %v", err)
+		response, err = chatModel.Chat(ctx, chatMessages, &chat.ChatOptions{
+			Temperature: 0.3,
+		})
+	}
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		return "", err
