@@ -227,7 +227,7 @@ func (e *AgentEngine) emitCompletionEvent(
 		},
 	})
 
-	logger.Infof(ctx, "Agent execution completed in %d rounds", state.CurrentRound)
+	logger.Infof(ctx, "Agent execution completed in %d rounds (final_answer_len=%d)", state.CurrentRound, len(state.FinalAnswer))
 }
 
 // turnUsage returns the turn's aggregated LLM usage, or nil when no round

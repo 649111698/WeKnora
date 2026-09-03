@@ -645,6 +645,19 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 		// h.assistantMessage.Content = data.FinalAnswer
 		h.assistantMessage.IsCompleted = true
 		h.assistantMessage.AgentDurationMs = data.TotalDurationMs
+		logger.GetLogger(h.ctx).Infof(
+			"[answer-forensics] complete: final_answer_len=%d content_before_len=%d segments=%d superseded=%d composed_len=%d",
+			len(data.FinalAnswer), len(h.assistantMessage.Content),
+			len(h.answerSegments), func() int {
+				n := 0
+				for _, seg := range h.answerSegments {
+					if seg.superseded {
+						n++
+					}
+				}
+				return n
+			}(), len(h.finalAnswer),
+		)
 
 		// Update knowledge references if provided
 		if len(data.KnowledgeRefs) > 0 {

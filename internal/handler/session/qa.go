@@ -1075,11 +1075,12 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 				// AgentSteps/Content. Without this, cancelled-ctx makes
 				// GORM skip the write and the agent's intermediate steps
 				// (thinking / tool_call history) are lost on page refresh.
-				updateCtx := context.WithValue(
-					context.WithoutCancel(streamCtx.asyncCtx),
-					types.TenantIDContextKey, reqCtx.session.TenantID,
-				)
-				h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, reqCtx.userMessageID)
+			updateCtx := context.WithValue(
+				context.WithoutCancel(streamCtx.asyncCtx),
+				types.TenantIDContextKey, reqCtx.session.TenantID,
+			)
+			logger.Infof(streamCtx.asyncCtx, "[answer-forensics] persist: content_len=%d", len(streamCtx.assistantMessage.Content))
+			h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, reqCtx.userMessageID)
 				logger.Infof(streamCtx.asyncCtx, "Agent QA service completed for session: %s", sessionID)
 			}
 		}()
