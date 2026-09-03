@@ -288,7 +288,13 @@
     border: 0;
     border-radius: 0;
     background: var(--td-bg-color-container);
-    overflow-x: auto;
+    // Same containment as tables: tall diagrams (long TD flowcharts, deep
+    // genealogies) must scroll inside the block instead of stretching the
+    // answer; wide ones already overflow-x scroll via the inline max-width.
+    overflow: auto;
+    max-height: min(520px, 65vh);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     text-align: center;
     cursor: zoom-in;
 
@@ -331,7 +337,10 @@
     border: 1px solid var(--td-component-stroke);
     border-radius: 10px;
     background: var(--td-bg-color-secondarycontainer);
-    overflow-x: auto;
+    overflow: auto;
+    max-height: min(520px, 65vh);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     text-align: center;
     cursor: zoom-in;
 
@@ -509,11 +518,16 @@
     }
   }
 
+  // Generated tables can carry dozens of data-analysis rows and max-content
+  // columns: without a height cap they stretch the whole answer into an
+  // endless page scroll. Cap the box and scroll inside on both axes instead.
   :deep(.chat-markdown-table) {
     width: fit-content;
     max-width: 100%;
+    max-height: min(520px, 65vh);
     margin: 0.875em 0 1em;
-    overflow-x: auto;
+    overflow: auto;
+    overscroll-behavior: contain;
     border: 1px solid var(--td-component-stroke);
     border-radius: 8px;
     background: var(--td-bg-color-container);
@@ -533,6 +547,15 @@
 
   :deep(table thead) {
     background-color: color-mix(in srgb, var(--td-bg-color-secondarycontainer) 75%, var(--td-bg-color-container));
+  }
+
+  // Pin the header row while scrolling vertically inside the capped
+  // .chat-markdown-table box. th carries its own opaque background above, and
+  // border-collapse: separate keeps cell borders sticking with the header.
+  :deep(table thead th) {
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
 
   :deep(table tbody tr:nth-child(2n)) {
