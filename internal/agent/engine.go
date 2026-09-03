@@ -648,13 +648,11 @@ func (e *AgentEngine) runReActIteration(
 	// This round is non-terminal (it will execute tools and loop again). Any
 	// plain assistant text streamed live to the answer area this round was a
 	// preamble (e.g. "let me search the knowledge base…"), not the final
-	// answer. No explicit retraction signal is emitted: the agent only ends by
-	// stopping naturally with plain text and no tool calls, so the upcoming
-	// tool-call events are themselves the authoritative "that wasn't the final
-	// answer" marker. Both the stream handler and the UI treat any answer text
-	// preceding a tool call in the same stream as a preamble and relocate it
-	// into the steps tree. The preamble is still preserved as this round's
-	// Thought.
+	// answer. streamThinkingToEventBus already emitted the authoritative
+	// round-end supersede marker, so both the stream handler and the UI drop
+	// that text from the final answer; tool-call events in the same stream
+	// additionally relocate it into the steps tree. The preamble is still
+	// preserved as this round's Thought.
 
 	// 3. Act: Execute tool calls
 	e.executeToolCalls(ctx, response, &step, state.CurrentRound, sessionID, assistantMessageID)

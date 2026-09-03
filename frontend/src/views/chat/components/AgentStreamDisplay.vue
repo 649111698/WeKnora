@@ -1371,6 +1371,11 @@ const activeThinkingIds = ref<Set<string>>(new Set());
 // Reactive version number to force template re-evaluation when activeThinkingIds changes
 const activeThinkingVersion = ref(0);
 
+// Set when the user manually collapses a live (trailing) thinking card: they
+// asked not to see the reasoning, so stop auto-expanding every new thinking
+// round for the rest of this stream. Manually expanding one clears it again.
+const thinkingAutoExpandSuppressed = ref(false);
+
 const isThinkingActive = (eventId: string): boolean => {
   // Reference version to create reactive dependency
   void activeThinkingVersion.value;
@@ -1396,8 +1401,12 @@ watch(eventStream, (stream) => {
 
     if (inTrailingThinking && isThinking && id) {
       newActiveIds.add(id);
-      // Auto-expand if not yet known
-      expandedEvents.value.add(id);
+      // Auto-expand if not yet known — unless the user collapsed the live
+      // reasoning themselves; their choice must survive subsequent stream
+      // updates instead of being re-expanded on every chunk.
+      if (!thinkingAutoExpandSuppressed.value) {
+        expandedEvents.value.add(id);
+      }
     } else if (!isThinking) {
       inTrailingThinking = false;
     }
@@ -2087,8 +2096,15 @@ const toggleIntermediateSteps = () => {
 const toggleEvent = (eventId: string) => {
   if (expandedEvents.value.has(eventId)) {
     expandedEvents.value.delete(eventId);
+    // Collapsing a live thinking card means "stop showing me the reasoning":
+    // suppress auto-expansion of later thinking rounds in this stream.
+    if (activeThinkingIds.value.has(eventId)) {
+      thinkingAutoExpandSuppressed.value = true;
+    }
   } else {
     expandedEvents.value.add(eventId);
+    // Manually opening any card re-enables the live auto-expand behavior.
+    thinkingAutoExpandSuppressed.value = false;
   }
 };
 

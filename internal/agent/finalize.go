@@ -151,6 +151,32 @@ Now generate the final answer:`, query, imageRequirement)
 		return err
 	}
 
+	// Safety net: strip any residual <think> blocks that may have leaked through
+	fullAnswer := agenttools.StripThinkBlocks(llmResult.Content)
+	// A "successful" synthesis can still come back empty: always-thinking
+	// models with a tight completion budget can spend the entire allowance on
+	// reasoning and return no content at all. Persisting the turn as an empty
+	// answer after the user waited through every round reads as a silent
+	// failure — emit an explicit fallback instead (before the Done marker so
+	// the segment ordering stays content-then-done). A cancelled context
+	// (user pressed stop) keeps its empty/partial result untouched.
+	if fullAnswer == "" && ctx.Err() == nil {
+		logger.Warn(ctx, "[Agent][FinalAnswer] Synthesis returned empty content, emitting fallback")
+		common.PipelineWarn(ctx, "Agent", "final_answer_empty_fallback", map[string]interface{}{
+			"session_id": sessionID,
+		})
+		fullAnswer = "Sorry, I was unable to generate a complete answer within the output limit. Please try again."
+		e.eventBus.Emit(ctx, event.Event{
+			ID:        answerID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: sessionID,
+			Data: event.AgentFinalAnswerData{
+				Content: fullAnswer,
+				Done:    false,
+			},
+		})
+	}
+
 	if !answerDoneEmitted {
 		e.eventBus.Emit(ctx, event.Event{
 			ID:        answerID,
@@ -169,8 +195,6 @@ Now generate the final answer:`, query, imageRequirement)
 		state.TurnUsage.Accumulate(*llmResult.Usage)
 	}
 
-	// Safety net: strip any residual <think> blocks that may have leaked through
-	fullAnswer := agenttools.StripThinkBlocks(llmResult.Content)
 	logger.Infof(ctx, "[Agent][FinalAnswer] Final answer generated: %d characters", len(fullAnswer))
 	common.PipelineInfo(ctx, "Agent", "final_answer_done", map[string]interface{}{
 		"session_id": sessionID,

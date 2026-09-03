@@ -378,7 +378,17 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	// land AFTER the round's tool-call deltas escape that retraction. Emit
 	// an authoritative supersede at round end so the preamble can never
 	// survive into the final answer (and duplicate it).
-	if len(llmResult.ToolCalls) > 0 {
+	//
+	// A round cut off mid-answer (finish_reason=length) without tool calls is
+	// equally non-terminal — analyzeResponse keeps the loop running and the
+	// model re-answers next round — so its streamed draft must be retracted
+	// too, or consecutive truncated drafts concatenate in the live answer
+	// area (the user saw the same table/answer repeated two or three times).
+	// content_filter with no tool calls is the one non-natural finish that is
+	// terminal (it emits its own answer); it must NOT supersede.
+	roundNonTerminal := len(llmResult.ToolCalls) > 0 ||
+		(finishReason != "content_filter" && !isNaturalStopFinishReason(finishReason))
+	if roundNonTerminal {
 		emittedEventTypes["final_answer_supersede"]++
 		e.eventBus.Emit(ctx, event.Event{
 			ID:        fmt.Sprintf("%s-supersede", answerID),
