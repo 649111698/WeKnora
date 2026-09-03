@@ -178,10 +178,50 @@ async function preloadNodeImages(node: HTMLElement): Promise<void> {
   );
 }
 
+// 导出展开样式（一次性注入）：会话内的表格与图表默认限高（520px/65vh）
+// 并在盒内滚动，html-to-image 截取的是实时 DOM，会把滚动条和被裁掉的
+// 内容一并截进图片/PDF。导出瞬间解除限高与滚动，让内容完整铺开。
+let exportExpansionStylesInjected = false
+function injectExportExpansionStyles() {
+  if (exportExpansionStylesInjected) return
+  exportExpansionStylesInjected = true
+  const style = document.createElement('style')
+  style.textContent = `
+.chat-export-mode .chat-markdown-table{max-height:none!important;max-width:none!important;overflow:visible!important}
+.chat-export-mode .chat-mermaid-block__canvas,.chat-export-mode pre.mermaid{max-height:none!important;overflow:visible!important}
+`
+  document.head.appendChild(style)
+}
+
+// 进入导出模式并返回恢复函数。解除滚动盒限制后，横向超宽的表格会
+// 溢出到回答节点之外，此时按内容把节点临时撑宽，避免截图右缘裁切。
+function expandScrollContainersForExport(node: HTMLElement): () => void {
+  injectExportExpansionStyles()
+  node.classList.add('chat-export-mode')
+  const prevInlineWidth = node.style.width
+  // 读 offsetWidth 触发重排，确保下面的测量基于展开后的布局。
+  const baseWidth = node.offsetWidth
+  const nodeLeft = node.getBoundingClientRect().left
+  let extra = 0
+  node
+    .querySelectorAll<HTMLElement>('.chat-markdown-table, .chat-mermaid-block__canvas, pre.mermaid')
+    .forEach((el) => {
+      extra = Math.max(extra, el.getBoundingClientRect().right - nodeLeft - baseWidth)
+    })
+  if (extra > 1) node.style.width = `${baseWidth + Math.ceil(extra)}px`
+  return () => {
+    node.classList.remove('chat-export-mode')
+    node.style.width = prevInlineWidth
+  }
+}
+
 // 渲染节点为 canvas（截图与 PDF 导出共用；字体嵌入失败时降级重试）。
 // 返回的是未盖水印的原始图，水印由各导出路径自行叠加。
 async function renderNodeToCanvas(node: HTMLElement): Promise<HTMLCanvasElement | null> {
   await preloadNodeImages(node);
+  // html-to-image 克隆时逐元素拷贝实时计算样式，节点必须在捕获期间
+  // 保持展开状态，恢复放在捕获结束后。
+  const restoreExportLayout = expandScrollContainersForExport(node)
   const options = {
     backgroundColor: pageBackground(),
     pixelRatio: 2,
@@ -201,6 +241,8 @@ async function renderNodeToCanvas(node: HTMLElement): Promise<HTMLCanvasElement 
       console.error('[answerExport] render failed:', retryError)
       return null
     }
+  } finally {
+    restoreExportLayout()
   }
 }
 
