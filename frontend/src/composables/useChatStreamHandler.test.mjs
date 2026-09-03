@@ -32,3 +32,8 @@ test('answer events with supersede_prior retract earlier streamed answer segment
   // never render into the final answer.
   assert.match(source, /if \(e\.type === 'answer' && !e\.superseded && e\.content\)/)
 })
+
+test('later tool_call events merge arguments onto the same pending card', () => {
+  assert.match(source, /function mergeToolCallArguments/)
+  assert.match(source, /toolCallEvent\.arguments = mergeToolCallArguments\(toolCallEvent\.arguments, incomingArguments\)/)
+})
