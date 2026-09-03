@@ -56,8 +56,9 @@
                     :title="$t('chat.exportPdf')">
                     <t-icon name="file-pdf" />
                 </t-button>
-                <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge"
-                    :title="$t('agent.addToKnowledgeBase')">
+                <!-- 添加到知识库是贡献者能力：访客（viewer）不可见 -->
+                <t-button v-if="authStore.hasRole('contributor')" size="small" variant="outline" shape="round"
+                    @click.stop="handleAddToKnowledge" :title="$t('agent.addToKnowledgeBase')">
                     <t-icon name="bookmark-add" />
                 </t-button>
                 <!-- Skill artifact download: only shown when this reply's
@@ -132,6 +133,7 @@ import {
 import { useI18n } from 'vue-i18n';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useUIStore } from '@/stores/ui';
+import { useAuthStore } from '@/stores/auth';
 import {
     buildManualMarkdown,
     formatManualTitle,
@@ -171,6 +173,7 @@ const mentionTagIcon = (item) => {
 const emit = defineEmits(['scroll-bottom', 'render-complete-change'])
 const { t } = useI18n()
 const uiStore = useUIStore();
+const authStore = useAuthStore();
 let parentMd = ref()
 let contentWrapperRef = ref<HTMLElement | null>(null)
 const screenshotLoading = ref(false)

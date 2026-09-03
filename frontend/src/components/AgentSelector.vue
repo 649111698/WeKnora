@@ -683,6 +683,14 @@ watch(activeDetail, (detail) => {
   }
 }
 
+// 移动端（与侧边导航同断点）不提供智能体管理入口：聊天输入框的选框
+// 只用于切换智能体，管理动作留给桌面端。
+@media (max-width: 959.98px) {
+  .agent-selector-add {
+    display: none;
+  }
+}
+
 .agent-selector-content {
   flex: 1;
   min-height: 0;

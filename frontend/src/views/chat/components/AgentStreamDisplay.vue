@@ -340,8 +340,9 @@
                   :title="$t('chat.exportPdf')">
                   <t-icon name="file-pdf" />
                 </t-button>
-                <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)"
-                  :title="$t('agent.addToKnowledgeBase')">
+                <!-- 添加到知识库是贡献者能力：访客（viewer）不可见 -->
+                <t-button v-if="authStore.hasRole('contributor')" size="small" variant="outline" shape="round"
+                  @click.stop="handleAddToKnowledge(event)" :title="$t('agent.addToKnowledgeBase')">
                   <t-icon name="bookmark-add" />
                 </t-button>
                 <!-- Skill artifact download: only shown when the persisted
