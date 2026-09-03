@@ -229,6 +229,55 @@ export const renderMermaidToSvg = async (code: string, id?: string): Promise<str
   }
 }
 
+// Mermaid lays out some diagrams (pie titles especially) with near-zero
+// margins around text: the declared viewBox hugs the measured text bounds.
+// When the runtime font renders slightly wider than the metrics used at
+// layout time (mobile WebViews, CJK fallback fonts), the leftmost glyphs
+// end up outside the viewBox and get clipped — e.g. the first characters of
+// a long pie title. Expand the viewBox (and the inline max-width that
+// carries useMaxWidth sizing) to the actual content bounds so overflow
+// can never clip. Idempotent up to a small tolerance: getBBox jitters by
+// a few tenths of a unit with the viewBox's effective scale, and repeated
+// enhance passes must not churn the attribute for sub-pixel deltas.
+export const fitMermaidSvgViewport = (svg: SVGSVGElement | null): void => {
+  if (!svg) return
+  const vbAttr = svg.getAttribute('viewBox')
+  if (!vbAttr) return
+  const vb = svg.viewBox.baseVal
+  if (!vb || vb.width <= 0 || vb.height <= 0) return
+  let bounds: DOMRect
+  try {
+    bounds = svg.getBBox()
+  } catch {
+    return
+  }
+  if (!bounds || (!bounds.width && !bounds.height)) return
+  const pad = 2
+  const tol = 0.5
+  const minX = Math.min(vb.x, bounds.x - pad)
+  const minY = Math.min(vb.y, bounds.y - pad)
+  const maxX = Math.max(vb.x + vb.width, bounds.x + bounds.width + pad)
+  const maxY = Math.max(vb.y + vb.height, bounds.y + bounds.height + pad)
+  if (
+    minX >= vb.x - tol && minY >= vb.y - tol &&
+    maxX <= vb.x + vb.width + tol && maxY <= vb.y + vb.height + tol
+  ) return
+  svg.setAttribute('viewBox', `${minX} ${minY} ${maxX - minX} ${maxY - minY}`)
+  const style = svg.getAttribute('style') || ''
+  if (/max-width:\s*[\d.]+px/.test(style)) {
+    svg.setAttribute(
+      'style',
+      style.replace(/max-width:\s*[\d.]+px/, `max-width: ${Math.round(maxX - minX)}px`),
+    )
+  }
+}
+
+const fitMermaidSvgsInContainer = (rootElement: HTMLElement) => {
+  rootElement
+    .querySelectorAll<SVGSVGElement>('.chat-mermaid-block__canvas svg, pre.mermaid svg')
+    .forEach(fitMermaidSvgViewport)
+}
+
 function mermaidSourceFromElement(el: HTMLElement): string {
   const codeEl = el.querySelector('code')
   return (codeEl?.textContent ?? el.textContent ?? '').trim()
@@ -274,6 +323,7 @@ export const renderMermaidInContainer = async (
       el.classList.add('mermaid')
       el.innerHTML = svg
       el.setAttribute('data-mermaid', 'true')
+      fitMermaidSvgViewport(el.querySelector('svg'))
     } catch (e) {
       console.error('Mermaid rendering error:', e)
       continue
@@ -288,5 +338,8 @@ export async function enhanceMarkdownContainer(
   attachMarkdownEnhancementListeners(rootElement)
   highlightCodeBlocksInContainer(rootElement)
   await renderMermaidInContainer(rootElement)
+  // Covers SVGs injected via the cached-string path (v-html), which
+  // renderMermaidInContainer skips because they are already rendered.
+  fitMermaidSvgsInContainer(rootElement)
   syncMermaidExpandButtons(rootElement)
 }

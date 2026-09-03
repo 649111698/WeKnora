@@ -496,6 +496,23 @@ func (h *AgentStreamHandler) handleFinalAnswer(ctx context.Context, evt event.Ev
 	if data.IsFallback {
 		h.assistantMessage.IsFallback = true
 	}
+	// Authoritative retraction (end of a tool-calling round, or the start of
+	// the finalize synthesis): drop every streamed segment from the persisted
+	// answer. Content that arrived after a round's tool-call events escaped
+	// the tool-call-driven supersede; without this it duplicates the final
+	// answer in Message.Content.
+	if data.SupersedePrior {
+		supersededAny := false
+		for _, seg := range h.answerSegments {
+			if !seg.superseded && seg.content != "" {
+				seg.superseded = true
+				supersededAny = true
+			}
+		}
+		if supersededAny {
+			h.finalAnswer = h.composeFinalAnswer()
+		}
+	}
 
 	// Calculate duration if done
 	var metadata map[string]interface{}
@@ -515,6 +532,9 @@ func (h *AgentStreamHandler) handleFinalAnswer(ctx context.Context, evt event.Ev
 	}
 	if data.IsFallback {
 		metadata["is_fallback"] = true
+	}
+	if data.SupersedePrior {
+		metadata["supersede_prior"] = true
 	}
 	h.mu.Unlock()
 

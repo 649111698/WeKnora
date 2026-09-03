@@ -807,6 +807,23 @@ export function useChatStreamHandler(options: UseChatStreamHandlerOptions) {
         const eventMap = message._eventMap as Map<string, ChatMessage>
         const stream = message.agentEventStream as ChatMessage[]
 
+        // Authoritative retraction from the backend (end of a tool-calling
+        // round / start of the finalize synthesis): every streamed answer
+        // segment so far was a preamble and must not survive into the final
+        // answer. Preamble content that arrived after the round's tool-call
+        // events escapes the tool_call-driven retraction below and would
+        // otherwise duplicate the answer.
+        if (dataPayload?.supersede_prior) {
+          for (const ev of stream) {
+            if (ev.type === 'answer' && !ev.superseded && ev.content && String(ev.content).trim()) {
+              ev.superseded = true
+              ev.done = true
+            }
+          }
+          message.content = recomposeAgentAnswer(message)
+          fullContent.value = String(message.content || '')
+        }
+
         let answerEvent = eventId
           ? eventMap.get(eventId)
           : stream.find((e) => e.type === 'answer' && !e.event_id)

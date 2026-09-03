@@ -371,6 +371,24 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	if llmResult.Usage != nil {
 		resp.Usage = *llmResult.Usage
 	}
+
+	// A round that requests tool calls is not terminal: anything it streamed
+	// into the answer area was a preamble. The frontend retracts streamed
+	// answer text when a tool_call event arrives, but content deltas that
+	// land AFTER the round's tool-call deltas escape that retraction. Emit
+	// an authoritative supersede at round end so the preamble can never
+	// survive into the final answer (and duplicate it).
+	if len(llmResult.ToolCalls) > 0 {
+		emittedEventTypes["final_answer_supersede"]++
+		e.eventBus.Emit(ctx, event.Event{
+			ID:        fmt.Sprintf("%s-supersede", answerID),
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: sessionID,
+			Data: event.AgentFinalAnswerData{
+				SupersedePrior: true,
+			},
+		})
+	}
 	return resp, nil
 }
 

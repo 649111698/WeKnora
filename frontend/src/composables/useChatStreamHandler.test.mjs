@@ -11,3 +11,24 @@ test('failed tool results keep stdout/output instead of replacing it with the sh
     /toolCallEvent\.output = success\s*\?[\s\S]*dataPayload\.error/,
   )
 })
+
+test('answer events with supersede_prior retract earlier streamed answer segments', () => {
+  // The flag handler must run before the incoming event is appended and
+  // must reuse the same retraction as the tool_call path (superseded + done).
+  const answerStart = source.indexOf("case 'answer':")
+  const answerCase = source.slice(answerStart, source.indexOf("case '", answerStart + 10))
+  assert.match(answerCase, /dataPayload\?\.supersede_prior/, 'answer case must check the flag')
+  assert.match(
+    answerCase,
+    /ev\.superseded = true\s*\n\s*ev\.done = true/,
+    'retraction must mark events superseded and done',
+  )
+  assert.match(
+    answerCase,
+    /message\.content = recomposeAgentAnswer\(message\)/,
+    'message content must be recomposed after retraction',
+  )
+  // recompose must keep skipping superseded segments, so retracted preambles
+  // never render into the final answer.
+  assert.match(source, /if \(e\.type === 'answer' && !e\.superseded && e\.content\)/)
+})

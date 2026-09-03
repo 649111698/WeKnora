@@ -195,6 +195,13 @@ type AgentFinalAnswerData struct {
 	Content    string `json:"content"`
 	Done       bool   `json:"done"`
 	IsFallback bool   `json:"is_fallback,omitempty"` // True when response is a fallback (no knowledge base match)
+	// SupersedePrior retracts every answer segment streamed so far. Rounds
+	// that turn out to call tools narrate into the answer area (optimistic
+	// rendering), and content that arrives after the round's tool-call
+	// events escapes the tool-call-driven retraction; the final synthesis
+	// would then append a second/third copy. Emitted at the end of any
+	// tool-calling round and right before the finalize synthesis.
+	SupersedePrior bool `json:"supersede_prior,omitempty"`
 }
 
 // AgentReflectionData represents agent reflection data

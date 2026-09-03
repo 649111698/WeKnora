@@ -97,6 +97,20 @@ Now generate the final answer:`, query, imageRequirement)
 	logger.Debugf(ctx, "[Agent][FinalAnswer] AnswerID: %s", answerID)
 	answerDoneEmitted := false
 
+	// The synthesis below is a complete replacement answer. Retract every
+	// answer segment streamed by earlier rounds first — preamble text that
+	// escaped the per-round supersede (content arriving after a round's
+	// tool-call events) would otherwise be concatenated before the fresh
+	// answer and render it twice.
+	e.eventBus.Emit(ctx, event.Event{
+		ID:        fmt.Sprintf("%s-supersede", answerID),
+		Type:      event.EventAgentFinalAnswer,
+		SessionID: sessionID,
+		Data: event.AgentFinalAnswerData{
+			SupersedePrior: true,
+		},
+	})
+
 	budget := e.getCompletionTokenBudget()
 	llmResult, err := e.streamLLMToEventBus(
 		ctx,

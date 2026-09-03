@@ -11,7 +11,7 @@ import 'katex/dist/katex.min.css';
 import { useI18n } from 'vue-i18n';
 import { sanitizeHTML, sanitizeMarkdownHTML, safeMarkdownToHTML } from '@/utils/security';
 import { openMermaidFullscreen } from '@/utils/mermaidViewer';
-import { renderMermaidToSvg } from '@/utils/mermaidShared';
+import { fitMermaidSvgViewport, renderMermaidToSvg } from '@/utils/mermaidShared';
 import {
   FILE_PREVIEW_SNIFF_BYTES,
   getHighlightLang as resolveHighlightLang,
@@ -51,6 +51,7 @@ const highlightedCode = ref('');
 const markdownHtml = ref('');
 const excelHtml = ref('');
 const mermaidSvg = ref('');
+const mermaidBodyEl = ref<HTMLElement | null>(null);
 const htmlViewMode = ref<'render' | 'source'>('render');
 const pptxData = shallowRef<ArrayBuffer | null>(null);
 const docxContainer = ref<HTMLElement | null>(null);
@@ -256,6 +257,8 @@ async function renderMermaid(blob: Blob) {
   const svg = await renderMermaidToSvg(text, `file-preview-mermaid-${Date.now()}`);
   if (svg) {
     mermaidSvg.value = sanitizeMarkdownHTML(svg);
+    await nextTick();
+    fitMermaidSvgViewport(mermaidBodyEl.value?.querySelector('svg') ?? null);
     return;
   }
   previewType.value = 'text';
@@ -483,7 +486,7 @@ onUnmounted(() => {
 
     <!-- Mermaid -->
     <div v-else-if="previewType === 'mermaid' && mermaidSvg" class="preview-mermaid" @click="openMermaid">
-      <div class="mermaid-body" v-html="mermaidSvg" />
+      <div ref="mermaidBodyEl" class="mermaid-body" v-html="mermaidSvg" />
     </div>
 
     <!-- Audio -->

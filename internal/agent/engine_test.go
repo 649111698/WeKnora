@@ -650,10 +650,13 @@ func TestStreamFinalAnswerToEventBus_EmitsDoneWhenProviderEndsWithEmptyChunk(t *
 	err := engine.streamFinalAnswerToEventBus(context.Background(), "test query", state, "sess-1")
 
 	require.NoError(t, err)
-	require.Len(t, finalAnswerEvents, 2)
-	assert.False(t, finalAnswerEvents[0].Done)
-	assert.True(t, finalAnswerEvents[1].Done)
-	assert.Equal(t, "final answer", finalAnswerEvents[0].Content+finalAnswerEvents[1].Content,
+	// Event 0 is the supersede marker that retracts earlier rounds' preambles
+	// before the synthesis streams (see think_supersede_test.go).
+	require.Len(t, finalAnswerEvents, 3)
+	assert.True(t, finalAnswerEvents[0].SupersedePrior)
+	assert.False(t, finalAnswerEvents[1].Done)
+	assert.True(t, finalAnswerEvents[2].Done)
+	assert.Equal(t, "final answer", finalAnswerEvents[1].Content+finalAnswerEvents[2].Content,
 		"a decoder may hold a short suffix until Done to rule out a split model handle")
 	assert.Equal(t, "final answer", state.FinalAnswer)
 }
