@@ -288,15 +288,15 @@
     border: 0;
     border-radius: 0;
     background: var(--td-bg-color-container);
-    // 图表完整展示：不限高、不滚动。超宽图表等比缩到画布宽度内
-    //（!important 压过 mermaid 写在 svg 上的内联 max-width），
-    // 需要看细节时点击放大。
+    // 图表完整展示：不限高、不滚动。宽度由 mermaidShared 的
+    // capMermaidSvgDisplayWidth 写入的内联 width: min(Npx, 100%) 控制
+    //（自然尺寸、不超容器、不拉满整行），这里只兜底。
     text-align: center;
     cursor: zoom-in;
 
     svg {
-      max-width: 100% !important;
-      height: auto !important;
+      max-width: 100%;
+      height: auto;
     }
 
     .node rect,
@@ -337,8 +337,8 @@
     cursor: zoom-in;
 
     svg {
-      max-width: 100% !important;
-      height: auto !important;
+      max-width: 100%;
+      height: auto;
     }
   }
 

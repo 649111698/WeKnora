@@ -312,7 +312,29 @@ export const fitMermaidSvgViewport = (svg: SVGSVGElement | null): void => {
 const fitMermaidSvgsInContainer = (rootElement: HTMLElement) => {
   rootElement
     .querySelectorAll<SVGSVGElement>('.chat-mermaid-block__canvas svg, pre.mermaid svg')
-    .forEach(fitMermaidSvgViewport)
+    .forEach((svg) => {
+      fitMermaidSvgViewport(svg)
+      capMermaidSvgDisplayWidth(svg)
+    })
+}
+
+// Mermaid 的 useMaxWidth 机制会在 svg 上写内联 `max-width: Npx`（N 为
+// 图表自然宽度）。放任内联声明生效，超宽图会溢出容器；用样式表
+// `max-width: 100%` 强压（!important），小于容器的图又会被拉满整行、
+// 显得远大于正文。把内联声明改写成 `width: min(Npx, 100%)` 一并表达
+// "保持自然尺寸"与"不超容器"两个约束。幂等：改写后 style 里不再有
+// max-width 声明，重复增强不会二次处理。
+export const capMermaidSvgDisplayWidth = (svg: SVGSVGElement | null): void => {
+  if (!svg) return
+  const style = svg.getAttribute('style') || ''
+  const m = /max-width:\s*([\d.]+)px/.exec(style)
+  if (!m) return
+  const natural = Math.round(parseFloat(m[1]))
+  if (!(natural > 0)) return
+  svg.setAttribute(
+    'style',
+    style.replace(/max-width:\s*[\d.]+px/, `width: min(${natural}px, 100%)`),
+  )
 }
 
 function mermaidSourceFromElement(el: HTMLElement): string {
@@ -360,7 +382,9 @@ export const renderMermaidInContainer = async (
       el.classList.add('mermaid')
       el.innerHTML = svg
       el.setAttribute('data-mermaid', 'true')
-      fitMermaidSvgViewport(el.querySelector('svg'))
+      const rendered = el.querySelector('svg')
+      fitMermaidSvgViewport(rendered)
+      capMermaidSvgDisplayWidth(rendered)
     } catch (e) {
       console.error('Mermaid rendering error:', e)
       continue

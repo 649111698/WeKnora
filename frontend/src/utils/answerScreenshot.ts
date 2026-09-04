@@ -10,7 +10,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import i18n from '@/i18n'
 import { get } from '@/utils/request'
 import { useAuthStore } from '@/stores/auth'
-import { isUniformRowData, planPageCuts } from '@/utils/answerPdfPagination'
+import { isMostlyUniformRowData, planPageCuts } from '@/utils/answerPdfPagination'
 
 // 导出图四周留白（CSS 像素），截图与 PDF 共用
 const EXPORT_PAD = 24
@@ -286,9 +286,10 @@ export async function exportAnswerScreenshot(node: HTMLElement): Promise<void> {
  * 远好于 data:（微信内核除外，那里可用截图预览替代）。
  */
 
-// 读取源图某一像素行，判定其是否整行同色（切页安全）
+// 读取源图某一像素行，判定其是否可作为切页点：基本同色（允许表格行
+// 间隙里的竖向细边框线离群），有文字/图形则不可切。
 function makeSafeRowProbe(ctx: CanvasRenderingContext2D, width: number): (y: number) => boolean {
-  return (y: number) => isUniformRowData(ctx.getImageData(0, y, width, 1).data)
+  return (y: number) => isMostlyUniformRowData(ctx.getImageData(0, y, width, 1).data)
 }
 
 export async function exportAnswerPDF(node: HTMLElement): Promise<void> {

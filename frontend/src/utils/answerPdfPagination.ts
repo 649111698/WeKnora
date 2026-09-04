@@ -27,6 +27,60 @@ export function isUniformRowData(data: Uint8ClampedArray): boolean {
   return true
 }
 
+// 单行像素"基本同色"判定：以行内主导色为基准，允许极少量离群像素
+// （表格行间隙里贯穿的竖向 1px 边框线），离群占比超过阈值说明行内
+// 有文字/图形，不能作为安全切点。PDF 分页用它探测，使表格能在行间
+// 隙处翻页，而不是把某一行切成上下两半。
+export function isMostlyUniformRowData(
+  data: Uint8ClampedArray,
+  maxOutlierRatio = 0.02
+): boolean {
+  const total = data.length / 4
+  if (!total) return true
+  // 采样估计主导色（每通道量化到 16 级），避免行首像素恰好落在边框线上
+  const counts = new Map<number, number>()
+  const sampleStride = Math.max(1, Math.floor(total / 240))
+  for (let x = 0; x < total; x += sampleStride) {
+    const i = x * 4
+    const key = ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  let dominantKey = 0
+  let dominantCount = -1
+  for (const [key, count] of counts) {
+    if (count > dominantCount) {
+      dominantCount = count
+      dominantKey = key
+    }
+  }
+  // 用主导桶内首个像素的原始值做精确基准，消除量化误差
+  let baseR = data[0]
+  let baseG = data[1]
+  let baseB = data[2]
+  for (let x = 0; x < total; x += sampleStride) {
+    const i = x * 4
+    const key = ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4)
+    if (key === dominantKey) {
+      baseR = data[i]
+      baseG = data[i + 1]
+      baseB = data[i + 2]
+      break
+    }
+  }
+  let outliers = 0
+  for (let x = 0; x < total; x++) {
+    const i = x * 4
+    if (
+      Math.abs(data[i] - baseR) > UNIFORM_TOLERANCE ||
+      Math.abs(data[i + 1] - baseG) > UNIFORM_TOLERANCE ||
+      Math.abs(data[i + 2] - baseB) > UNIFORM_TOLERANCE
+    ) {
+      outliers++
+    }
+  }
+  return outliers / total <= maxOutlierRatio
+}
+
 // 在 (from, to] 内自下而上找连续 band 行都"安全"的切点；找不到返回 null。
 // 从理想页高位置向上回扫，优先取最靠下的安全切点，保证每页尽量填满。
 export function findSafeCut(
