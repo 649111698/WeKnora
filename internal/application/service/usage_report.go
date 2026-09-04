@@ -255,11 +255,11 @@ func (s *usageReportService) BuildUsageReport(ctx context.Context, tenantID uint
 	for _, m := range members {
 		u := users[m.UserID]
 		row := UsageReportRow{
-			UserID:   m.UserID,
-			Username: displayUsername(u),
-			IsWeCom:  IsWeComSyntheticEmail(u.Email),
-			Logins:   logins[m.UserID],
-			Chats:    chats[m.UserID],
+			UserID:     m.UserID,
+			Username:   displayUsername(u),
+			IsWeCom:    IsWeComSyntheticEmail(u.Email),
+			Logins:     logins[m.UserID],
+			Chats:      chats[m.UserID],
 			LastActive: active[m.UserID],
 		}
 		row.Qualified = row.Logins >= usageReportLoginMin && row.Chats >= usageReportChatMin
@@ -277,6 +277,10 @@ func (s *usageReportService) BuildUsageReport(ctx context.Context, tenantID uint
 // lastActive 兜底：无消息的用户显示"从未活跃"。
 
 func displayUsername(u types.User) string {
+	// 姓名优先：日报（文本+图片）都以姓名展示，账号仅兜底。
+	if strings.TrimSpace(u.Name) != "" {
+		return u.Name
+	}
 	if strings.TrimSpace(u.Username) != "" {
 		return u.Username
 	}

@@ -71,6 +71,8 @@ export interface OIDCConfigResponse {
 // 用户注册接口
 export interface RegisterRequest {
   username: string
+  /** 姓名：成员管理与使用日报按姓名展示，注册时必填。 */
+  name: string
   email: string
   password: string
 }
@@ -518,6 +520,7 @@ export interface RegisterByInviteRequest {
   token: string
   email: string
   username: string
+  name: string
   password: string
 }
 

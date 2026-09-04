@@ -85,6 +85,10 @@ type User struct {
 	ID string `json:"id"         gorm:"type:varchar(36);primaryKey"`
 	// Username of the user
 	Username string `json:"username"   gorm:"type:varchar(100);uniqueIndex;not null"`
+	// Real / display name (姓名). Optional at the storage layer so SSO
+	// JIT provisioning that cannot resolve a name still succeeds; the
+	// human-facing surfaces (register, member create) require it.
+	Name string `json:"name" gorm:"type:varchar(100)"`
 	// Email address of the user
 	Email string `json:"email"      gorm:"type:varchar(255);uniqueIndex;not null"`
 	// Hashed password of the user
@@ -195,15 +199,22 @@ type SSOStatusResponse struct {
 }
 
 type OIDCUserInfo struct {
-	Subject  string                 `json:"subject,omitempty"`
-	Username string                 `json:"username,omitempty"`
-	Email    string                 `json:"email,omitempty"`
-	Claims   map[string]interface{} `json:"claims,omitempty"`
+	Subject  string `json:"subject,omitempty"`
+	Username string `json:"username,omitempty"`
+	// Display name from the provider's "name" claim, persisted to
+	// users.name for reports and member management.
+	Name   string                 `json:"name,omitempty"`
+	Email  string                 `json:"email,omitempty"`
+	Claims map[string]interface{} `json:"claims,omitempty"`
 }
 
 // RegisterRequest represents a registration request
 type RegisterRequest struct {
 	Username string `json:"username" binding:"required,min=2,max=50"`
+	// Real / display name. Required by the human-facing register and
+	// member-create handlers; internal SSO/OIDC provisioning may omit
+	// it and backfill later on login.
+	Name     string `json:"name"     binding:"max=100"`
 	Email    string `json:"email"    binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6"`
 
@@ -222,6 +233,7 @@ type RegisterRequest struct {
 // empty string included, is subject to the password policy.
 type AdminCreateUserRequest struct {
 	Username string  `json:"username" binding:"required,min=2,max=50"`
+	Name     string  `json:"name"     binding:"max=100"`
 	Email    string  `json:"email"    binding:"required,email"`
 	Password *string `json:"password"`
 }

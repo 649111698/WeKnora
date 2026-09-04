@@ -274,6 +274,10 @@
                   </div>
                   <t-form ref="createFormRef" :data="createForm" :rules="createFormRules"
                     :label-width="80" class="member-invite-form">
+                    <t-form-item :label="$t('tenantMember.directCreate.nameLabel')" name="name">
+                      <t-input v-model="createForm.name"
+                        :placeholder="$t('tenantMember.directCreate.namePlaceholder')" clearable />
+                    </t-form-item>
                     <t-form-item :label="$t('tenantMember.directCreate.usernameLabel')" name="username">
                       <t-input v-model="createForm.username"
                         :placeholder="$t('tenantMember.directCreate.usernamePlaceholder')" clearable />
@@ -412,6 +416,13 @@
               </template>
               <template #joined_at="{ row }">{{ formatDate(row.joined_at) }}</template>
               <template #actions="{ row }">
+                <t-tooltip
+                  v-if="canManage && row.user_id !== currentUserId"
+                  :content="$t('tenantMember.editName.button')" placement="top">
+                  <t-button shape="square" variant="text" size="small" @click.stop="openNameEdit(row)">
+                    <template #icon><t-icon name="edit" /></template>
+                  </t-button>
+                </t-tooltip>
                 <t-tooltip
                   v-if="canManage && row.user_id !== currentUserId"
                   :content="$t('tenantMember.agentAccess.button')" placement="top">
@@ -610,6 +621,24 @@
         </template>
       </div>
     </t-dialog>
+
+    <!-- 姓名维护：企业微信等 SSO 账号取不到姓名时由管理员补充 -->
+    <t-dialog
+      v-model:visible="nameEditVisible"
+      :header="$t('tenantMember.editName.title', { name: nameEditTargetLabel })"
+      width="420px"
+      :confirm-btn="{ content: t('common.save'), loading: nameEditSaving }"
+      :cancel-btn="t('common.cancel')"
+      @confirm="saveNameEdit">
+      <div class="name-edit-dialog">
+        <t-form ref="nameEditFormRef" :data="nameEditForm" :rules="nameEditRules" label-width="64">
+          <t-form-item :label="$t('tenantMember.editName.label')" name="name">
+            <t-input v-model="nameEditForm.name" :placeholder="$t('tenantMember.editName.placeholder')"
+              clearable :disabled="nameEditSaving" @enter="saveNameEdit" />
+          </t-form-item>
+        </t-form>
+      </div>
+    </t-dialog>
   </div>
 </template>
 
@@ -625,6 +654,7 @@ import {
   listMembers,
   updateMemberRole,
   updateMemberAgentAccess,
+  updateMemberProfile,
   getMemberAgentDefaults,
   updateMemberAgentDefaults,
   removeMember,
@@ -692,7 +722,7 @@ const invitationsPage = ref(1)
 const invitationsPageSize = ref(20)
 
 /** 历次分页载荷里见过的成员展示字段，补齐审计表里不在当前页的 user id */
-const memberDisplayByUserId = reactive<Record<string, { username?: string; email?: string }>>({})
+const memberDisplayByUserId = reactive<Record<string, { username?: string; email?: string; name?: string }>>({})
 
 // Pending invitations live alongside members but in a distinct section
 // at the top of the Members tab — they're "people we've asked to
@@ -823,6 +853,55 @@ async function saveAgentAccess() {
   }
 }
 
+// --- 姓名维护（editName） ----------------------------------------------
+// 企业微信等 SSO 开的账号在通讯录权限缺失时 users.name 为空，管理员在
+// 这里手工补充；成员管理与使用日报展示均以姓名为准。
+const nameEditVisible = ref(false)
+const nameEditSaving = ref(false)
+const nameEditTarget = ref<TenantMember | null>(null)
+const nameEditFormRef = ref<any>(null)
+const nameEditForm = reactive({ name: '' })
+const nameEditRules = {
+  name: [
+    { required: true, message: t('tenantMember.editName.required'), trigger: 'blur' },
+    { min: 2, max: 50, message: t('tenantMember.editName.required'), trigger: 'blur' },
+  ],
+}
+
+const nameEditTargetLabel = computed(() =>
+  nameEditTarget.value ? memberPrimary(nameEditTarget.value) : '',
+)
+
+function openNameEdit(row: TenantMember) {
+  nameEditTarget.value = row
+  nameEditForm.name = row.name?.trim() || ''
+  nameEditVisible.value = true
+}
+
+async function saveNameEdit() {
+  const target = nameEditTarget.value
+  if (!target || !activeTenantId.value) return
+  const valid = await nameEditFormRef.value?.validate?.()
+  if (valid !== true) return
+  nameEditSaving.value = true
+  try {
+    const resp = await updateMemberProfile(activeTenantId.value, target.user_id, nameEditForm.name.trim())
+    if (resp.success) {
+      // 就地更新当前页行数据，避免整页刷新
+      const row = members.value.find((m) => m.user_id === target.user_id)
+      if (row) row.name = nameEditForm.name.trim()
+      nameEditVisible.value = false
+      MessagePlugin.success(t('tenantMember.editName.saved'))
+    } else {
+      MessagePlugin.error(resp.message || t('tenantMember.editName.saveFailed'))
+    }
+  } catch (err: any) {
+    MessagePlugin.error(err?.message || t('tenantMember.editName.saveFailed'))
+  } finally {
+    nameEditSaving.value = false
+  }
+}
+
 // --- 新成员默认可访问的智能体（租户级 default_member_agent_ids） ---
 // null = 未设默认（新成员不限制）；数组 = 新成员加入时复制为允许列表。
 // 仅影响之后加入的非 Owner 成员，已存在成员不会被回填。
@@ -950,14 +1029,19 @@ const columns = computed(() => [
   { colKey: 'member', title: t('tenantMember.columns.member'), ellipsis: true, minWidth: 132 },
   { colKey: 'role', title: t('tenantMember.columns.role'), width: 128 },
   { colKey: 'joined_at', title: t('tenantMember.columns.joinedAt'), width: 154 },
-  { colKey: 'actions', title: t('tenantMember.columns.operations'), width: 112, align: 'left' },
+  { colKey: 'actions', title: t('tenantMember.columns.operations'), width: 148, align: 'left' },
 ])
 
-function memberPrimary(row: { username?: string; email?: string }) {
-  return row.username?.trim() || row.email?.trim() || '—'
+function memberPrimary(row: { name?: string; username?: string; email?: string }) {
+  return row.name?.trim() || row.username?.trim() || row.email?.trim() || '—'
 }
 
-function memberSecondary(row: { username?: string; email?: string }) {
+function memberSecondary(row: { name?: string; username?: string; email?: string }) {
+  // 有姓名时副行展示账号（用户名/邮箱），否则维持原来的邮箱副行。
+  const realName = row.name?.trim()
+  if (realName) {
+    return row.username?.trim() || row.email?.trim() || ''
+  }
   const name = row.username?.trim()
   const mail = row.email?.trim()
   if (name && mail) return mail
@@ -1013,7 +1097,7 @@ function formatDate(s: string | undefined): string {
 
 function rememberMembersForAudit(rows: TenantMember[]) {
   for (const m of rows) {
-    memberDisplayByUserId[m.user_id] = { username: m.username, email: m.email }
+    memberDisplayByUserId[m.user_id] = { username: m.username, email: m.email, name: m.name }
   }
 }
 
@@ -1280,9 +1364,11 @@ function formatAuditAction(action: AuditAction): string {
 // 再退到历次分页积累的 memberDisplayByUserId，最后是原始 id。
 function actorDisplayName(userId: string): string {
   const cur = members.value.find((x) => x.user_id === userId)
+  if (cur?.name?.trim()) return cur.name.trim()
   if (cur?.username?.trim()) return cur.username.trim()
   if (cur?.email?.trim()) return cur.email.trim()
   const memo = memberDisplayByUserId[userId]
+  if (memo?.name?.trim()) return memo.name!.trim()
   if (memo?.username?.trim()) return memo.username!.trim()
   if (memo?.email?.trim()) return memo.email!.trim()
   return userId
@@ -1540,6 +1626,7 @@ const createPopupVisible = ref(false)
 const creating = ref(false)
 const createFormRef = ref<any>(null)
 const createForm = reactive({
+  name: '',
   username: '',
   email: '',
   password: '',
@@ -1552,6 +1639,10 @@ const createRoleOptions = computed(() =>
 )
 
 const createFormRules = {
+  name: [
+    { required: true, message: t('tenantMember.directCreate.nameRequired'), trigger: 'blur' },
+    { min: 2, max: 50, message: t('tenantMember.directCreate.nameRequired'), trigger: 'blur' },
+  ],
   username: [
     { required: true, message: t('tenantMember.directCreate.usernameRequired'), trigger: 'blur' },
     { min: 2, max: 50, message: t('tenantMember.directCreate.usernameRequired'), trigger: 'blur' },
@@ -1574,6 +1665,7 @@ const createFormRules = {
 
 watch(createPopupVisible, (open) => {
   if (open) {
+    createForm.name = ''
     createForm.username = ''
     createForm.email = ''
     createForm.password = ''
@@ -1587,6 +1679,7 @@ async function submitCreateMember() {
   creating.value = true
   try {
     const resp = await createMember(activeTenantId.value, {
+      name: createForm.name.trim(),
       username: createForm.username.trim(),
       email: createForm.email.trim(),
       password: createForm.password,

@@ -12,6 +12,8 @@ export interface TenantMember {
   user_id: string
   email: string
   username: string
+  /** 姓名：展示优先于用户名；企业微信等 SSO 账号可能为空待补。 */
+  name?: string
   avatar?: string
   role: TenantRole
   status: TenantMemberStatus
@@ -68,6 +70,7 @@ export interface AddMemberResponse {
 export interface CreateMemberRequest {
   email: string
   username: string
+  name: string
   password: string
   role: TenantRole
 }
@@ -143,6 +146,19 @@ export async function createMember(
     `/api/v1/tenants/${tenantId}/members/create`,
     body,
   )) as unknown as AddMemberResponse
+}
+
+/**
+ * 维护成员姓名（Owner+）。企业微信等 SSO 账号自动取不到姓名时手工补充；
+ * 用户管理与使用日报展示均以姓名为准。
+ * Backend: PUT /tenants/:id/members/:user_id/profile
+ */
+export async function updateMemberProfile(
+  tenantId: number,
+  userId: string,
+  name: string,
+): Promise<SimpleResponse> {
+  return (await put(`/api/v1/tenants/${tenantId}/members/${userId}/profile`, { name })) as unknown as SimpleResponse
 }
 
 /**

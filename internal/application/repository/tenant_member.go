@@ -109,7 +109,7 @@ func (r *tenantMemberRepository) CountFilteredByTenant(
 		like := "%" + escapeLikePattern(search) + "%"
 		err = q.
 			Joins(`INNER JOIN users ON users.id = tenant_members.user_id AND users.deleted_at IS NULL`).
-			Where(`(LOWER(users.email) LIKE LOWER(?) OR LOWER(users.username) LIKE LOWER(?))`, like, like).
+			Where(`(LOWER(users.email) LIKE LOWER(?) OR LOWER(users.username) LIKE LOWER(?) OR LOWER(users.name) LIKE LOWER(?))`, like, like, like).
 			Count(&total).Error
 	}
 	return total, err
@@ -134,7 +134,7 @@ func (r *tenantMemberRepository) ListPagedByTenant(
 		like := "%" + escapeLikePattern(search) + "%"
 		err = q.
 			Joins(`INNER JOIN users ON users.id = tenant_members.user_id AND users.deleted_at IS NULL`).
-			Where(`(LOWER(users.email) LIKE LOWER(?) OR LOWER(users.username) LIKE LOWER(?))`, like, like).
+			Where(`(LOWER(users.email) LIKE LOWER(?) OR LOWER(users.username) LIKE LOWER(?) OR LOWER(users.name) LIKE LOWER(?))`, like, like, like).
 			Find(&members).Error
 	}
 	if err != nil {

@@ -183,6 +183,7 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	user := &types.User{
 		ID:           uuid.New().String(),
 		Username:     req.Username,
+		Name:         req.Name,
 		Email:        req.Email,
 		PasswordHash: string(hashedPassword),
 		TenantID:     0,
@@ -521,6 +522,13 @@ func (s *userService) LoginWithOIDC(
 			return nil, err
 		}
 		isNewUser = true
+	} else if strings.TrimSpace(user.Name) == "" && strings.TrimSpace(userInfo.Name) != "" {
+		// 存量账号补姓名（users.name 为后来新增，老账号登录时回填）。
+		user.Name = strings.TrimSpace(userInfo.Name)
+		user.UpdatedAt = time.Now()
+		if err := s.userRepo.UpdateUser(ctx, user); err != nil {
+			logger.Warnf(ctx, "OIDC login: failed to backfill name for %s: %v", user.ID, err)
+		}
 	}
 
 	if !user.IsActive {
@@ -765,6 +773,7 @@ func (s *userService) AdminCreateUser(
 
 	user, err := s.Register(ctx, &types.RegisterRequest{
 		Username:           strings.TrimSpace(req.Username),
+		Name:               strings.TrimSpace(req.Name),
 		Email:              strings.TrimSpace(req.Email),
 		Password:           password,
 		TenantProvisioning: provisioning,
@@ -1621,11 +1630,13 @@ func (s *userService) resolveOIDCUserInfo(ctx context.Context, cfg *config.OIDCA
 	}
 	info.Username = extractClaimAsString(claims, cfg.UserInfoMapping.Username)
 	info.Email = extractClaimAsString(claims, cfg.UserInfoMapping.Email)
+	// 标准 name claim 单独留存为姓名，用户名回退链保持原状。
+	info.Name = extractClaimAsString(claims, "name")
 	if info.Username == "" {
 		info.Username = extractClaimAsString(claims, "preferred_username")
 	}
 	if info.Username == "" {
-		info.Username = extractClaimAsString(claims, "name")
+		info.Username = info.Name
 	}
 	if info.Username == "" && info.Email != "" {
 		info.Username = strings.Split(info.Email, "@")[0]
@@ -1681,6 +1692,7 @@ func (s *userService) provisionOIDCUser(
 
 	user, err := s.Register(ctx, &types.RegisterRequest{
 		Username:           username,
+		Name:               strings.TrimSpace(info.Name),
 		Email:              info.Email,
 		Password:           randomPassword,
 		TenantProvisioning: provisioning,

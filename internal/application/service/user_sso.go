@@ -619,6 +619,14 @@ func (s *userService) completeSSOLogin(
 		}
 		isNewUser = true
 		logger.Infof(ctx, "[SSO] auto-provisioned %s user %s (%s)", platform, user.ID, email)
+	} else if strings.TrimSpace(user.Name) == "" && strings.TrimSpace(displayName) != "" {
+		// 存量 SSO 账号补姓名：users.name 为后来新增的列，通讯录
+		// 权限补齐后老账号也能在登录时自动回填。
+		user.Name = strings.TrimSpace(displayName)
+		user.UpdatedAt = time.Now()
+		if err := s.userRepo.UpdateUser(ctx, user); err != nil {
+			logger.Warnf(ctx, "[SSO] failed to backfill name for %s: %v", user.ID, err)
+		}
 	}
 
 	if !user.IsActive {
@@ -690,6 +698,7 @@ func (s *userService) provisionSSOUser(
 	}
 	user, err := s.Register(ctx, &types.RegisterRequest{
 		Username:           username,
+		Name:               strings.TrimSpace(displayName),
 		Email:              email,
 		Password:           randomPassword,
 		TenantProvisioning: provisioning,

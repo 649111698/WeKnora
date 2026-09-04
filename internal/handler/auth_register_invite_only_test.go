@@ -71,6 +71,7 @@ func doRegister(t *testing.T, r *gin.Engine, body any) *httptest.ResponseRecorde
 func validRegisterBody() map[string]string {
 	return map[string]string{
 		"username": "alice",
+		"name":     "Alice",
 		"email":    "alice@example.com",
 		"password": "supersecret1",
 	}

@@ -25,11 +25,11 @@ func TestRenderUsageReportImagePreview(t *testing.T) {
 		PrevQualified: 1,
 		PrevMessages:  58,
 		Rows: []UsageReportRow{
-			{Username: "wecom_zhengwei.zhou-pexetech.com", Logins: 3, Chats: 28, Qualified: true, LastActive: now.Add(-2 * time.Hour)},
-			{Username: "wecom_mountain", Logins: 2, Chats: 12, Qualified: true, LastActive: now.Add(-19 * time.Hour)},
-			{Username: "wecom_wangfang", Logins: 1, Chats: 0, Qualified: false, LastActive: now.Add(-26 * time.Hour)},
+			{Username: "周正伟", Logins: 3, Chats: 28, Qualified: true, LastActive: now.Add(-2 * time.Hour)},
+			{Username: "Mountain", Logins: 2, Chats: 12, Qualified: true, LastActive: now.Add(-19 * time.Hour)},
+			{Username: "王芳", Logins: 1, Chats: 0, Qualified: false, LastActive: now.Add(-26 * time.Hour)},
 			{Username: "19952610696", Logins: 0, Chats: 0, Qualified: false, LastActive: time.Time{}},
-			{Username: "wecom_lihua.chen-pexetech.com", Logins: 1, Chats: 1, Qualified: false, LastActive: now.Add(-30 * time.Hour)},
+			{Username: "陈丽华", Logins: 1, Chats: 1, Qualified: false, LastActive: now.Add(-30 * time.Hour)},
 			{Username: "wecom_zhangsan", Logins: 0, Chats: 3, Qualified: false, LastActive: now.Add(-49 * time.Hour)},
 		},
 	}

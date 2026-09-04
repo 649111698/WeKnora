@@ -275,6 +275,11 @@
           <div class="form-content">
             <t-form ref="registerFormRef" :data="registerData" :rules="registerRules" @submit="handleRegister"
               layout="vertical" label-align="top">
+              <t-form-item :label="$t('auth.name')" name="name">
+                <t-input v-model="registerData.name" :placeholder="$t('auth.namePlaceholder')" size="large"
+                  :disabled="loading" />
+              </t-form-item>
+
               <t-form-item :label="$t('auth.username')" name="username">
                 <t-input v-model="registerData.username" :placeholder="$t('auth.usernamePlaceholder')" size="large"
                   :disabled="loading" />
@@ -454,6 +459,7 @@ const formData = reactive<{ [key: string]: any }>({
 
 // Register form data
 const registerData = reactive<{ [key: string]: any }>({
+  name: '',
   username: '',
   email: '',
   password: '',
@@ -475,6 +481,10 @@ const formRules = computed(() => ({
 
 // Register form validation rules
 const registerRules = computed(() => ({
+  name: [
+    { required: true, message: t('auth.nameRequired'), type: 'error' },
+    { min: 2, max: 50, message: t('auth.nameLength'), type: 'error' }
+  ],
   username: [
     { required: true, message: t('auth.usernameRequired'), type: 'error' },
     { min: 2, message: t('auth.usernameMinLength'), type: 'error' },
@@ -741,6 +751,7 @@ const handleRegister = async () => {
     if (inviteToken.value) {
       const response = await registerByInvite({
         token: inviteToken.value,
+        name: registerData.name.trim(),
         username: registerData.username,
         email: registerData.email,
         password: registerData.password,
@@ -758,6 +769,7 @@ const handleRegister = async () => {
     }
 
     const response = await register({
+      name: registerData.name.trim(),
       username: registerData.username,
       email: registerData.email,
       password: registerData.password

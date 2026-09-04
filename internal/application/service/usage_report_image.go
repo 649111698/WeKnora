@@ -247,6 +247,26 @@ func (c *reportCanvas) truncate(s string, maxW int, size float64, bold bool) str
 	return s + "…"
 }
 
+// truncateMiddle 长用户名保留头尾、中间省略，域名后缀等信息不丢。
+func (c *reportCanvas) truncateMiddle(s string, maxW int, size float64, bold bool) string {
+	if c.textWidth(s, size, bold) <= maxW {
+		return s
+	}
+	r := []rune(s)
+	head := len(r) * 3 / 5
+	tail := len(r) / 4
+	for head > 1 && c.textWidth(string(r[:head])+"…"+string(r[len(r)-tail:]), size, bold) > maxW {
+		head--
+		if tail > 1 && c.textWidth(string(r[:head])+"…"+string(r[len(r)-tail:]), size, bold) > maxW {
+			tail--
+		}
+	}
+	if head <= 1 {
+		return c.truncate(s, maxW, size, bold)
+	}
+	return string(r[:head]) + "…" + string(r[len(r)-tail:])
+}
+
 func (c *reportCanvas) fillRect(x, y, w, h int, col reportColor) {
 	if w <= 0 || h <= 0 {
 		return
@@ -357,7 +377,7 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	case strings.HasPrefix(msgDelta, "-"):
 		msgSubCol = icOrange
 	case msgDelta != "持平":
-		msgSubCol = icGreen
+		msgSubCol = icBlue // 蓝色表示消息量变化，避免与达标绿混淆
 	}
 	cv.statTile(bx, y, tileW, icBlue, icBlueBg, "总用户数", fmt.Sprintf("%d", r.TotalUsers), "", icMuted)
 	cv.statTile(bx+tileW+tileGap, y, tileW, icGreen, icGreenBg, "达标用户", fmt.Sprintf("%d", r.Qualified), "达标率 "+pct(r.Qualified, r.TotalUsers), icGreen)
@@ -394,7 +414,7 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	}
 	for i, row := range rows {
 		base := rowY + imgRowH/2 + 10
-		cv.text(tx+10, base, cv.truncate(reportDisplayName(row.Username), 380, 27, false), 27, false, icPrimary)
+		cv.text(tx+10, base, cv.truncateMiddle(reportDisplayName(row.Username), 380, 27, false), 27, false, icPrimary)
 		cv.textCenter(colLogin, base, fmt.Sprintf("%d", row.Logins), 27, false, icSecondary)
 		cv.textCenter(colChat, base, fmt.Sprintf("%d", row.Chats), 27, false, icSecondary)
 		if row.Qualified {
@@ -415,16 +435,21 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	y += tableCardH + 20
 
 	// 5) 小结卡片：达标率进度条 + 环比趋势
+	// 达标率 ≥30% 进度条用绿色，低于则橙色提示改进空间。
+	rateCol := icGreen
+	if ratePermille(r.Qualified, r.TotalUsers) < 300 {
+		rateCol = icOrange
+	}
 	cv.fillRoundRect(bx, y, innerW, summaryH, cardRadius, icCard)
 	cv.text(bx+32, y+52, "整体达标率", 25, false, icSecondary)
-	cv.textRight(bx+innerW-32, y+56, rate, 38, true, icGreen)
+	cv.textRight(bx+innerW-32, y+56, rate, 38, true, rateCol)
 	barY := y + 82
 	barW := innerW - 64
 	cv.fillRoundRect(bx+32, barY, barW, 16, 8, icTrack)
 	perm := ratePermille(r.Qualified, r.TotalUsers)
 	fillW := barW * perm / 1000
 	if fillW > 8 {
-		cv.fillRoundRect(bx+32, barY, fillW, 16, 8, icGreen)
+		cv.fillRoundRect(bx+32, barY, fillW, 16, 8, rateCol)
 	}
 	prevPerm := ratePermille(r.PrevQualified, r.TotalUsers)
 	diffPP := float64(perm-prevPerm) / 10.0

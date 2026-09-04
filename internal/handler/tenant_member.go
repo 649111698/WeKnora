@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -156,6 +157,7 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 		if u, ok := usersByID[m.UserID]; ok && u != nil {
 			row.Email = u.Email
 			row.Username = u.Username
+			row.Name = u.Name
 			row.Avatar = u.Avatar
 		}
 		resp = append(resp, row)
@@ -283,6 +285,7 @@ func writeAddMemberSuccess(c *gin.Context, user *types.User, member *types.Tenan
 			UserID:    member.UserID,
 			Email:     user.Email,
 			Username:  user.Username,
+			Name:      user.Name,
 			Avatar:    user.Avatar,
 			Role:      member.Role,
 			Status:    member.Status,
@@ -444,6 +447,80 @@ func (h *TenantMemberHandler) UpdateMemberAgentAccess(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "allowed_agent_ids": ids})
 }
 
+// updateMemberProfileRequest 维护成员姓名。
+type updateMemberProfileRequest struct {
+	Name string `json:"name" binding:"required,max=100"`
+}
+
+// UpdateMemberProfile godoc
+// @Summary      维护成员姓名
+// @Description
+//
+//	Owner 修改成员的姓名（users.name）。企业微信等 SSO 账号在通讯录
+//	权限缺失时自动取不到姓名，管理员在这里手工补充；成员管理与使用
+//	日报展示均以姓名为准。
+//
+// @Tags         空间成员
+// @Accept       json
+// @Produce      json
+// @Param        id       path  string                       true  "空间 ID"
+// @Param        user_id  path  string                       true  "用户 ID"
+// @Param        request  body  updateMemberProfileRequest   true  "姓名"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      404  {object}  errors.AppError  "成员不存在"
+// @Security     Bearer
+// @Router       /tenants/{id}/members/{user_id}/profile [put]
+func (h *TenantMemberHandler) UpdateMemberProfile(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID, ok := parseTenantIDFromPath(c)
+	if !ok {
+		return
+	}
+	userID := strings.TrimSpace(c.Param("user_id"))
+	if userID == "" {
+		c.Error(apperrors.NewValidationError("user_id is required"))
+		return
+	}
+
+	var req updateMemberProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		c.Error(apperrors.NewValidationError("name is required"))
+		return
+	}
+
+	// 只允许改本空间成员的姓名，避免 Owner 借此改任意用户。
+	member, err := h.memberService.GetMembership(ctx, userID, tenantID)
+	if err != nil || member == nil {
+		c.Error(apperrors.NewNotFoundError("membership not found"))
+		return
+	}
+
+	user, err := h.userService.GetUserByID(ctx, userID)
+	if err != nil || user == nil {
+		c.Error(apperrors.NewNotFoundError("user not found"))
+		return
+	}
+	if user.Name == req.Name {
+		c.JSON(http.StatusOK, gin.H{"success": true, "name": user.Name})
+		return
+	}
+	user.Name = req.Name
+	user.UpdatedAt = time.Now()
+	if err := h.userService.UpdateUser(ctx, user); err != nil {
+		logger.Errorf(ctx, "UpdateMemberProfile failed: user=%s tenant=%d err=%v",
+			userID, tenantID, err)
+		c.Error(apperrors.NewInternalServerError("failed to update member name").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "name": user.Name})
+}
+
 // RemoveMember godoc
 // @Summary      移除空间成员
 // @Description  Owner 将某位成员从当前空间中移除（软删除 tenant_members 行）；不能移除最后一位 Owner
@@ -529,6 +606,7 @@ func (h *TenantMemberHandler) LeaveTenant(c *gin.Context) {
 type createMemberRequest struct {
 	Email    string           `json:"email" binding:"required,email"`
 	Username string           `json:"username" binding:"required,min=2,max=50"`
+	Name     string           `json:"name" binding:"required,max=100"`
 	Password string           `json:"password" binding:"required"`
 	Role     types.TenantRole `json:"role"`
 }
@@ -563,6 +641,7 @@ func (h *TenantMemberHandler) CreateMember(c *gin.Context) {
 	}
 	req.Email = strings.TrimSpace(req.Email)
 	req.Username = strings.TrimSpace(req.Username)
+	req.Name = strings.TrimSpace(req.Name)
 	req.Password = strings.TrimSpace(req.Password)
 
 	if !req.Role.IsValid() {
@@ -594,6 +673,7 @@ func (h *TenantMemberHandler) CreateMember(c *gin.Context) {
 
 	user, err := h.userService.Register(ctx, &types.RegisterRequest{
 		Username:           req.Username,
+		Name:               req.Name,
 		Email:              req.Email,
 		Password:           req.Password,
 		TenantProvisioning: types.TenantProvisioningTenantless,

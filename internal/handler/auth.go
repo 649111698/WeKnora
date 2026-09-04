@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -194,6 +195,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	req.Username = secutils.SanitizeForLog(req.Username)
 	req.Email = secutils.SanitizeForLog(req.Email)
+	req.Name = secutils.SanitizeForLog(strings.TrimSpace(req.Name))
 	// Password is intentionally NOT sanitized: SanitizeForLog replaces
 	// \n, \r, \t and strips other control characters so a string is safe
 	// to write into a log line. Applying it to a real password would
@@ -205,6 +207,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if req.Username == "" || req.Email == "" || req.Password == "" {
 		logger.Error(ctx, "Missing required registration fields")
 		appErr := errors.NewValidationError("Username, email and password are required")
+		c.Error(appErr)
+		return
+	}
+	// 姓名必填：成员管理与日报展示都以姓名为准，注册时就维护。
+	if req.Name == "" {
+		appErr := errors.NewValidationError("Name is required")
+		c.Error(appErr)
+		return
+	}
+	if n := utf8.RuneCountInString(req.Name); n < 2 || n > 50 {
+		appErr := errors.NewValidationError("Name must be 2-50 characters")
 		c.Error(appErr)
 		return
 	}
