@@ -546,6 +546,7 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	// --- 页脚：胶囊行（右侧同排生成时间）+ 居中落款 ---
 	cv.fillRect(x0, y, cw2, 1, icSep)
 	fy := y + 25
+	extraOff := 0
 	{
 		lbl := "整体达标率"
 		lw := cv.textWidth(lbl, 17, false)
@@ -565,17 +566,26 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 		cv.fillRoundRect(cxp, fy, tw2+40, 44, 22, icCompareBg)
 		cv.text(cxp+20, fy+28, trend, 17, false, reportColor{0x1D, 0x3A, 0x5A})
 		gen := "报告生成于 " + now.Format("2006-01-02 15:04")
-		cv.textRight(x0+cw2, fy+28, gen, 16, false, icMuted)
+		// 生成时间与胶囊同行右侧（模板 footer 布局）；宽字体一行放不下
+		// 时换到下一行右对齐，避免与胶囊挤压重叠。
+		genW := cv.textWidth(gen, 16, false)
+		pillsW := pw + 20 + tw2 + 40
+		genBase := fy + 28
+		if pillsW+24+genW > cw2 {
+			genBase = fy + 44 + 12 + 22
+			extraOff = 56
+		}
+		cv.textRight(x0+cw2, genBase, gen, 16, false, icMuted)
 	}
-	cv.fillRect(x0, fy+80, cw2, 1, reportColor{0xF0, 0xF4, 0xFA})
+	cv.fillRect(x0, fy+80+extraOff, cw2, 1, reportColor{0xF0, 0xF4, 0xFA})
 	extra1 := "本报告由 " + reportBrand + " 自动生成 · 如有疑问请联系管理员"
 	extra2 := fmt.Sprintf("© %d %s · 使用汇总日报", now.Year(), reportBrand)
 	e1w := cv.textWidth(extra1, 15, false)
 	e2w := cv.textWidth(extra2, 15, false)
-	cv.text(x0+(cw2-e1w)/2, fy+128, extra1, 15, false, icFooterGray)
-	cv.text(x0+(cw2-e2w)/2, fy+160, extra2, 15, false, icFooterGray)
+	cv.text(x0+(cw2-e1w)/2, fy+128+extraOff, extra1, 15, false, icFooterGray)
+	cv.text(x0+(cw2-e2w)/2, fy+160+extraOff, extra2, 15, false, icFooterGray)
 
-	finalH := fy + 180 + pageMargin
+	finalH := fy + 180 + extraOff + pageMargin
 	if finalH > totalH {
 		finalH = totalH
 	}
