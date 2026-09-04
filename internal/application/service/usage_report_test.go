@@ -1,12 +1,15 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestIsWeComSyntheticEmail(t *testing.T) {
@@ -100,4 +103,38 @@ func TestUsageReportConfigRoundTrip(t *testing.T) {
 	v, err := cfg.Value()
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(string(v.([]byte)), "notify_user_ids"))
+}
+
+func TestBuildUsageReportCountsWeComUsersOnly(t *testing.T) {
+	// 日报只统计企微 SSO 用户：本地账号、飞书等其他渠道账号不进人数与达标考核。
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	assert.NoError(t, err)
+	for _, ddl := range []string{
+		`CREATE TABLE tenants (id INTEGER PRIMARY KEY, name TEXT, usage_report_config TEXT, deleted_at TIMESTAMP)`,
+		`CREATE TABLE tenant_members (tenant_id INTEGER, user_id TEXT, status TEXT, deleted_at TIMESTAMP)`,
+		`CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT, name TEXT, email TEXT, deleted_at TIMESTAMP)`,
+		`CREATE TABLE auth_tokens (user_id TEXT, token_type TEXT, created_at TIMESTAMP)`,
+		`CREATE TABLE sessions (id TEXT PRIMARY KEY, tenant_id INTEGER, user_id TEXT)`,
+		`CREATE TABLE messages (session_id TEXT, role TEXT, created_at TIMESTAMP)`,
+	} {
+		assert.NoError(t, db.Exec(ddl).Error)
+	}
+	assert.NoError(t, db.Exec(`INSERT INTO tenants (id, name) VALUES (10000, '倍智信息')`).Error)
+	for _, u := range []struct{ id, email string }{
+		{"u-wecom", "wecom_Mountain@wecom.sso.weknora.local"},
+		{"u-local", "mountain@pexetech.com"},
+		{"u-feishu", "feishu_open123@feishu.sso.weknora.local"},
+	} {
+		assert.NoError(t, db.Exec(`INSERT INTO users (id, username, email) VALUES (?, ?, ?)`, u.id, u.id, u.email).Error)
+		assert.NoError(t, db.Exec(`INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (10000, ?, 'active')`, u.id).Error)
+	}
+
+	svc := &usageReportService{db: db}
+	r, err := svc.BuildUsageReport(context.Background(), 10000, time.Now())
+	assert.NoError(t, err)
+	assert.Equal(t, 1, r.TotalUsers, "only WeCom SSO users are counted")
+	assert.Len(t, r.Rows, 1)
+	assert.Equal(t, "u-wecom", r.Rows[0].UserID)
+	assert.True(t, r.Rows[0].IsWeCom)
+	assert.Equal(t, 1, r.Qualified+r.Unqualified)
 }

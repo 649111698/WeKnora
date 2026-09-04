@@ -216,6 +216,19 @@ func (s *usageReportService) BuildUsageReport(ctx context.Context, tenantID uint
 		}
 	}
 
+	// 日报只统计企微 SSO 用户：本地账号/其他 SSO 渠道不参与人数与达标考核。
+	wecomMembers := make([]types.TenantMember, 0, len(members))
+	for _, m := range members {
+		if IsWeComSyntheticEmail(users[m.UserID].Email) {
+			wecomMembers = append(wecomMembers, m)
+		}
+	}
+	members = wecomMembers
+	userIDs = userIDs[:0]
+	for _, m := range members {
+		userIDs = append(userIDs, m.UserID)
+	}
+
 	start, end := dayWindow(day)
 	logins, err := s.loginCounts(ctx, userIDs, start, end)
 	if err != nil {
