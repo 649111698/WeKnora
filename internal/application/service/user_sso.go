@@ -342,6 +342,25 @@ func (s *userService) getFeishuIdentity(ctx context.Context, cfg *config.FeishuS
 	if data.OpenID == "" {
 		return "", "", errors.NewUnauthorizedError("Feishu did not return open_id")
 	}
+	// v1 access_token 的 name 字段依赖应用权限，新应用常为空；补一次
+	// user_info（user_access_token 鉴权）尽力取姓名，失败不阻断登录。
+	if strings.TrimSpace(data.Name) == "" && strings.TrimSpace(data.AccessToken) != "" {
+		uiReq, uerr := http.NewRequestWithContext(ctx, http.MethodGet,
+			"https://open.feishu.cn/open-apis/authen/v1/user_info", nil)
+		if uerr == nil {
+			uiReq.Header.Set("Authorization", "Bearer "+data.AccessToken)
+			var ui struct {
+				Code int    `json:"code"`
+				Msg  string `json:"msg"`
+				Data struct {
+					Name string `json:"name"`
+				} `json:"data"`
+			}
+			if uerr := ssoDoJSON(ctx, uiReq, &ui); uerr == nil && ui.Code == 0 {
+				data.Name = ui.Data.Name
+			}
+		}
+	}
 	return data.OpenID, data.Name, nil
 }
 

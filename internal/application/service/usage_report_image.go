@@ -319,9 +319,13 @@ func (c *reportCanvas) statTile(x, y, w int, accent, bg reportColor, label, valu
 	}
 }
 
-// reportDisplayName 明细表里去掉 wecom_ 前缀，长账号更可读。
+// reportDisplayName 明细表里去掉 SSO 平台前缀，长账号更可读（姓名优
+// 先展示，这里只是无姓名时的账号兜底）。
 func reportDisplayName(u string) string {
-	return strings.TrimPrefix(u, "wecom_")
+	for _, p := range []string{"wecom_", "feishu_", "kingdee_", "oidc_"} {
+		u = strings.TrimPrefix(u, p)
+	}
+	return u
 }
 
 var reportWeekdays = map[string]string{
