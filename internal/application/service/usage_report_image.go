@@ -304,18 +304,20 @@ func (c *reportCanvas) fillRoundRect(x, y, w, h, r int, col reportColor) {
 	if rf > float32(h)/2 {
 		rf = float32(h) / 2
 	}
-	xF, yF, wF, hF := float32(x), float32(y), float32(w), float32(h)
+	// 路径用相对坐标（0..w, 0..h）：光栅化窗口与蒙版都是 w×h，
+	// 再由 DrawMask 平移到 (x, y)。此前误用绝对坐标，全部圆角矩形
+	// 被窗口裁切并整体偏移，页面错乱。
 	k := rf * 0.55228475 // 圆弧的四分之一 cubic bezier 常数
 	rast := vector.NewRasterizer(w, h)
-	rast.MoveTo(xF+rf, yF)
-	rast.LineTo(xF+wF-rf, yF)
-	rast.CubeTo(xF+wF-rf+k, yF, xF+wF, yF+rf-k, xF+wF, yF+rf)
-	rast.LineTo(xF+wF, yF+hF-rf)
-	rast.CubeTo(xF+wF, yF+hF-rf+k, xF+wF-rf+k, yF+hF, xF+wF-rf, yF+hF)
-	rast.LineTo(xF+rf, yF+hF)
-	rast.CubeTo(xF+rf-k, yF+hF, xF, yF+hF-rf+k, xF, yF+hF-rf)
-	rast.LineTo(xF, yF+rf)
-	rast.CubeTo(xF, yF+rf-k, xF+rf-k, yF, xF+rf, yF)
+	rast.MoveTo(rf, 0)
+	rast.LineTo(float32(w)-rf, 0)
+	rast.CubeTo(float32(w)-rf+k, 0, float32(w), rf-k, float32(w), rf)
+	rast.LineTo(float32(w), float32(h)-rf)
+	rast.CubeTo(float32(w), float32(h)-rf+k, float32(w)-rf+k, float32(h), float32(w)-rf, float32(h))
+	rast.LineTo(rf, float32(h))
+	rast.CubeTo(rf-k, float32(h), 0, float32(h)-rf+k, 0, float32(h)-rf)
+	rast.LineTo(0, rf)
+	rast.CubeTo(0, rf-k, rf-k, 0, rf, 0)
 	mask := image.NewAlpha(image.Rect(0, 0, w, h))
 	rast.Draw(mask, mask.Bounds(), image.Opaque, image.Point{})
 	draw.DrawMask(c.img, image.Rect(x, y, x+w, y+h),
