@@ -131,10 +131,18 @@ function showScreenshotPreview(dataUrl: string) {
   previewOverlay = overlay
 }
 
+// 导出文件名时间戳：用户可读的 yyyymmdd-HHmmss（中文文件名 + 短横线，
+// 无平台前缀）。
+function formatExportStamp(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+}
+
 function triggerDownload(dataUrl: string) {
   const link = document.createElement('a')
   link.href = dataUrl
-  link.download = `weknora-answer-${Date.now()}.png`
+  link.download = `回答导出-${formatExportStamp()}.png`
   link.click()
 }
 
@@ -327,7 +335,10 @@ export async function exportAnswerPDF(node: HTMLElement): Promise<void> {
           imgH,
           pageSrcH,
           {
-            lookback: Math.floor(pageSrcH * 0.22),
+            // 回扫窗口放大到 65%：饼图/流程图这类整块内容常高 300-500px，
+            // 原窗口（22%）找不到安全切点会硬切图表；放大后切点能移到
+            // 图表上方。minAdvance(30%) 仍保证每页最低内容量。
+            lookback: Math.floor(pageSrcH * 0.65),
             minAdvance: Math.max(8, Math.floor(pageSrcH * 0.3)),
             band: 2,
           },
@@ -364,7 +375,7 @@ export async function exportAnswerPDF(node: HTMLElement): Promise<void> {
       prev = cut
     }
 
-    const fileName = `weknora-answer-${Date.now()}.pdf`
+    const fileName = `回答导出-${formatExportStamp()}.pdf`
     // 移动端优先走系统分享：jsPDF 的 a[download]+blob 在企微/微信内置浏览器
     // 只会打开一个临时预览，用户"看到了"但从未真正落盘，转发出去的自然
     // 不是文件本体（接收方打不开）。Web Share API 直接以 PDF 文件唤起
