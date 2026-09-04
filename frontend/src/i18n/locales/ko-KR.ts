@@ -1,4 +1,28 @@
 export default {
+  usageReport: {
+    navLabel: '사용 리포트',
+    title: '일일 사용 리포트',
+    desc: '매일 09:00 전날 워크스페이스 멤버 사용 현황을 집계합니다(충족 = 로그인 ≥1회 및 대화 ≥2회), 설정에 따라 WeCom 앱 메시지로 발송됩니다.',
+    enable: '일일 리포트 사용',
+    enableHint: '끄면 스케줄러가 이 워크스페이스를 건너뜁니다',
+    pushToWeCom: 'WeCom으로 발송',
+    pushToWeComHint: 'WeCom 자체 앱(SSO) 구성 및 수신자 선택이 필요합니다',
+    recipients: '수신자',
+    recipientsHint: 'WeCom SSO로 개설된 멤버만 앱 메시지를 받을 수 있습니다',
+    recipientsPlaceholder: '알림을 받을 멤버 선택',
+    rule: '충족 기준: 전날 로그인 ≥1회 및 대화 ≥2회. 리포트는 총 사용자/충족/미충족/메시지 지표, 멤버별 상세 및 요약을 포함합니다.',
+    testNow: '지금 테스트 리포트 보내기',
+    testSent: '테스트 리포트가 생성되어 발송되었습니다',
+    testFailed: '테스트 발송 실패',
+    testResultTitle: '{date} 리포트 미리보기',
+    cardTotal: '총 사용자 {n}',
+    cardQualified: '충족 {n}',
+    cardUnqualified: '미충족 {n}',
+    cardMessages: '메시지 {n}',
+    loadFailed: '설정 로드 실패',
+    saveFailed: '저장 실패',
+  },
+
   tenantSSO: {
       navLabel: 'SSO 및 워터마크',
       loginDomain: {

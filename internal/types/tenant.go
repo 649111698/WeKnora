@@ -131,6 +131,9 @@ type Tenant struct {
 	// BrandingConfig tenant-wide white-label appearance (welcome title,
 	// login copy, logo). nil = stock WeKnora texts and logo.
 	BrandingConfig *BrandingConfig `yaml:"branding_config" json:"branding_config,omitempty" gorm:"type:jsonb"`
+	// UsageReportConfig tenant-wide daily usage report (9am WeCom push).
+	// nil = disabled. See internal/types/tenant_usage_report.go.
+	UsageReportConfig *UsageReportConfig `yaml:"usage_report_config" json:"usage_report_config,omitempty" gorm:"type:jsonb"`
 	// DefaultMemberAgentIDs seeds tenant_members.allowed_agent_ids when a
 	// non-Owner member joins (add/create/invite/SSO JIT). nil = no default:
 	// new members stay unrestricted until edited per member. Existing

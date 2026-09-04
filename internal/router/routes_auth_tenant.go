@@ -86,6 +86,11 @@ func RegisterTenantRoutes(
 		g.apiKeyRoute(tenantRoutes, http.MethodGet, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Viewer(), handler.GetTenantKV)
 		g.apiKeyRoute(tenantRoutes, http.MethodPut, "/kv/:key", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Admin(), handler.UpdateTenantKV)
 
+		// 每日使用报告（每天 09:00 企微推送）：Admin+，认证上下文取空间。
+		g.apiKeyRoute(tenantRoutes, http.MethodGet, "/usage-report-config", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Admin(), handler.GetUsageReportConfig)
+		g.apiKeyRoute(tenantRoutes, http.MethodPut, "/usage-report-config", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Admin(), handler.UpdateUsageReportConfig)
+		g.apiKeyRoute(tenantRoutes, http.MethodPost, "/usage-report-config/test", apiKeyManageTenantSettings(apiKeyFullAccess()), g.Admin(), handler.SendTestUsageReport)
+
 		// Per-tenant endpoints share PathTenantMatch at the group level.
 		// Most /tenants/:id/* endpoints stay undeclared for API keys by
 		// default — tenant lifecycle and key/principal management require

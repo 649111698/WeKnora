@@ -202,6 +202,11 @@
                     <TenantSSOSettings />
                   </div>
 
+                  <!-- 每日使用报告（每天 9 点企微推送，Admin 可配置） -->
+                  <div v-if="currentSection === 'usage-report'" class="section">
+                    <UsageReportSettings />
+                  </div>
+
                   <!-- 成员管理 (#1303 PR 3) -->
                   <div v-if="currentSection === 'members'" class="section">
                     <TenantMembers />
@@ -238,6 +243,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import SystemInfo from './SystemInfo.vue'
 import TenantInfo from './TenantInfo.vue'
 import TenantSSOSettings from './TenantSSOSettings.vue'
+import UsageReportSettings from './UsageReportSettings.vue'
 import UserProfile from './UserProfile.vue'
 import GeneralSettings from './GeneralSettings.vue'
 import ModelSettings from './ModelSettings.vue'
@@ -396,6 +402,7 @@ const navItems = computed(() => {
     { key: 'envvars', icon: 'key', label: t('envVarSettings.title') },
     { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
     { key: 'tenant-sso', icon: 'lock-on', label: t('tenantSSO.navLabel') },
+    { key: 'usage-report', icon: 'chart-bubble', label: t('usageReport.navLabel') },
     { key: 'members', icon: 'usergroup', label: t('tenantMember.title') },
     ...integrationItems,
   ]
@@ -424,7 +431,7 @@ const navGroups = computed<NavGroup[]>(() => {
     {
       key: 'workspace',
       label: t('settings.navGroups.workspace'),
-      items: pickItems(['tenant', 'tenant-sso', 'members', 'chathistory', 'memory']),
+      items: pickItems(['tenant', 'tenant-sso', 'usage-report', 'members', 'chathistory', 'memory']),
     },
     {
       key: 'models_runtime',

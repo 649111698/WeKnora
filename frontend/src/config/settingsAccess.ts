@@ -26,6 +26,7 @@ export const SETTINGS_SECTION_MIN_ROLE: Record<string, SettingsRoleKey> = {
   userprofile: 'viewer',
   tenant: 'viewer',
   'tenant-sso': 'admin',
+  'usage-report': 'admin',
   members: 'viewer',
   mymemory: 'viewer',
   memory: 'admin',

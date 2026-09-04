@@ -1,4 +1,27 @@
 export default {
+  usageReport: {
+    navLabel: '使用报告',
+    title: '每日使用报告',
+    desc: '每天 09:00 统计前一天空间成员的使用情况（达标 = 登录 ≥1 次且对话 ≥2 次），按配置推送到企业微信应用消息。',
+    enable: '启用每日报告',
+    enableHint: '关闭后定时任务跳过本空间',
+    pushToWeCom: '推送到企业微信',
+    pushToWeComHint: '需要已配置企业微信自建应用（单点登录）并选择通知人',
+    recipients: '通知人',
+    recipientsHint: '仅企业微信开号的成员能收到应用消息',
+    recipientsPlaceholder: '选择要接收报告的成员',
+    rule: '达标标准：昨天登录次数 ≥1 并且对话次数 ≥2；其他均为未达标。报告包含总用户数/达标/未达标/昨日消息四个指标、用户明细与昨日小结。',
+    testNow: '立即发送测试报告',
+    testSent: '测试报告已生成并推送',
+    testFailed: '测试发送失败',
+    testResultTitle: '{date} 报告预览',
+    cardTotal: '总用户 {n}',
+    cardQualified: '达标 {n}',
+    cardUnqualified: '未达标 {n}',
+    cardMessages: '昨日消息 {n}',
+    loadFailed: '加载配置失败',
+    saveFailed: '保存失败',
+  },
   tenantSSO: {
       navLabel: '单点登录与水印',
       loginDomain: {

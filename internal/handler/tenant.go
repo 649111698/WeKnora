@@ -22,6 +22,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+
+	"github.com/Tencent/WeKnora/internal/application/service"
 )
 
 // TenantHandler implements HTTP request handlers for tenant management
@@ -41,6 +43,8 @@ type TenantHandler struct {
 	systemSettingSvc interfaces.SystemSettingService
 	// modelService validates the pinned chat model in conversation config.
 	modelService interfaces.ModelService
+	// usageReportSvc builds and pushes the daily WeCom usage report.
+	usageReportSvc service.UsageReportService
 }
 
 // NewTenantHandler creates a new tenant handler instance with the provided service
@@ -69,6 +73,7 @@ func NewTenantHandler(
 	config *config.Config,
 	systemSettingSvc interfaces.SystemSettingService,
 	modelService interfaces.ModelService,
+	usageReportSvc service.UsageReportService,
 ) *TenantHandler {
 	return &TenantHandler{
 		service:          service,
@@ -79,6 +84,7 @@ func NewTenantHandler(
 		config:           config,
 		systemSettingSvc: systemSettingSvc,
 		modelService:     modelService,
+		usageReportSvc:   usageReportSvc,
 	}
 }
 

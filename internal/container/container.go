@@ -204,6 +204,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewTenantInvitationService))
 	must(container.Provide(service.NewAuditLogService))
 	must(container.Provide(service.NewAuditLogRetentionRunner))
+	must(container.Provide(service.NewUsageReportService))
+	must(container.Provide(service.NewUsageReportRunner))
 	must(container.Provide(service.NewKnowledgeBaseService))
 	must(container.Provide(service.NewOrganizationService))
 	must(container.Provide(service.NewKBShareService)) // KBShareService must be registered before KnowledgeService and KnowledgeTagService
@@ -358,6 +360,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(startDataSourceScheduler))
 	logger.Debugf(ctx, "[Container] Data source sync framework registered")
 	must(container.Invoke(startAuditLogRetention))
+	must(container.Invoke(startUsageReportRunner))
 	logger.Debugf(ctx, "[Container] Audit log retention runner registered")
 	must(container.Provide(service.NewHousekeepingService))
 	must(container.Invoke(startHousekeepingService))
@@ -1791,6 +1794,17 @@ func startAuditLogRetention(
 ) {
 	runner.Start(context.Background())
 	cleaner.RegisterWithName("AuditLogRetentionRunner", func() error {
+		runner.Stop()
+		return nil
+	})
+}
+
+// startUsageReportRunner 启动每日 09:00 使用报告调度（同审计清理器模式）。
+func startUsageReportRunner(
+	runner *service.UsageReportRunner, cleaner interfaces.ResourceCleaner,
+) {
+	runner.Start(context.Background())
+	cleaner.RegisterWithName("UsageReportRunner", func() error {
 		runner.Stop()
 		return nil
 	})

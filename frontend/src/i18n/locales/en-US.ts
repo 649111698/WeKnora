@@ -1,4 +1,27 @@
 export default {
+  usageReport: {
+    navLabel: 'Usage Report',
+    title: 'Daily Usage Report',
+    desc: 'Every day at 09:00 the workspace member usage of the previous day is summarized (qualified = logged in ≥1 AND ≥2 chats) and pushed to WeCom app messages per configuration.',
+    enable: 'Enable daily report',
+    enableHint: 'The scheduler skips this workspace when off',
+    pushToWeCom: 'Push to WeCom',
+    pushToWeComHint: 'Requires the WeCom self-built app (SSO) and selected recipients',
+    recipients: 'Recipients',
+    recipientsHint: 'Only WeCom SSO members can receive app messages',
+    recipientsPlaceholder: 'Select members to notify',
+    rule: 'Qualified: ≥1 login AND ≥2 chats yesterday. The report shows total/qualified/unqualified/messages, per-member details and a daily summary.',
+    testNow: 'Send test report now',
+    testSent: 'Test report generated and pushed',
+    testFailed: 'Test send failed',
+    testResultTitle: '{date} report preview',
+    cardTotal: 'Total {n}',
+    cardQualified: 'Qualified {n}',
+    cardUnqualified: 'Unqualified {n}',
+    cardMessages: 'Messages {n}',
+    loadFailed: 'Failed to load config',
+    saveFailed: 'Failed to save',
+  },
   tenantSSO: {
       navLabel: 'SSO & Watermark',
       loginDomain: {

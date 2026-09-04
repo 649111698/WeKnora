@@ -358,3 +358,37 @@ export async function searchTenants(params: SearchTenantsParams = {}): Promise<S
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// 每日使用报告（每天 09:00 统计前一天并推送企微应用消息）
+// ---------------------------------------------------------------------------
+
+export interface UsageReportConfig {
+  enabled: boolean
+  push_to_wecom: boolean
+  notify_user_ids?: string[]
+}
+
+export async function getUsageReportConfig(): Promise<UsageReportConfig> {
+  const response = await get('/api/v1/tenants/usage-report-config')
+  return response.data as UsageReportConfig
+}
+
+export async function updateUsageReportConfig(cfg: UsageReportConfig): Promise<UsageReportConfig> {
+  const response = await put('/api/v1/tenants/usage-report-config', cfg)
+  return response.data as UsageReportConfig
+}
+
+export interface UsageReportTestResult {
+  date: string
+  total_users: number
+  qualified: number
+  unqualified: number
+  total_messages: number
+  markdown: string
+}
+
+export async function sendUsageReportTest(): Promise<UsageReportTestResult> {
+  const response = await post('/api/v1/tenants/usage-report-config/test', {})
+  return response.data as UsageReportTestResult
+}
