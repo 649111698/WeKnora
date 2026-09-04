@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -29,35 +30,46 @@ import (
 // 纯文本缺乏层次；把日报绘制成 PNG 通过 media/upload + image 消息发送，
 // 所有客户端显示一致。字体取自运行镜像的 fonts-noto-cjk；缺失或渲染
 // 失败时回退纯文本消息。
+//
+// 视觉规范（与前端卡片语言对齐）：浅灰画布 + 白色圆角卡片分区；深色
+// 头部横幅承载标题与整体达标率；四个统计瓦片用低饱和语义色底（蓝=总量、
+// 绿=达标、橙=未达标、石板=消息）；状态用胶囊徽章；达标率配进度条；
+// 全程不用 emoji——CJK 矢量字体不含彩色 emoji，会渲染成方框。
 
 const (
-	reportImgWidth      = 1000
-	reportImgPad        = 48
-	reportImgCardH      = 132
-	reportImgCardGap    = 20
-	reportImgRowH       = 52
-	reportImgTableHeadH = 58
-	reportImgMaxImgRows = 30
+	imgW          = 1080
+	imgPad        = 48
+	cardRadius    = 20
+	imgTileH      = 170
+	imgRowH       = 56
+	imgTableHeadH = 56
+	imgMaxRows    = 30
 )
 
-type reportColor struct {
-	r, g, b uint8
-}
+type reportColor struct{ r, g, b uint8 }
 
 func (c reportColor) rgba() color.RGBA { return color.RGBA{c.r, c.g, c.b, 255} }
 
 var (
-	rcPrimary     = reportColor{0x1F, 0x29, 0x37}
-	rcSecondary   = reportColor{0x6B, 0x72, 0x80}
-	rcPlaceholder = reportColor{0x9C, 0xA3, 0xAF}
-	rcGreen       = reportColor{0x05, 0x96, 0x69}
-	rcGreenBg     = reportColor{0xEC, 0xFD, 0xF5}
-	rcOrange      = reportColor{0xD9, 0x77, 0x06}
-	rcOrangeBg    = reportColor{0xFF, 0xFB, 0xEB}
-	rcBlue        = reportColor{0x25, 0x63, 0xEB}
-	rcBlueBg      = reportColor{0xEF, 0xF6, 0xFF}
-	rcGrayBg      = reportColor{0xF9, 0xFA, 0xFB}
-	rcBorder      = reportColor{0xE5, 0xE7, 0xEB}
+	icCanvas    = reportColor{0xF6, 0xF7, 0xF9} // 画布底
+	icCard      = reportColor{0xFF, 0xFF, 0xFF} // 卡片底
+	icBanner    = reportColor{0x1E, 0x29, 0x3B} // 头部深色横幅
+	icOnDark    = reportColor{0xFF, 0xFF, 0xFF}
+	icOnDarkSub = reportColor{0x94, 0xA3, 0xB8}
+	icPrimary   = reportColor{0x0F, 0x17, 0x2A}
+	icSecondary = reportColor{0x64, 0x74, 0x8B}
+	icMuted     = reportColor{0x94, 0xA3, 0xB8}
+	icDivider   = reportColor{0xF1, 0xF5, 0xF9}
+	icHeadBg    = reportColor{0xF1, 0xF5, 0xF9}
+	icTrack     = reportColor{0xE2, 0xE8, 0xF0}
+	icBlue      = reportColor{0x25, 0x63, 0xEB}
+	icBlueBg    = reportColor{0xEF, 0xF6, 0xFF}
+	icGreen     = reportColor{0x05, 0x96, 0x69}
+	icGreenBg   = reportColor{0xEC, 0xFD, 0xF5}
+	icOrange    = reportColor{0xD9, 0x77, 0x06}
+	icOrangeBg  = reportColor{0xFF, 0xF7, 0xE8}
+	icSlate     = reportColor{0x33, 0x41, 0x55}
+	icSlateBg   = reportColor{0xF1, 0xF5, 0xF9}
 )
 
 // --- 字体（进程内一次性加载，面按需创建） ---
@@ -69,10 +81,17 @@ var (
 	reportFontsErr  error
 )
 
+// findNotoCJK 定位 CJK 字体；WEKNORA_REPORT_FONT 可指向宿主机上的任意
+// ttc/ttf（本地预览/测试用），生产镜像走默认搜索路径。
 func findNotoCJK(preferBold bool) string {
 	ordered := []string{"NotoSansCJK-Regular.ttc", "NotoSansCJK-Bold.ttc"}
 	if preferBold {
 		ordered = []string{"NotoSansCJK-Bold.ttc", "NotoSansCJK-Regular.ttc"}
+	}
+	if p := strings.TrimSpace(os.Getenv("WEKNORA_REPORT_FONT")); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
 	}
 	roots := []string{
 		"/usr/share/fonts/opentype/noto",
@@ -138,13 +157,10 @@ func loadReportFonts() (*opentype.Font, *opentype.Font, error) {
 
 // reportCanvas 一次绘制的上下文：持有图片与按字号缓存的字体面。
 type reportCanvas struct {
-	img    *image.RGBA
-	reg    *opentype.Font
-	bold   *opentype.Font
-	faces  map[string]font.Face
-	nextY  int
-	sizes  map[float64]fixed.Int26_6
-	metric map[string]fixed.Int26_6
+	img   *image.RGBA
+	reg   *opentype.Font
+	bold  *opentype.Font
+	faces map[string]font.Face
 }
 
 func newReportCanvas(height int) (*reportCanvas, error) {
@@ -155,12 +171,10 @@ func newReportCanvas(height int) (*reportCanvas, error) {
 		return nil, reportFontsErr
 	}
 	return &reportCanvas{
-		img:    image.NewRGBA(image.Rect(0, 0, reportImgWidth, height)),
-		reg:    reportFontReg,
-		bold:   reportFontBold,
-		faces:  map[string]font.Face{},
-		sizes:  map[float64]fixed.Int26_6{},
-		metric: map[string]fixed.Int26_6{},
+		img:   image.NewRGBA(image.Rect(0, 0, imgW, height)),
+		reg:   reportFontReg,
+		bold:  reportFontBold,
+		faces: map[string]font.Face{},
 	}, nil
 }
 
@@ -185,20 +199,6 @@ func (c *reportCanvas) face(size float64, bold bool) (font.Face, error) {
 	}
 	c.faces[key] = f
 	return f, nil
-}
-
-func (c *reportCanvas) lineHeight(size float64, bold bool) int {
-	key := fmt.Sprintf("lh-%v-%v", size, bold)
-	if v, ok := c.metric[key]; ok {
-		return v.Ceil()
-	}
-	f, err := c.face(size, bold)
-	if err != nil {
-		return int(size * 1.6)
-	}
-	v := f.Metrics().Height
-	c.metric[key] = v
-	return v.Ceil()
 }
 
 func (c *reportCanvas) textWidth(s string, size float64, bold bool) int {
@@ -248,148 +248,205 @@ func (c *reportCanvas) truncate(s string, maxW int, size float64, bold bool) str
 }
 
 func (c *reportCanvas) fillRect(x, y, w, h int, col reportColor) {
+	if w <= 0 || h <= 0 {
+		return
+	}
 	draw.Draw(c.img, image.Rect(x, y, x+w, y+h), &image.Uniform{col.rgba()}, image.Point{}, draw.Src)
+}
+
+// fillRoundRect 圆角矩形：三块矩形拼腰身 + 四角逐行扫描四分之一圆。
+func (c *reportCanvas) fillRoundRect(x, y, w, h, r int, col reportColor) {
+	if r > w/2 {
+		r = w / 2
+	}
+	if r > h/2 {
+		r = h / 2
+	}
+	c.fillRect(x+r, y, w-2*r, h, col)
+	c.fillRect(x, y+r, w, h-2*r, col)
+	for j := 0; j < r; j++ {
+		ch := int(math.Sqrt(float64(r*r - j*j)))
+		if ch <= 0 {
+			continue
+		}
+		c.fillRect(x+r-ch, y+j, ch, 1, col)     // 左上
+		c.fillRect(x+w-r, y+j, ch, 1, col)      // 右上
+		c.fillRect(x+r-ch, y+h-1-j, ch, 1, col) // 左下
+		c.fillRect(x+w-r, y+h-1-j, ch, 1, col)  // 右下
+	}
 }
 
 func (c *reportCanvas) hline(x1, x2, y int, col reportColor) {
 	c.fillRect(x1, y, x2-x1, 1, col)
 }
 
-func (c *reportCanvas) vline(x, y1, y2 int, col reportColor) {
-	c.fillRect(x, y1, 1, y2-y1, col)
+// pill 胶囊徽章：低饱和底 + 语义色文字。
+func (c *reportCanvas) pill(cx, cy int, label string, bg, fg reportColor) {
+	tw := c.textWidth(label, 24, true)
+	pw := tw + 44
+	ph := 40
+	c.fillRoundRect(cx-pw/2, cy-ph/2, pw, ph, ph/2, bg)
+	c.textCenter(cx, cy+9, label, 24, true, fg)
 }
 
-// statCard 画一个统计卡：左侧色条 + 标签 + 大数字 + 副文本。
-func (c *reportCanvas) statCard(x, y, w int, accent, bg reportColor, label, value, sub string) {
-	c.fillRect(x, y, w, reportImgCardH, bg)
-	c.fillRect(x, y, 6, reportImgCardH, accent)
-	c.fillRect(x, y, w, 1, rcBorder)
-	c.fillRect(x, y+reportImgCardH-1, w, 1, rcBorder)
-	c.fillRect(x+w-1, y, 1, reportImgCardH, rcBorder)
-
-	lh := c.lineHeight(24, false)
-	c.text(x+24, y+30+lh/2, label, 24, false, rcSecondary)
-	vy := y + 34 + lh + 44
-	c.text(x+24, vy, value, 46, true, accent)
+// statTile 统计瓦片：圆角浅底、顶部标签、大数字、下方副文本，统一左对齐。
+func (c *reportCanvas) statTile(x, y, w int, accent, bg reportColor, label, value, sub string, subCol reportColor) {
+	c.fillRoundRect(x, y, w, imgTileH, cardRadius, bg)
+	c.text(x+26, y+52, label, 24, false, icSecondary)
+	c.text(x+26, y+118, value, 50, true, accent)
 	if sub != "" {
-		c.textRight(x+w-24, vy, sub, 24, false, rcPlaceholder)
+		c.text(x+26, y+152, sub, 22, false, subCol)
 	}
+}
+
+// reportDisplayName 明细表里去掉 wecom_ 前缀，长账号更可读。
+func reportDisplayName(u string) string {
+	return strings.TrimPrefix(u, "wecom_")
+}
+
+var reportWeekdays = map[string]string{
+	"Sunday": "周日", "Monday": "周一", "Tuesday": "周二", "Wednesday": "周三",
+	"Thursday": "周四", "Friday": "周五", "Saturday": "周六",
 }
 
 // renderUsageReportImage 绘制整份日报为 PNG。
 func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
-	weekday := map[string]string{"Sunday": "周日", "Monday": "周一", "Tuesday": "周二", "Wednesday": "周三", "Thursday": "周四", "Friday": "周五", "Saturday": "周六"}[now.Format("Monday")]
-
 	rows := r.Rows
 	hidden := 0
-	if len(rows) > reportImgMaxImgRows {
-		hidden = len(rows) - reportImgMaxImgRows
-		rows = rows[:reportImgMaxImgRows]
+	if len(rows) > imgMaxRows {
+		hidden = len(rows) - imgMaxRows
+		rows = rows[:imgMaxRows]
 	}
 
-	// 预估高度（渲染前需要一个画布尺寸；字体行高按字号的 1.55 估，
-	// 额外 +160px 余量，画完后按实际内容裁剪）。
-	headH := reportImgPad + 56 + 44
-	cardsH := (reportImgCardH*2 + reportImgCardGap) + 28
-	ruleH := 48
-	tableH := reportImgTableHeadH + len(rows)*reportImgRowH + 12
+	bannerH := 150
+	tileGap := 16
+	captionH := 46
+	tableCardH := 24 + imgTableHeadH + len(rows)*imgRowH + 20
 	if hidden > 0 {
-		tableH += 40
+		tableCardH += 46
 	}
-	summaryH := 120 + 20
-	footH := 48 + reportImgPad
-	totalH := headH + cardsH + ruleH + tableH + summaryH + footH + 160
+	summaryH := 164
+	footH := 60
+	totalH := imgPad + bannerH + 20 + imgTileH + 14 + captionH + 18 + tableCardH + 20 + summaryH + 18 + footH + 160
 
 	cv, err := newReportCanvas(totalH)
 	if err != nil {
 		return nil, err
 	}
 	defer cv.close()
-	draw.Draw(cv.img, cv.img.Bounds(), &image.Uniform{color.RGBA{0xFF, 0xFF, 0xFF, 0xFF}}, image.Point{}, draw.Src)
+	draw.Draw(cv.img, cv.img.Bounds(), &image.Uniform{icCanvas.rgba()}, image.Point{}, draw.Src)
 
-	// 标题与日期
-	cv.text(reportImgPad, reportImgPad+50, "📊 "+r.TenantName+" 使用日报", 44, true, rcPrimary)
-	cv.text(reportImgPad, reportImgPad+50+52, fmt.Sprintf("%s（%s）", r.Date, weekday), 26, false, rcSecondary)
+	weekday := reportWeekdays[now.Format("Monday")]
+	innerW := imgW - imgPad*2
+	rate := pct(r.Qualified, r.TotalUsers)
 
-	y := reportImgPad + 56 + 44 + 24
+	// 1) 头部横幅：标题 + 日期，右侧整体达标率
+	bx, by := imgPad, imgPad
+	cv.fillRoundRect(bx, by, innerW, bannerH, cardRadius, icBanner)
+	cv.text(bx+36, by+72, r.TenantName+" · 使用日报", 42, true, icOnDark)
+	cv.text(bx+36, by+118, fmt.Sprintf("%s（%s）", r.Date, weekday), 25, false, icOnDarkSub)
+	cv.textRight(bx+innerW-36, by+76, rate, 50, true, icOnDark)
+	cv.textRight(bx+innerW-36, by+118, "整体达标率", 23, false, icOnDarkSub)
+	y := by + bannerH + 20
 
-	// 2×2 统计卡
-	cardW := (reportImgWidth - reportImgPad*2 - reportImgCardGap) / 2
-	cv.statCard(reportImgPad, y, cardW, rcBlue, rcBlueBg, "总用户数", fmt.Sprintf("%d", r.TotalUsers), "")
-	cv.statCard(reportImgPad+cardW+reportImgCardGap, y, cardW, rcGreen, rcGreenBg, "达标用户", fmt.Sprintf("%d", r.Qualified), pct(r.Qualified, r.TotalUsers))
-	y += reportImgCardH + reportImgCardGap
-	cv.statCard(reportImgPad, y, cardW, rcOrange, rcOrangeBg, "未达标用户", fmt.Sprintf("%d", r.Unqualified), pct(r.Unqualified, r.TotalUsers))
-	cv.statCard(reportImgPad+cardW+reportImgCardGap, y, cardW, rcPrimary, rcGrayBg, "昨日消息总数", fmt.Sprintf("%d", r.TotalMessages), "较前日 "+deltaPercent(r.TotalMessages, r.PrevMessages))
-	y += reportImgCardH + 28
+	// 2) 四联统计瓦片
+	tileW := (innerW - tileGap*3) / 4
+	msgDelta := deltaPercent(r.TotalMessages, r.PrevMessages)
+	msgSubCol := icMuted
+	switch {
+	case strings.HasPrefix(msgDelta, "-"):
+		msgSubCol = icOrange
+	case msgDelta != "持平":
+		msgSubCol = icGreen
+	}
+	cv.statTile(bx, y, tileW, icBlue, icBlueBg, "总用户数", fmt.Sprintf("%d", r.TotalUsers), "", icMuted)
+	cv.statTile(bx+tileW+tileGap, y, tileW, icGreen, icGreenBg, "达标用户", fmt.Sprintf("%d", r.Qualified), "达标率 "+pct(r.Qualified, r.TotalUsers), icGreen)
+	cv.statTile(bx+(tileW+tileGap)*2, y, tileW, icOrange, icOrangeBg, "未达标用户", fmt.Sprintf("%d", r.Unqualified), "未达标率 "+pct(r.Unqualified, r.TotalUsers), icOrange)
+	cv.statTile(bx+(tileW+tileGap)*3, y, tileW, icSlate, icSlateBg, "昨日消息", fmt.Sprintf("%d", r.TotalMessages), "较前日 "+msgDelta, msgSubCol)
+	y += imgTileH + 14
 
-	// 达标标准
-	cv.text(reportImgPad, y+28, "达标标准：登录 ≥1 次 且 对话 ≥2 次", 26, false, rcSecondary)
-	y += ruleH
+	// 3) 达标标准说明
+	cv.text(bx+6, y+32, "达标标准：登录 ≥ 1 次 且 对话 ≥ 2 次", 24, false, icMuted)
+	y += captionH + 18
 
-	// 明细表
-	tableW := reportImgWidth - reportImgPad*2
-	x0, x1 := reportImgPad, reportImgPad+tableW
-	colLogin := x0 + 360
-	colChat := x0 + 480
-	colStatus := x0 + 600
-	cv.fillRect(x0, y, tableW, reportImgTableHeadH, rcGrayBg)
-	hh := reportImgTableHeadH/2 + 14
-	cv.text(x0+20, y+hh, "用户", 26, true, rcSecondary)
-	cv.textCenter((colLogin+colChat)/2, y+hh, "登录", 26, true, rcSecondary)
-	cv.textCenter((colChat+colStatus)/2, y+hh, "对话", 26, true, rcSecondary)
-	cv.textCenter((colStatus+x1)/2, y+hh, "状态", 26, true, rcSecondary)
-	cv.text(x1-260, y+hh, "上次活跃", 26, true, rcSecondary)
-	cv.hline(x0, x1, y+reportImgTableHeadH, rcBorder)
-	rowY := y + reportImgTableHeadH
+	// 4) 明细表卡片
+	cv.fillRoundRect(bx, y, innerW, tableCardH, cardRadius, icCard)
+	tx := bx + 24
+	tw := innerW - 48
+	// 列中心按最坏字形宽度预留：状态胶囊（未达标≈140px）与最长
+	// 时间串（≈200px）之间保持 ≥20px 间隙。
+	colLogin := tx + 428       // 登录列中心
+	colChat := colLogin + 100  // 对话列中心
+	colStatus := colChat + 116 // 状态列中心
+	activeRight := tx + tw     // 上次活跃右缘
+	// 表头（浅色圆角条）
+	cv.fillRoundRect(tx, y+24, tw, imgTableHeadH, 12, icHeadBg)
+	hh := y + 24 + imgTableHeadH/2 + 9
+	cv.text(tx+10, hh, "用户", 25, true, icSecondary)
+	cv.textCenter(colLogin, hh, "登录", 25, true, icSecondary)
+	cv.textCenter(colChat, hh, "对话", 25, true, icSecondary)
+	cv.textCenter(colStatus, hh, "状态", 25, true, icSecondary)
+	cv.textRight(activeRight, hh, "上次活跃", 25, true, icSecondary)
+	rowY := y + 24 + imgTableHeadH + 8
+	if len(rows) == 0 {
+		cv.textCenter(tx+tw/2, rowY+34, "昨日无活跃用户", 26, false, icMuted)
+		rowY += imgRowH
+	}
 	for i, row := range rows {
-		if i%2 == 1 {
-			cv.fillRect(x0, rowY, tableW, reportImgRowH, rcGrayBg)
-		}
-		base := rowY + reportImgRowH/2 + 10
-		cv.text(x0+20, base, cv.truncate(row.Username, 320, 28, false), 28, false, rcPrimary)
-		cv.textCenter((colLogin+colChat)/2, base, fmt.Sprintf("%d", row.Logins), 28, false, rcPrimary)
-		cv.textCenter((colChat+colStatus)/2, base, fmt.Sprintf("%d", row.Chats), 28, false, rcPrimary)
+		base := rowY + imgRowH/2 + 10
+		cv.text(tx+10, base, cv.truncate(reportDisplayName(row.Username), 380, 27, false), 27, false, icPrimary)
+		cv.textCenter(colLogin, base, fmt.Sprintf("%d", row.Logins), 27, false, icSecondary)
+		cv.textCenter(colChat, base, fmt.Sprintf("%d", row.Chats), 27, false, icSecondary)
 		if row.Qualified {
-			cv.textCenter((colStatus+x1)/2, base, "达标", 28, true, rcGreen)
+			cv.pill(colStatus, rowY+imgRowH/2, "达标", icGreenBg, icGreen)
 		} else {
-			cv.textCenter((colStatus+x1)/2, base, "未达标", 28, true, rcOrange)
+			cv.pill(colStatus, rowY+imgRowH/2, "未达标", icOrangeBg, icOrange)
 		}
-		cv.text(x1-260, base, lastActiveText(row.LastActive, now), 26, false, rcSecondary)
-		cv.hline(x0, x1, rowY+reportImgRowH, rcBorder)
-		rowY += reportImgRowH
+		cv.textRight(activeRight, base, lastActiveText(row.LastActive, now), 24, false, icMuted)
+		if i < len(rows)-1 || hidden > 0 {
+			cv.hline(tx+10, activeRight, rowY+imgRowH, icDivider)
+		}
+		rowY += imgRowH
 	}
 	if hidden > 0 {
-		cv.text(x0+20, rowY+34, fmt.Sprintf("…其余 %d 人略", hidden), 26, false, rcPlaceholder)
-		rowY += 44
+		cv.text(tx+10, rowY+34, fmt.Sprintf("其余 %d 人略", hidden), 24, false, icMuted)
+		rowY += 46
 	}
-	y = rowY + 12
+	y += tableCardH + 20
 
-	// 昨日小结（浅色块）
-	cur := ratePermille(r.Qualified, r.TotalUsers)
-	prev := ratePermille(r.PrevQualified, r.TotalUsers)
-	diffPP := float64(cur-prev) / 10.0
-	trend := "➖ 与前日持平"
-	trendCol := rcSecondary
+	// 5) 小结卡片：达标率进度条 + 环比趋势
+	cv.fillRoundRect(bx, y, innerW, summaryH, cardRadius, icCard)
+	cv.text(bx+32, y+52, "整体达标率", 25, false, icSecondary)
+	cv.textRight(bx+innerW-32, y+56, rate, 38, true, icGreen)
+	barY := y + 82
+	barW := innerW - 64
+	cv.fillRoundRect(bx+32, barY, barW, 16, 8, icTrack)
+	perm := ratePermille(r.Qualified, r.TotalUsers)
+	fillW := barW * perm / 1000
+	if fillW > 8 {
+		cv.fillRoundRect(bx+32, barY, fillW, 16, 8, icGreen)
+	}
+	prevPerm := ratePermille(r.PrevQualified, r.TotalUsers)
+	diffPP := float64(perm-prevPerm) / 10.0
+	trend, trendCol := "较前日持平", icSecondary
 	switch {
-	case cur > prev:
-		trend = fmt.Sprintf("📈 趋势向好（较前日 +%.1f 个百分点）", diffPP)
-		trendCol = rcGreen
-	case cur < prev:
-		trend = fmt.Sprintf("📉 有所回落（较前日 %.1f 个百分点）", diffPP)
-		trendCol = rcOrange
+	case perm > prevPerm:
+		trend = fmt.Sprintf("较前日 +%.1f 个百分点，趋势向好", diffPP)
+		trendCol = icGreen
+	case perm < prevPerm:
+		trend = fmt.Sprintf("较前日 %.1f 个百分点，有所回落", diffPP)
+		trendCol = icOrange
 	}
-	cv.fillRect(x0, y, tableW, 104, rcBlueBg)
-	cv.text(x0+24, y+44, fmt.Sprintf("整体达标率 %s", pct(r.Qualified, r.TotalUsers)), 32, true, rcPrimary)
-	cv.text(x0+24, y+84, trend, 26, false, trendCol)
-	y += 104 + 20
+	cv.text(bx+32, y+144, trend, 25, false, trendCol)
+	y += summaryH + 18
 
-	// 页脚
-	cv.text(reportImgPad, y+28, "报告生成："+now.Format("2006-01-02 15:04"), 24, false, rcPlaceholder)
-	finalH := y + 28 + 24
+	// 6) 页脚
+	cv.textCenter(imgW/2, y+34, "报告生成于 "+now.Format("2006-01-02 15:04"), 22, false, icMuted)
+	finalH := y + footH
 	if finalH > totalH {
 		finalH = totalH
 	}
-	cropped := cv.img.SubImage(image.Rect(0, 0, reportImgWidth, finalH)).(*image.RGBA)
+	cropped := cv.img.SubImage(image.Rect(0, 0, imgW, finalH)).(*image.RGBA)
 
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, cropped); err != nil {
@@ -478,7 +535,6 @@ func (s *usageReportService) sendWeComImage(ctx context.Context, tenant *types.T
 	}
 	return nil
 }
-
 
 // pushWeComImage 上传图片并发送（media_id 三天有效，即时发送无虞）。
 func (s *usageReportService) pushWeComImage(ctx context.Context, tenant *types.Tenant, recipients []string, pngBytes []byte) error {
