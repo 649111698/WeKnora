@@ -60,8 +60,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
         ./scripts/build-anydoc-lib.sh; \
     fi
 
-# Build the application with version info
+# Build the application with version info. The Go build cache mount lets
+# repeated CI builds compile incrementally instead of rebuilding the whole
+# module graph every time (BuildKit keeps cache mounts across builds).
 RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
     if [ "$WITH_ANYDOC" = "1" ]; then \
         make build-prod GO_BUILD_TAGS=anydoc; \
     else \
