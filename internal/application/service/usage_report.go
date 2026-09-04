@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -39,9 +40,12 @@ const (
 
 // UsageReportRow 用户使用明细一行。
 type UsageReportRow struct {
-	UserID     string    `json:"user_id"`
-	Username   string    `json:"username"`
-	IsWeCom    bool      `json:"is_wecom"`
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	IsWeCom  bool   `json:"is_wecom"`
+	// Email 合成邮箱（wecom_xxx@…），仅服务端用于解析企微 userid 发
+	// 个人提醒卡片，不随 JSON 下发。
+	Email      string    `json:"-"`
 	Logins     int       `json:"logins"`
 	Chats      int       `json:"chats"`
 	Qualified  bool      `json:"qualified"`
@@ -73,12 +77,13 @@ type UsageReportService interface {
 }
 
 type usageReportService struct {
-	db *gorm.DB
+	db  *gorm.DB
+	cfg *config.Config
 }
 
 // NewUsageReportService 构造函数（容器注入）。
-func NewUsageReportService(db *gorm.DB) UsageReportService {
-	return &usageReportService{db: db}
+func NewUsageReportService(db *gorm.DB, cfg *config.Config) UsageReportService {
+	return &usageReportService{db: db, cfg: cfg}
 }
 
 func (s *usageReportService) GetUsageReportConfig(ctx context.Context, tenantID uint64) (*types.UsageReportConfig, error) {
@@ -258,6 +263,7 @@ func (s *usageReportService) BuildUsageReport(ctx context.Context, tenantID uint
 			UserID:     m.UserID,
 			Username:   displayUsername(u),
 			IsWeCom:    IsWeComSyntheticEmail(u.Email),
+			Email:      u.Email,
 			Logins:     logins[m.UserID],
 			Chats:      chats[m.UserID],
 			LastActive: active[m.UserID],
@@ -583,6 +589,15 @@ func (s *usageReportService) SendUsageReport(ctx context.Context, tenant *types.
 				return fmt.Errorf("send wecom: %w", err)
 			}
 			logger.Infof(ctx, "[UsageReport] pushed text report to %d WeCom recipient(s)", len(recipients))
+		}
+	}
+
+	// 未达标成员个人提醒（样式A 文本卡片）：发给成员本人，与管理员
+	// 日报互不影响；按钮直达新会话页。
+	if cfg.PushToWeCom && cfg.ShouldRemindUnqualified() &&
+		tenant.SSOConfig != nil && tenant.SSOConfig.WeComEnabled() {
+		if n := s.sendUnqualifiedReminders(ctx, tenant, report, reminderBaseURL(tenant, s.cfg)); n > 0 {
+			logger.Infof(ctx, "[UsageReport] sent unqualified reminders to %d WeCom member(s)", n)
 		}
 	}
 

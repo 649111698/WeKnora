@@ -7,6 +7,8 @@ export default {
     enableHint: '끄면 스케줄러가 이 워크스페이스를 건너뜁니다',
     pushToWeCom: 'WeCom으로 발송',
     pushToWeComHint: 'WeCom 자체 앱(SSO) 구성 및 수신자 선택이 필요합니다',
+    remindUnqualified: '미달성 멤버 알림',
+    remindUnqualifiedHint: '리포트 발송 후 미달성 WeCom 멤버에게 개인 알림 카드를 보냅니다',
     recipients: '수신자',
     recipientsHint: 'WeCom SSO로 개설된 멤버만 앱 메시지를 받을 수 있습니다',
     recipientsPlaceholder: '알림을 받을 멤버 선택',

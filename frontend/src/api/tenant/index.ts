@@ -367,6 +367,8 @@ export interface UsageReportConfig {
   enabled: boolean
   push_to_wecom: boolean
   notify_user_ids?: string[]
+  /** 未达标成员个人提醒卡片；缺省视为开启（后端默认）。 */
+  remind_unqualified?: boolean
 }
 
 export async function getUsageReportConfig(): Promise<UsageReportConfig> {

@@ -7,6 +7,8 @@ export default {
     enableHint: 'The scheduler skips this workspace when off',
     pushToWeCom: 'Push to WeCom',
     pushToWeComHint: 'Requires the WeCom self-built app (SSO) and selected recipients',
+    remindUnqualified: 'Remind unqualified members',
+    remindUnqualifiedHint: 'After the report is pushed, each unqualified WeCom member receives a personal reminder card',
     recipients: 'Recipients',
     recipientsHint: 'Only WeCom SSO members can receive app messages',
     recipientsPlaceholder: 'Select members to notify',

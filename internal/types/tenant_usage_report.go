@@ -18,9 +18,18 @@ type UsageReportConfig struct {
 	// NotifyUserIDs 通知人（WeKnora 用户 ID 列表）。发送时解析为企微
 	// userid：仅企微 SSO 开号的成员可收到应用消息。
 	NotifyUserIDs []string `json:"notify_user_ids,omitempty"`
+	// RemindUnqualified 是否给每个未达标的企微成员本人单独发一张
+	// 提醒卡片（样式A 文本卡片）。nil 视为开启——旧配置无此字段时
+	// 默认启用，无需迁移。
+	RemindUnqualified *bool `json:"remind_unqualified,omitempty"`
 	// LastRunDate 上次成功运行的本地日期（yyyy-mm-dd）。调度器用它
 	// 防止同一天重复推送，也让重启后能补跑当天错过的 9 点任务。
 	LastRunDate string `json:"last_run_date,omitempty"`
+}
+
+// ShouldRemindUnqualified 未达标个人提醒是否开启（默认开）。
+func (c *UsageReportConfig) ShouldRemindUnqualified() bool {
+	return c == nil || c.RemindUnqualified == nil || *c.RemindUnqualified
 }
 
 // Value implements driver.Valuer for tenants.usage_report_config.

@@ -7,6 +7,8 @@ export default {
     enableHint: '关闭后定时任务跳过本空间',
     pushToWeCom: '推送到企业微信',
     pushToWeComHint: '需要已配置企业微信自建应用（单点登录）并选择通知人',
+    remindUnqualified: '提醒未达标成员',
+    remindUnqualifiedHint: '日报推送后，给每位未达标的企微成员本人单独发送提醒卡片',
     recipients: '通知人',
     recipientsHint: '仅企业微信开号的成员能收到应用消息',
     recipientsPlaceholder: '选择要接收报告的成员',

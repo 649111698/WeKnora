@@ -22,6 +22,14 @@
         <t-switch v-model="cfg.push_to_wecom" :disabled="!cfg.enabled" />
       </div>
 
+      <div class="form-row">
+        <div class="form-label">
+          <div class="form-label-text">{{ t('usageReport.remindUnqualified') }}</div>
+          <div class="form-label-hint">{{ t('usageReport.remindUnqualifiedHint') }}</div>
+        </div>
+        <t-switch v-model="cfg.remind_unqualified" :disabled="!cfg.enabled || !cfg.push_to_wecom" />
+      </div>
+
       <div class="form-row form-row-column">
         <div class="form-label">
           <div class="form-label-text">{{ t('usageReport.recipients') }}</div>
@@ -94,6 +102,8 @@ const load = async () => {
   loading.value = true
   try {
     cfg.value = await getUsageReportConfig()
+    // 旧配置无 remind_unqualified 字段时按后端默认（开）显示。
+    if (cfg.value.remind_unqualified === undefined) cfg.value.remind_unqualified = true
   } catch (e: any) {
     MessagePlugin.error(e?.response?.data?.error || t('usageReport.loadFailed'))
   } finally {
@@ -121,6 +131,7 @@ const save = async () => {
       enabled: cfg.value.enabled,
       push_to_wecom: cfg.value.push_to_wecom,
       notify_user_ids: cfg.value.notify_user_ids ?? [],
+      remind_unqualified: cfg.value.remind_unqualified ?? true,
     })
     MessagePlugin.success(t('common.saved'))
   } catch (e: any) {
