@@ -44,6 +44,19 @@
         </div>
       </div>
 
+      <!-- 姓名 -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>{{ $t('tenant.api.realNameLabel') }}</label>
+          <p class="desc">{{ $t('tenant.api.realNameDescription') }}</p>
+        </div>
+        <div class="setting-control">
+          <span class="info-value" :class="{ 'info-value-empty': !userInfo?.name }">
+            {{ userInfo?.name || $t('tenantMember.nameEmpty') }}
+          </span>
+        </div>
+      </div>
+
       <!-- 邮箱 -->
       <div class="setting-row">
         <div class="setting-info">
@@ -416,6 +429,10 @@ onMounted(loadInfo)
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
+
+  .info-value-empty {
+    color: var(--td-text-color-placeholder);
+  }
 
   .info-value {
     font-size: 14px;

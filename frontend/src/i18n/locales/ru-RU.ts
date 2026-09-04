@@ -3346,6 +3346,8 @@ export default {
       userIdDescription: 'Ваш уникальный идентификатор пользователя',
       usernameLabel: 'Имя пользователя',
       usernameDescription: 'Имя, используемое для входа',
+      realNameLabel: 'Имя',
+      realNameDescription: 'Отображается в управлении участниками и отчётах; заполняется при входе через WeCom',
       emailLabel: 'Электронная почта',
       emailDescription: 'Ваш зарегистрированный адрес электронной почты',
       createdAtLabel: 'Время регистрации',

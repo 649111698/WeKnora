@@ -3346,6 +3346,8 @@ export default {
       userIdDescription: '고유 사용자 식별자',
       usernameLabel: '사용자명',
       usernameDescription: '로그인 사용자명',
+      realNameLabel: '이름',
+      realNameDescription: '멤버 관리와 사용 리포트에 표시됩니다. WeCom 로그인 시 자동 입력됩니다',
       emailLabel: '이메일',
       emailDescription: '등록된 이메일 주소',
       createdAtLabel: '가입 시간',

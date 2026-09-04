@@ -109,6 +109,8 @@ export interface UserPreferences {
 export interface UserInfo {
   id: string
   username: string
+  /** 姓名；企微等 SSO 老账号可能为空待补。 */
+  name?: string
   email: string
   avatar?: string
   tenant_id: string
@@ -149,6 +151,7 @@ export function userInfoFromApi(
   return {
     id: u?.id || '',
     username: u?.username || '',
+    name: u?.name || '',
     email: u?.email || '',
     avatar: u?.avatar,
     tenant_id: String(tid) || '',

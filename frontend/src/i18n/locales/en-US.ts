@@ -3738,6 +3738,8 @@ export default {
       userIdDescription: 'Your unique user identifier',
       usernameLabel: 'Username',
       usernameDescription: 'Your login username',
+      realNameLabel: 'Name',
+      realNameDescription: 'Shown in member management and usage reports; auto-filled on WeCom login',
       emailLabel: 'Email',
       emailDescription: 'Your registered email address',
       createdAtLabel: 'Registration Time',

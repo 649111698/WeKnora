@@ -3347,6 +3347,8 @@ export default {
       userIdDescription: '您的唯一用户标识',
       usernameLabel: '用户名',
       usernameDescription: '您的登录用户名',
+      realNameLabel: '姓名',
+      realNameDescription: '成员管理与使用日报展示用；企业微信账号登录后自动回填',
       emailLabel: '邮箱',
       emailDescription: '您的注册邮箱地址',
       createdAtLabel: '注册时间',

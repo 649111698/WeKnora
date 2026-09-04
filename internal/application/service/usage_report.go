@@ -206,7 +206,7 @@ func (s *usageReportService) BuildUsageReport(ctx context.Context, tenantID uint
 	if len(userIDs) > 0 {
 		var ul []types.User
 		if err := s.db.WithContext(ctx).
-			Select("id", "username", "email").
+			Select("id", "username", "name", "email").
 			Where("id IN ?", userIDs).
 			Find(&ul).Error; err != nil {
 			return nil, err
