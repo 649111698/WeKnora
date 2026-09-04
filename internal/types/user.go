@@ -286,6 +286,7 @@ type RegisterResponse struct {
 type UserInfo struct {
 	ID                  string          `json:"id"`
 	Username            string          `json:"username"`
+	Name                string          `json:"name"` // 姓名；SSO 老账号可能为空待补
 	Email               string          `json:"email"`
 	Avatar              string          `json:"avatar"`
 	TenantID            uint64          `json:"tenant_id"`
@@ -302,6 +303,7 @@ func (u *User) ToUserInfo() *UserInfo {
 	return &UserInfo{
 		ID:                  u.ID,
 		Username:            u.Username,
+		Name:                u.Name,
 		Email:               u.Email,
 		Avatar:              u.Avatar,
 		TenantID:            u.TenantID,
