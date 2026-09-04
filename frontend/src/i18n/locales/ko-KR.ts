@@ -10,7 +10,7 @@ export default {
     remindUnqualified: '미달성 멤버 알림',
     remindUnqualifiedHint: '리포트 발송 후 미달성 WeCom 멤버에게 개인 알림 카드를 보냅니다',
     recipients: '수신자',
-    recipientsHint: 'WeCom SSO로 개설된 멤버만 앱 메시지를 받을 수 있습니다',
+    recipientsHint: 'WeCom으로 개설된 멤버만 선택할 수 있습니다(앱 메시지는 WeCom 전용)',
     recipientsPlaceholder: '알림을 받을 멤버 선택',
     rule: '충족 기준: 전날 로그인 ≥1회 및 대화 ≥2회. 리포트는 총 사용자/충족/미충족/메시지 지표, 멤버별 상세 및 요약을 포함합니다.',
     testNow: '지금 테스트 리포트 보내기',

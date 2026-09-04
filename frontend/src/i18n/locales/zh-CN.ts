@@ -10,7 +10,7 @@ export default {
     remindUnqualified: '提醒未达标成员',
     remindUnqualifiedHint: '日报推送后，给每位未达标的企微成员本人单独发送提醒卡片',
     recipients: '通知人',
-    recipientsHint: '仅企业微信开号的成员能收到应用消息',
+    recipientsHint: '只能选择企业微信开号的成员（应用消息仅企微可收）',
     recipientsPlaceholder: '选择要接收报告的成员',
     rule: '达标标准：昨天登录次数 ≥1 并且对话次数 ≥2；其他均为未达标。报告包含总用户数/达标/未达标/昨日消息四个指标、用户明细与昨日小结。',
     testNow: '立即发送测试报告',

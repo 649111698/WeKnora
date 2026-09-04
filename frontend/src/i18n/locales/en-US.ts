@@ -10,7 +10,7 @@ export default {
     remindUnqualified: 'Remind unqualified members',
     remindUnqualifiedHint: 'After the report is pushed, each unqualified WeCom member receives a personal reminder card',
     recipients: 'Recipients',
-    recipientsHint: 'Only WeCom SSO members can receive app messages',
+    recipientsHint: 'Only WeCom-provisioned members are selectable (app messages are WeCom-only)',
     recipientsPlaceholder: 'Select members to notify',
     rule: 'Qualified: ≥1 login AND ≥2 chats yesterday. The report shows total/qualified/unqualified/messages, per-member details and a daily summary.',
     testNow: 'Send test report now',

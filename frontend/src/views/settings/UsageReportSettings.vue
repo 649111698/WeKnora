@@ -37,8 +37,8 @@
         </div>
         <t-select v-model="cfg.notify_user_ids" multiple :placeholder="t('usageReport.recipientsPlaceholder')"
           :disabled="!cfg.enabled || !cfg.push_to_wecom" clearable :loading="membersLoading">
-          <t-option v-for="m in members" :key="m.user_id" :value="m.user_id"
-            :label="`${m.username || m.email}${isWeComMember(m) ? '（企业微信）' : ''}`" />
+          <t-option v-for="m in wecomMembers" :key="m.user_id" :value="m.user_id"
+            :label="m.name?.trim() || m.username || m.email" />
         </t-select>
       </div>
 
@@ -70,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useAuthStore } from '@/stores/auth'
@@ -97,6 +97,9 @@ const testResult = ref<UsageReportTestResult | null>(null)
 // 企微开号成员的合成邮箱（后端可推送应用消息的对象）。
 const isWeComMember = (m: TenantMember) =>
   m.email?.startsWith('wecom_') && m.email?.endsWith('@wecom.sso.weknora.local')
+
+// 通知人只允许选企微开号成员——应用消息只有企微 userid 能收到。
+const wecomMembers = computed(() => members.value.filter(isWeComMember))
 
 const load = async () => {
   loading.value = true
