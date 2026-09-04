@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -66,6 +67,20 @@ func TestReminderBaseURL(t *testing.T) {
 	cfg.FrontendBaseURL = "https://example.com/"
 	if got := reminderBaseURL(&types.Tenant{}, cfg); got != "https://example.com" {
 		t.Fatalf("frontend base=%q", got)
+	}
+}
+
+func TestUsageReportWeekdayUsesReportDate(t *testing.T) {
+	// 统计日 2026-09-03 是周四；生成时刻是 9月4日周五——周几必须按统计日。
+	generated := time.Date(2026, 9, 4, 9, 0, 0, 0, time.Local)
+	if got := usageReportWeekday("2026-09-03", generated); got != "周四" {
+		t.Fatalf("weekday=%q want 周四", got)
+	}
+	if got := usageReportWeekday("2026-09-04", generated); got != "周五" {
+		t.Fatalf("same-day weekday=%q want 周五", got)
+	}
+	if got := usageReportWeekday("bad-date", generated); got != "周五" {
+		t.Fatalf("fallback weekday=%q want 周五", got)
 	}
 }
 

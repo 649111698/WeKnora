@@ -328,11 +328,6 @@ func reportDisplayName(u string) string {
 	return u
 }
 
-var reportWeekdays = map[string]string{
-	"Sunday": "周日", "Monday": "周一", "Tuesday": "周二", "Wednesday": "周三",
-	"Thursday": "周四", "Friday": "周五", "Saturday": "周六",
-}
-
 // renderUsageReportImage 绘制整份日报为 PNG。
 func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	rows := r.Rows
@@ -360,7 +355,7 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	defer cv.close()
 	draw.Draw(cv.img, cv.img.Bounds(), &image.Uniform{icCanvas.rgba()}, image.Point{}, draw.Src)
 
-	weekday := reportWeekdays[now.Format("Monday")]
+	weekday := usageReportWeekday(r.Date, now)
 	innerW := imgW - imgPad*2
 	rate := pct(r.Qualified, r.TotalUsers)
 
@@ -552,16 +547,14 @@ func (s *usageReportService) sendWeComImage(ctx context.Context, tenant *types.T
 		return err
 	}
 	defer resp.Body.Close()
-	var result struct {
-		ErrCode int    `json:"errcode"`
-		ErrMsg  string `json:"errmsg"`
-	}
+	var result wecomSendResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return err
 	}
 	if result.ErrCode != 0 {
 		return fmt.Errorf("wecom message/send(image) failed: %s (errcode=%d)", result.ErrMsg, result.ErrCode)
 	}
+	result.logPartialFailures(ctx, recipients)
 	return nil
 }
 

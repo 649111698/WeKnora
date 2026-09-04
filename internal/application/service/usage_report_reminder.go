@@ -145,6 +145,38 @@ func (s *usageReportService) sendUnqualifiedReminders(ctx context.Context, tenan
 	return sent
 }
 
+// wecomSendResult message/send 响应。errcode=0 仅表示请求受理成功；
+// 部分接收人不可达（不在应用可见范围 / userid 已不存在）时 errcode
+// 仍为 0，但 invaliduser 会列出失败的 userid——必须显式检查，否则
+// "推送成功"的日志会掩盖静默丢人。
+type wecomSendResult struct {
+	ErrCode     int    `json:"errcode"`
+	ErrMsg      string `json:"errmsg"`
+	InvalidUser string `json:"invaliduser"`
+}
+
+func (r wecomSendResult) logPartialFailures(ctx context.Context, recipients []string) {
+	if r.ErrCode != 0 || r.InvalidUser == "" {
+		return
+	}
+	bad := strings.Split(r.InvalidUser, "|")
+	// 企业微信把 userid 规范成小写回传；按小写匹配原始列表恢复原形。
+	lower := map[string]string{}
+	for _, u := range recipients {
+		lower[strings.ToLower(u)] = u
+	}
+	named := make([]string, 0, len(bad))
+	for _, u := range bad {
+		if orig, ok := lower[strings.ToLower(u)]; ok {
+			named = append(named, orig)
+		} else {
+			named = append(named, u)
+		}
+	}
+	logger.Warnf(ctx, "[UsageReport] WeCom dropped unreachable recipient(s): %s (检查企微通讯录/应用可见范围)",
+		strings.Join(named, ", "))
+}
+
 // postWeComMessage 统一的 message/send POST（text/textcard/image 共用）。
 func postWeComMessage(ctx context.Context, accessToken string, payload map[string]any) error {
 	body, _ := json.Marshal(payload)
@@ -159,10 +191,7 @@ func postWeComMessage(ctx context.Context, accessToken string, payload map[strin
 		return err
 	}
 	defer resp.Body.Close()
-	var result struct {
-		ErrCode int    `json:"errcode"`
-		ErrMsg  string `json:"errmsg"`
-	}
+	var result wecomSendResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return err
 	}
@@ -170,5 +199,14 @@ func postWeComMessage(ctx context.Context, accessToken string, payload map[strin
 		return fmt.Errorf("wecom message/send(%v) failed: %s (errcode=%d)",
 			payload["msgtype"], result.ErrMsg, result.ErrCode)
 	}
+	result.logPartialFailures(ctx, splitTouser(payload))
 	return nil
+}
+
+func splitTouser(payload map[string]any) []string {
+	raw, _ := payload["touser"].(string)
+	if raw == "" {
+		return nil
+	}
+	return strings.Split(raw, "|")
 }

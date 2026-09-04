@@ -333,6 +333,20 @@ func usageRowLess(a, b UsageReportRow) bool {
 	return a.Username < b.Username
 }
 
+// usageReportWeekday 统计日的中文周几；dateStr 解析失败时回退 fallback
+// （生成时刻）。标题里的周几描述的是统计日，而不是 9 点生成那一刻，
+// 否则跨天时会出现"9月3日（周五）"这类错位。
+func usageReportWeekday(dateStr string, fallback time.Time) string {
+	weekdayNames := map[string]string{
+		"Sunday": "周日", "Monday": "周一", "Tuesday": "周二", "Wednesday": "周三",
+		"Thursday": "周四", "Friday": "周五", "Saturday": "周六",
+	}
+	if t, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(dateStr), time.Local); err == nil {
+		return weekdayNames[t.Format("Monday")]
+	}
+	return weekdayNames[fallback.Format("Monday")]
+}
+
 func pct(part, total int) string {
 	if total <= 0 {
 		return "0%"
@@ -344,7 +358,7 @@ func pct(part, total int) string {
 // 类型在微信插件等场景会直接显示 md 原文，text 类型在所有客户端渲染
 // 一致；因此排版只用符号、空行与 emoji，不依赖任何 markdown 语法。
 func (s *usageReportService) RenderUsageReportText(r *UsageReport, generatedAt time.Time) string {
-	weekday := map[string]string{"Sunday": "周日", "Monday": "周一", "Tuesday": "周二", "Wednesday": "周三", "Thursday": "周四", "Friday": "周五", "Saturday": "周六"}[generatedAt.Format("Monday")]
+	weekday := usageReportWeekday(r.Date, generatedAt)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "📊 %s 使用日报\n%s（%s）\n\n", r.TenantName, r.Date, weekday)
@@ -533,16 +547,14 @@ func (s *usageReportService) sendWeComText(ctx context.Context, tenant *types.Te
 		return err
 	}
 	defer resp.Body.Close()
-	var result struct {
-		ErrCode int    `json:"errcode"`
-		ErrMsg  string `json:"errmsg"`
-	}
+	var result wecomSendResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return err
 	}
 	if result.ErrCode != 0 {
 		return fmt.Errorf("wecom message/send failed: %s (errcode=%d)", result.ErrMsg, result.ErrCode)
 	}
+	result.logPartialFailures(ctx, recipients)
 	return nil
 }
 
