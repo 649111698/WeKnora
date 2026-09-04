@@ -386,6 +386,7 @@ export interface UsageReportTestResult {
   unqualified: number
   total_messages: number
   content: string
+  image?: string
 }
 
 export async function sendUsageReportTest(): Promise<UsageReportTestResult> {

@@ -53,7 +53,9 @@
           <span>{{ t('usageReport.cardUnqualified', { n: testResult.unqualified }) }}</span>
           <span>{{ t('usageReport.cardMessages', { n: testResult.total_messages }) }}</span>
         </div>
-        <pre class="test-result-preview">{{ testResult.content }}</pre>
+        <img v-if="testResult.image" :src="testResult.image" class="test-result-image"
+          :alt="t('usageReport.testResultTitle', { date: testResult.date })" />
+        <pre v-else class="test-result-preview">{{ testResult.content }}</pre>
       </div>
     </template>
   </div>
@@ -209,6 +211,13 @@ onMounted(() => {
     font-size: 13px;
     color: var(--td-text-color-secondary);
     margin-bottom: 8px;
+  }
+
+  .test-result-image {
+    max-width: 100%;
+    max-height: 420px;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: 8px;
   }
 
   .test-result-preview {

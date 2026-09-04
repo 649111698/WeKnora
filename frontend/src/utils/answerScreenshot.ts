@@ -230,14 +230,21 @@ async function renderNodeToCanvas(node: HTMLElement): Promise<HTMLCanvasElement 
   // html-to-image 克隆时逐元素拷贝实时计算样式，节点必须在捕获期间
   // 保持展开状态，恢复放在捕获结束后。
   const restoreExportLayout = expandScrollContainersForExport(node)
+  // 移动端 WebView 里 foreignObject 的字体度量与测量时略有差异，内容
+  // 实际渲染会比 offsetHeight 高一点点，底部最后一行被裁掉；高度取
+  // scrollHeight 与 offsetHeight 的较大值，并给底部多留一段余量。
+  const EXPORT_BOTTOM_SLACK = 28
+  const contentH = Math.max(node.offsetHeight, node.scrollHeight)
   const options = {
     backgroundColor: pageBackground(),
     pixelRatio: 2,
     // 不开 cacheBust：它会给资源 URL 追加查询参数，回答内联的上传图片
     // 是 blob: URL，加参数后变成非法地址加载失败，整个导出随之报错。
-    style: { padding: `${EXPORT_PAD}px` },
+    style: {
+      padding: `${EXPORT_PAD}px ${EXPORT_PAD}px ${EXPORT_PAD + EXPORT_BOTTOM_SLACK}px`,
+    },
     width: node.offsetWidth + EXPORT_PAD * 2,
-    height: node.offsetHeight + EXPORT_PAD * 2,
+    height: contentH + EXPORT_PAD * 2 + EXPORT_BOTTOM_SLACK,
   }
   try {
     return await toCanvas(node, options)

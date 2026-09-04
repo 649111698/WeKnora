@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/base64"
 	"net/http"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -109,16 +111,19 @@ func (h *TenantHandler) SendTestUsageReport(c *gin.Context) {
 		c.Error(errors.NewInternalServerError("Failed to send usage report: "+err.Error()))
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data": gin.H{
-			"date":           report.Date,
-			"total_users":    report.TotalUsers,
-			"qualified":      report.Qualified,
-			"unqualified":    report.Unqualified,
-			"total_messages": report.TotalMessages,
-			"rows":           report.Rows,
-			"content":        h.usageReportSvc.RenderUsageReportText(report, time.Now()),
-		},
-	})
+	// 附带实际推送的图片预览（与企微收到的图一致）。
+	data := gin.H{
+		"date":           report.Date,
+		"total_users":    report.TotalUsers,
+		"qualified":      report.Qualified,
+		"unqualified":    report.Unqualified,
+		"total_messages": report.TotalMessages,
+		"rows":           report.Rows,
+		"content":        h.usageReportSvc.RenderUsageReportText(report, time.Now()),
+		"image":          "",
+	}
+	if pngBytes, err := service.RenderUsageReportImageForHandler(report, time.Now()); err == nil {
+		data["image"] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }

@@ -560,10 +560,26 @@ func (s *usageReportService) SendUsageReport(ctx context.Context, tenant *types.
 		if len(recipients) == 0 {
 			return fmt.Errorf("no WeCom recipients resolvable from notify_user_ids")
 		}
-		if err := s.sendWeComText(ctx, tenant, recipients, reportText); err != nil {
-			return fmt.Errorf("send wecom: %w", err)
+		// 图片优先：markdown 在部分企微端不渲染、纯文本无层次；图片在
+		// 所有客户端显示一致。绘制或上传失败回退纯文本，绝不让推送
+		// 因为图片链路问题而整条丢失。
+		pushed := false
+		if pngBytes, imgErr := renderUsageReportImage(report, now); imgErr == nil {
+			if sendErr := s.pushWeComImage(ctx, tenant, recipients, pngBytes); sendErr == nil {
+				pushed = true
+				logger.Infof(ctx, "[UsageReport] pushed image report to %d WeCom recipient(s)", len(recipients))
+			} else {
+				logger.Warnf(ctx, "[UsageReport] image push failed, falling back to text: %v", sendErr)
+			}
+		} else {
+			logger.Warnf(ctx, "[UsageReport] render image failed, falling back to text: %v", imgErr)
 		}
-		logger.Infof(ctx, "[UsageReport] pushed to %d WeCom recipient(s)", len(recipients))
+		if !pushed {
+			if err := s.sendWeComText(ctx, tenant, recipients, reportText); err != nil {
+				return fmt.Errorf("send wecom: %w", err)
+			}
+			logger.Infof(ctx, "[UsageReport] pushed text report to %d WeCom recipient(s)", len(recipients))
+		}
 	}
 
 	if markRun {
