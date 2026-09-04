@@ -2548,6 +2548,19 @@ func (h *KnowledgeHandler) SearchKnowledge(c *gin.Context) {
 		return
 	}
 
+	// 访客（viewer）不走全库检索：知识库入口对其隐藏，放大镜/文件
+	// 选择也不应越过该边界搜到空间文档内容。带 agent_id 的会话检索
+	// 走上面的分支不受影响；后端强制执行，前端跳过只是省一次请求。
+	if types.TenantRoleFromContext(ctx) == types.TenantRoleViewer {
+		c.JSON(http.StatusOK, gin.H{
+			"success":  true,
+			"data":     []interface{}{},
+			"has_more": false,
+			"total":    0,
+		})
+		return
+	}
+
 	// Default: own + shared KBs
 	knowledges, hasMore, total, err := h.kgService.SearchKnowledge(ctx, keyword, offset, limit, fileTypes)
 	if err != nil {

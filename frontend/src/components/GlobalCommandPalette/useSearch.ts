@@ -1,5 +1,6 @@
 import { ref, watch, onMounted, computed } from 'vue'
 import { knowledgeSemanticSearch } from '@/api/knowledge-base'
+import { useAuthStore } from '@/stores/auth'
 import { searchMessages, type MessageSearchGroupItem } from '@/api/chat-history'
 import { useOrganizationStore } from '@/stores/organization'
 import { useChatResourcesStore } from '@/stores/chatResources'
@@ -99,6 +100,11 @@ export function useCmdkSearch(options: {
 
   const orgStore = useOrganizationStore()
   const menuStore = useMenuStore()
+  const authStore = useAuthStore()
+
+  // 访客（viewer）只能搜自己的会话与可用智能体：知识库入口对其隐藏，
+  // 放大镜也不越过该边界（后端 /knowledge-search 对 viewer 已强制为空）。
+  const canSearchKnowledge = computed(() => authStore.hasRole('contributor'))
 
   const ensureKbs = async (): Promise<void> => {
     if (kbsLoaded.value) return
@@ -142,7 +148,7 @@ export function useCmdkSearch(options: {
   // KB name hits (client-side, works even before a remote search returns).
   const kbMatches = computed<CmdkKb[]>(() => {
     const q = query.value.trim().toLowerCase()
-    if (!q) return []
+    if (!q || !canSearchKnowledge.value) return []
     return knowledgeBases.value
       .filter(k => k.name.toLowerCase().includes(q))
       .slice(0, 4)
@@ -257,7 +263,7 @@ export function useCmdkSearch(options: {
       kbIds = knowledgeBases.value.map(k => k.id)
     }
 
-    const knowledgePromise = kbIds.length > 0
+    const knowledgePromise = canSearchKnowledge.value && kbIds.length > 0
       ? knowledgeSemanticSearch({ query: q, knowledge_base_ids: kbIds })
           .then((res: any) => (res?.success && res.data ? res.data : []))
           .catch((e) => {
