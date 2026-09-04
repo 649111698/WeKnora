@@ -130,6 +130,8 @@ func (s *usageReportService) loginCounts(ctx context.Context, userIDs []string, 
 	return counts, nil
 }
 
+// chatCounts 统计空间内每人的提问数。messages 表不带 user_id/tenant_id，
+// 归属在 sessions 上，联表统计。
 func (s *usageReportService) chatCounts(ctx context.Context, tenantID uint64, start, end time.Time) (map[string]int, error) {
 	type row struct {
 		UserID string
@@ -137,10 +139,11 @@ func (s *usageReportService) chatCounts(ctx context.Context, tenantID uint64, st
 	}
 	var rows []row
 	err := s.db.WithContext(ctx).
-		Model(&types.Message{}).
-		Select("user_id, COUNT(*) AS n").
-		Where("tenant_id = ? AND role = ? AND created_at >= ? AND created_at < ?", tenantID, "user", start, end).
-		Group("user_id").
+		Table("messages AS m").
+		Joins("JOIN sessions AS s ON s.id = m.session_id").
+		Select("s.user_id AS user_id, COUNT(*) AS n").
+		Where("s.tenant_id = ? AND m.role = ? AND m.created_at >= ? AND m.created_at < ?", tenantID, "user", start, end).
+		Group("s.user_id").
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -159,10 +162,11 @@ func (s *usageReportService) lastActive(ctx context.Context, tenantID uint64) (m
 	}
 	var rows []row
 	err := s.db.WithContext(ctx).
-		Model(&types.Message{}).
-		Select("user_id, MAX(created_at) AS last").
-		Where("tenant_id = ? AND role = ?", tenantID, "user").
-		Group("user_id").
+		Table("messages AS m").
+		Joins("JOIN sessions AS s ON s.id = m.session_id").
+		Select("s.user_id AS user_id, MAX(m.created_at) AS last").
+		Where("s.tenant_id = ? AND m.role = ?", tenantID, "user").
+		Group("s.user_id").
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err
