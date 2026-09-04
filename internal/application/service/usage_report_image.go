@@ -347,9 +347,9 @@ func (c *reportCanvas) borderedPill(x, y, h int, label string, bg, border, fg re
 
 // statTile 居中指标瓦片（HTML 模板实测 ×1.52）。
 func (c *reportCanvas) statTile(x, y, w int, valueCol reportColor, label, value, sub string) {
-	c.fillRoundRect(x, y, w, 180, 22, icTileBg)
-	c.fillRect(x+20, y, w-40, 1, icTileBorder)
-	c.fillRect(x+20, y+179, w-40, 1, icTileBorder)
+	// 模板 .metric-item：完整 1px 圆角描边（border: 1px solid #eef3fa）
+	c.fillRoundRect(x, y, w, 180, 22, icTileBorder)
+	c.fillRoundRect(x+1, y+1, w-2, 178, 21, icTileBg)
 	lw := c.textWidth(label, 20, false)
 	c.text(x+(w-lw)/2, y+52, label, 20, false, icLabel)
 	vw := c.textWidth(value, 49, true)
@@ -397,9 +397,43 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	prevPerm := ratePermille(r.PrevQualified, r.TotalUsers)
 	diffPP := float64(perm-prevPerm) / 10.0
 
-	// ===== 白色大卡片 =====
+	// ===== 干跑测量：先确定问候区布局与页脚换行，得到卡片精确高度 =====
 	x0 := pageMargin + cardPad
 	cw2 := imgW - pageMargin*2 - cardPad*2
+	measureRule := "考核标准：每日登录 ≥ 1 次 且 对话 ≥ 2 条 为达标"
+	measureL2 := "以下是 " + reportBrand + " 昨天的使用情况汇总，请查阅。"
+	measureL1 := "老板好，"
+	ruleW := cv.textWidth(measureRule, 21, false) + 52
+	greetSideBySide := 36+cv.textWidth(measureL1, 23, false)+ruleW+36 <= cw2 &&
+		36+cv.textWidth(measureL2, 23, false)+ruleW+36 <= cw2
+	greetH := 210
+	if !greetSideBySide {
+		greetH = 240
+	}
+	fOff := 0
+	{
+		lw := cv.textWidth("整体达标率", 21, false)
+		rw2 := cv.textWidth(rate, 24, true)
+		pw := lw + 8 + rw2 + 52
+		trend := "较前日持平"
+		if diffPP > 0 {
+			trend = fmt.Sprintf("较前日 +%.1f 个百分点，趋势向好", diffPP)
+		} else if diffPP < 0 {
+			trend = fmt.Sprintf("较前日 %.1f 个百分点，有所回落", diffPP)
+		}
+		tw2 := cv.textWidth(trend, 21, false)
+		genW := cv.textWidth("报告生成于 "+now.Format("2006-01-02 15:04"), 20, false)
+		if pw+24+tw2+48+28+genW > cw2 {
+			fOff = 66
+		}
+	}
+	// 各模块高度：头部 110+42 / 问候 greetH+48 / 瓦片 180+42 / 消息 54+30 /
+	// 表格 tableH+42 / 页脚 30+192+6+44（含底部内边距 44≈28×1.52）。
+	cardH := 152 + greetH + 48 + 222 + 84 + tableH + 42 + 272 + fOff
+	cardW := imgW - pageMargin*2
+
+	// ===== 白色大卡片（模板 .card 白底） =====
+	cv.fillRoundRect(pageMargin, pageMargin, cardW, cardH, cardRadius, icCard)
 	y := pageMargin
 
 	// --- 头部（padb 24 / mb 42） ---
@@ -433,17 +467,11 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	y += 110 + 42
 
 	// --- 问候区（文本 / 考核胶囊；放得下并排，否则堆叠） ---
-	ruleTxt := "考核标准：每日登录 ≥ 1 次 且 对话 ≥ 2 条 为达标"
-	line1 := "老板好，"
-	line2 := "以下是 " + reportBrand + " 昨天的使用情况汇总，请查阅。"
-	l1w := cv.textWidth(line1, 23, false)
-	l2w := cv.textWidth(line2, 23, false)
-	rw := cv.textWidth(ruleTxt, 21, false) + 52
-	sideBySide := 36+l1w+rw+36 <= cw2 && 36+l2w+rw+36 <= cw2
-	greetH := 210
-	if !sideBySide {
-		greetH = 240
-	}
+	ruleTxt := measureRule
+	line1 := measureL1
+	line2 := measureL2
+	rw := ruleW
+	sideBySide := greetSideBySide
 	cv.fillRoundRect(x0, y, cw2, greetH, 30, icGreetBg)
 	cv.fillRoundRect(x0, y, cw2, greetH, 30, icGreetBorder)
 	drawRulePill := func(px, py int) {
@@ -544,7 +572,7 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	// --- 页脚：胶囊行（右侧同排生成时间）+ 居中落款 ---
 	cv.fillRect(x0, y, cw2, 1, icSep)
 	fy := y + 30
-	extraOff := 0
+	extraOff := fOff
 	{
 		lbl := "整体达标率"
 		lw := cv.textWidth(lbl, 21, false)
@@ -566,12 +594,9 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 		// 生成时间与胶囊同行右对齐、垂直居中（1320 宽度下充裕；极端
 		// 宽字体放不下才退到下一行，落款同步下移）。
 		gen := "报告生成于 " + now.Format("2006-01-02 15:04")
-		genW := cv.textWidth(gen, 20, false)
-		pillsW := pw + 24 + tw2 + 48
 		genBase := fy + 33
-		if pillsW+28+genW > cw2 {
+		if extraOff > 0 {
 			genBase = fy + 52 + 14 + 26
-			extraOff = 66
 		}
 		cv.textRight(x0+cw2, genBase, gen, 20, false, icMuted)
 	}
