@@ -82,6 +82,11 @@ export const useMenuStore = defineStore('menuStore', () => {
       if (item.path === 'knowledge-bases' && !authStore.hasRole('contributor')) {
         return false
       }
+      // 智能体管理入口同样仅对 contributor 及以上角色暴露：访客（viewer）
+      // 只使用对话，不进入智能体列表；后端 RBAC 仍是权限的最终来源。
+      if (item.path === 'agents' && !authStore.hasRole('contributor')) {
+        return false
+      }
       if (!deploymentCapabilities.isSupported(item.requiredCapability)) {
         return false
       }
