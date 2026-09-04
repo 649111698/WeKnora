@@ -30,8 +30,8 @@ import (
 const (
 	usageReportLoginMin = 1
 	usageReportChatMin  = 2
-	// 企微 markdown 应用消息上限 4096 字节；明细行超限时截断并提示。
-	usageReportMaxBytes  = 4000
+	// 企微 text 应用消息上限 2048 字节；明细行超限时截断并提示。
+	usageReportMaxBytes  = 2000
 	usageReportMaxRows   = 50
 	wecomSyntheticPrefix = "wecom_"
 	wecomSyntheticDomain = "@wecom.sso.weknora.local"
@@ -65,7 +65,7 @@ type UsageReport struct {
 // UsageReportService 每日使用报告服务。
 type UsageReportService interface {
 	BuildUsageReport(ctx context.Context, tenantID uint64, day time.Time) (*UsageReport, error)
-	RenderUsageReportMarkdown(r *UsageReport, generatedAt time.Time) string
+	RenderUsageReportText(r *UsageReport, generatedAt time.Time) string
 	SendUsageReport(ctx context.Context, tenant *types.Tenant, day time.Time, markRun bool) error
 	SendTestUsageReport(ctx context.Context, tenant *types.Tenant) (*UsageReport, error)
 	GetUsageReportConfig(ctx context.Context, tenantID uint64) (*types.UsageReportConfig, error)
@@ -330,18 +330,20 @@ func pct(part, total int) string {
 	return fmt.Sprintf("%.1f%%", float64(part)/float64(total)*100)
 }
 
-// RenderUsageReportMarkdown 渲染为企微应用 markdown 消息。
-func (s *usageReportService) RenderUsageReportMarkdown(r *UsageReport, generatedAt time.Time) string {
+// RenderUsageReportText 渲染为纯文本报告。企微应用消息的 markdown
+// 类型在微信插件等场景会直接显示 md 原文，text 类型在所有客户端渲染
+// 一致；因此排版只用符号、空行与 emoji，不依赖任何 markdown 语法。
+func (s *usageReportService) RenderUsageReportText(r *UsageReport, generatedAt time.Time) string {
 	weekday := map[string]string{"Sunday": "周日", "Monday": "周一", "Tuesday": "周二", "Wednesday": "周三", "Thursday": "周四", "Friday": "周五", "Saturday": "周六"}[generatedAt.Format("Monday")]
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "## 📊 %s 使用日报\n**%s（%s）**\n", r.TenantName, r.Date, weekday)
-	fmt.Fprintf(&b, "> 👥 总用户数：**%d**\n", r.TotalUsers)
-	fmt.Fprintf(&b, "> <font color=\"info\">✅ 达标用户：%d（%s）</font>\n", r.Qualified, pct(r.Qualified, r.TotalUsers))
-	fmt.Fprintf(&b, "> <font color=\"warning\">⭕ 未达标用户：%d（%s）</font>\n", r.Unqualified, pct(r.Unqualified, r.TotalUsers))
-	fmt.Fprintf(&b, "> 💬 昨日消息总数：**%d**（较前日 %s）\n", r.TotalMessages, deltaPercent(r.TotalMessages, r.PrevMessages))
-	fmt.Fprintf(&b, "\n**达标标准**：登录 ≥1 次 且 对话 ≥2 次\n")
-	fmt.Fprintf(&b, "\n**用户明细**\n")
+	fmt.Fprintf(&b, "📊 %s 使用日报\n%s（%s）\n\n", r.TenantName, r.Date, weekday)
+	fmt.Fprintf(&b, "👥 总用户数：%d\n", r.TotalUsers)
+	fmt.Fprintf(&b, "✅ 达标用户：%d（%s）\n", r.Qualified, pct(r.Qualified, r.TotalUsers))
+	fmt.Fprintf(&b, "⭕ 未达标用户：%d（%s）\n", r.Unqualified, pct(r.Unqualified, r.TotalUsers))
+	fmt.Fprintf(&b, "💬 昨日消息总数：%d（较前日 %s）\n", r.TotalMessages, deltaPercent(r.TotalMessages, r.PrevMessages))
+	fmt.Fprintf(&b, "\n达标标准：登录 ≥1 次 且 对话 ≥2 次\n")
+	fmt.Fprintf(&b, "\n【用户明细】\n")
 
 	rows := r.Rows
 	if len(rows) > usageReportMaxRows {
@@ -362,7 +364,7 @@ func (s *usageReportService) RenderUsageReportMarkdown(r *UsageReport, generated
 		fmt.Fprintf(&b, "…其余 %d 人略\n", hidden)
 	}
 
-	fmt.Fprintf(&b, "\n**昨日小结**\n")
+	fmt.Fprintf(&b, "\n【昨日小结】\n")
 	cur := ratePermille(r.Qualified, r.TotalUsers)
 	prev := ratePermille(r.PrevQualified, r.TotalUsers)
 	diffPP := float64(cur-prev) / 10.0
@@ -374,15 +376,15 @@ func (s *usageReportService) RenderUsageReportMarkdown(r *UsageReport, generated
 	default:
 		fmt.Fprintf(&b, "整体达标率 %s，与前日持平 ➖\n", pct(r.Qualified, r.TotalUsers))
 	}
-	fmt.Fprintf(&b, "\n<font color=\"comment\">报告生成：%s</font>\n", generatedAt.Format("2006-01-02 15:04"))
+	fmt.Fprintf(&b, "\n报告生成：%s\n", generatedAt.Format("2006-01-02 15:04"))
 	return b.String()
 }
 
 func qualifiedTag(ok bool) string {
 	if ok {
-		return "<font color=\"info\">达标</font>"
+		return "达标 ✔"
 	}
-	return "<font color=\"warning\">未达标</font>"
+	return "未达标 ✘"
 }
 
 func lastActiveText(t time.Time, now time.Time) string {
@@ -487,7 +489,7 @@ func (s *usageReportService) wecomReportRecipients(ctx context.Context, tenantID
 	return out, nil
 }
 
-func (s *usageReportService) sendWeComMarkdown(ctx context.Context, tenant *types.Tenant, recipients []string, content string) error {
+func (s *usageReportService) sendWeComText(ctx context.Context, tenant *types.Tenant, recipients []string, content string) error {
 	w := tenant.SSOConfig.WeCom
 	if w == nil {
 		return fmt.Errorf("workspace has no WeCom app credentials")
@@ -503,9 +505,9 @@ func (s *usageReportService) sendWeComMarkdown(ctx context.Context, tenant *type
 	}
 	payload := map[string]any{
 		"touser":  strings.Join(recipients, "|"),
-		"msgtype": "markdown",
+		"msgtype": "text",
 		"agentid": agentID,
-		"markdown": map[string]string{
+		"text": map[string]string{
 			"content": content,
 		},
 	}
@@ -546,7 +548,7 @@ func (s *usageReportService) SendUsageReport(ctx context.Context, tenant *types.
 		return err
 	}
 	now := time.Now()
-	markdown := s.RenderUsageReportMarkdown(report, now)
+	reportText := s.RenderUsageReportText(report, now)
 	logger.Infof(ctx, "[UsageReport] tenant=%s date=%s users=%d qualified=%d messages=%d",
 		tenant.Name, report.Date, report.TotalUsers, report.Qualified, report.TotalMessages)
 
@@ -558,7 +560,7 @@ func (s *usageReportService) SendUsageReport(ctx context.Context, tenant *types.
 		if len(recipients) == 0 {
 			return fmt.Errorf("no WeCom recipients resolvable from notify_user_ids")
 		}
-		if err := s.sendWeComMarkdown(ctx, tenant, recipients, markdown); err != nil {
+		if err := s.sendWeComText(ctx, tenant, recipients, reportText); err != nil {
 			return fmt.Errorf("send wecom: %w", err)
 		}
 		logger.Infof(ctx, "[UsageReport] pushed to %d WeCom recipient(s)", len(recipients))

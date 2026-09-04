@@ -24,7 +24,7 @@ func TestWeComUserIDFromEmail(t *testing.T) {
 	assert.False(t, ok, "non-WeCom member must not resolve")
 }
 
-func TestRenderUsageReportMarkdown(t *testing.T) {
+func TestRenderUsageReportText(t *testing.T) {
 	svc := &usageReportService{}
 	now := time.Date(2026, 9, 4, 9, 0, 0, 0, time.Local)
 	r := &UsageReport{
@@ -42,30 +42,33 @@ func TestRenderUsageReportMarkdown(t *testing.T) {
 			{Username: "王五", Logins: 3, Chats: 0, Qualified: false},
 		},
 	}
-	md := svc.RenderUsageReportMarkdown(r, now)
+	md := svc.RenderUsageReportText(r, now)
 
 	assert.Contains(t, md, "倍智信息 使用日报")
-	assert.Contains(t, md, "总用户数：**3**")
+	assert.Contains(t, md, "总用户数：3")
 	assert.Contains(t, md, "达标用户：2（66.7%）")
 	assert.Contains(t, md, "未达标用户：1（33.3%）")
-	assert.Contains(t, md, "昨日消息总数：**12**")
-	assert.Contains(t, md, "达标标准")
+	assert.Contains(t, md, "昨日消息总数：12")
+	assert.Contains(t, md, "达标标准：登录 ≥1 次 且 对话 ≥2 次")
 	assert.Contains(t, md, "张三：登录 2｜对话 5")
 	assert.Contains(t, md, "王五：登录 3｜对话 0")
 	assert.Contains(t, md, "整体达标率 66.7%，较前日 +33.3 个百分点，趋势向好")
 	assert.Contains(t, md, "报告生成：2026-09-04 09:00")
 	assert.LessOrEqual(t, len(md), usageReportMaxBytes+512, "report must stay within WeCom message limits")
+	assert.NotContains(t, md, "**", "plain text report must not carry markdown syntax")
+	assert.NotContains(t, md, "<font", "plain text report must not carry HTML tags")
+	assert.NotContains(t, md, "##", "plain text report must not carry markdown headings")
 }
 
-func TestRenderUsageReportMarkdown_TrendDownAndFlat(t *testing.T) {
+func TestRenderUsageReportText_TrendDownAndFlat(t *testing.T) {
 	svc := &usageReportService{}
 	now := time.Date(2026, 9, 4, 9, 0, 0, 0, time.Local)
 
 	down := &UsageReport{TenantName: "T", Date: "2026-09-03", TotalUsers: 10, Qualified: 3, PrevQualified: 5}
-	assert.Contains(t, svc.RenderUsageReportMarkdown(down, now), "有所回落")
+	assert.Contains(t, svc.RenderUsageReportText(down, now), "有所回落")
 
 	flat := &UsageReport{TenantName: "T", Date: "2026-09-03", TotalUsers: 10, Qualified: 4, PrevQualified: 4}
-	assert.Contains(t, svc.RenderUsageReportMarkdown(flat, now), "持平")
+	assert.Contains(t, svc.RenderUsageReportText(flat, now), "持平")
 }
 
 func TestDeltaPercent(t *testing.T) {

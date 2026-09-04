@@ -118,7 +118,7 @@ func (h *TenantHandler) SendTestUsageReport(c *gin.Context) {
 			"unqualified":    report.Unqualified,
 			"total_messages": report.TotalMessages,
 			"rows":           report.Rows,
-			"markdown":       h.usageReportSvc.RenderUsageReportMarkdown(report, time.Now()),
+			"content":        h.usageReportSvc.RenderUsageReportText(report, time.Now()),
 		},
 	})
 }

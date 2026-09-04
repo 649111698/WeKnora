@@ -53,7 +53,7 @@
           <span>{{ t('usageReport.cardUnqualified', { n: testResult.unqualified }) }}</span>
           <span>{{ t('usageReport.cardMessages', { n: testResult.total_messages }) }}</span>
         </div>
-        <pre class="test-result-preview">{{ testResult.markdown }}</pre>
+        <pre class="test-result-preview">{{ testResult.content }}</pre>
       </div>
     </template>
   </div>
