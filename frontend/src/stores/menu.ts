@@ -76,6 +76,12 @@ export const useMenuStore = defineStore('menuStore', () => {
       if (item.path === 'organizations' && !authStore.hasRole('admin')) {
         return false
       }
+      // 知识库管理入口仅对 contributor 及以上角色暴露：访客（viewer，
+      // 如企微自动开号成员）只使用对话，不进入知识库列表；后端 RBAC
+      // 仍是权限的最终来源。
+      if (item.path === 'knowledge-bases' && !authStore.hasRole('contributor')) {
+        return false
+      }
       if (!deploymentCapabilities.isSupported(item.requiredCapability)) {
         return false
       }

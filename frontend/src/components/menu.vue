@@ -5,7 +5,11 @@
     }">
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
         <div class="logo_row" v-if="!sidebarCollapsedUI">
-            <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
+            <!-- 访客（viewer）侧栏没有知识库入口，Logo 点击也导向对话页，
+                 避免成为绕过菜单隐藏的入口；contributor+ 仍回知识库列表。 -->
+            <div class="logo_box"
+                @click="router.push(authStore.hasRole('contributor') ? '/platform/knowledge-bases' : '/platform/chat')"
+                style="cursor: pointer;">
                 <img class="logo" :src="brandingStore.logoUrl || defaultLogo" :alt="brandingStore.sidebarTitle || 'WeKnora'">
                 <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
             </div>
