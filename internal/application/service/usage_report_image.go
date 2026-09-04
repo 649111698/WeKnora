@@ -9,7 +9,6 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
-	"math"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -22,6 +21,7 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
+	"golang.org/x/image/vector"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -291,26 +291,35 @@ func (c *reportCanvas) fillRect(x, y, w, h int, col reportColor) {
 	draw.Draw(c.img, image.Rect(x, y, x+w, y+h), &image.Uniform{col.rgba()}, image.Point{}, draw.Src)
 }
 
-// fillRoundRect 圆角矩形：三块矩形拼腰身 + 四角逐行扫描四分之一圆。
+// fillRoundRect 圆角矩形（抗锯齿）：vector 光栅化器平滑光栅化后
+// DrawMask 合成，边缘与浏览器 CSS 圆角观感一致（扫描线版是阶梯锯齿）。
 func (c *reportCanvas) fillRoundRect(x, y, w, h, r int, col reportColor) {
-	if r > w/2 {
-		r = w / 2
+	if w <= 0 || h <= 0 {
+		return
 	}
-	if r > h/2 {
-		r = h / 2
+	rf := float32(r)
+	if rf > float32(w)/2 {
+		rf = float32(w) / 2
 	}
-	c.fillRect(x+r, y, w-2*r, h, col)
-	c.fillRect(x, y+r, w, h-2*r, col)
-	for j := 0; j < r; j++ {
-		ch := int(math.Sqrt(float64(r*r - j*j)))
-		if ch <= 0 {
-			continue
-		}
-		c.fillRect(x+r-ch, y+j, ch, 1, col)     // 左上
-		c.fillRect(x+w-r, y+j, ch, 1, col)      // 右上
-		c.fillRect(x+r-ch, y+h-1-j, ch, 1, col) // 左下
-		c.fillRect(x+w-r, y+h-1-j, ch, 1, col)  // 右下
+	if rf > float32(h)/2 {
+		rf = float32(h) / 2
 	}
+	xF, yF, wF, hF := float32(x), float32(y), float32(w), float32(h)
+	k := rf * 0.55228475 // 圆弧的四分之一 cubic bezier 常数
+	rast := vector.NewRasterizer(w, h)
+	rast.MoveTo(xF+rf, yF)
+	rast.LineTo(xF+wF-rf, yF)
+	rast.CubeTo(xF+wF-rf+k, yF, xF+wF, yF+rf-k, xF+wF, yF+rf)
+	rast.LineTo(xF+wF, yF+hF-rf)
+	rast.CubeTo(xF+wF, yF+hF-rf+k, xF+wF-rf+k, yF+hF, xF+wF-rf, yF+hF)
+	rast.LineTo(xF+rf, yF+hF)
+	rast.CubeTo(xF+rf-k, yF+hF, xF, yF+hF-rf+k, xF, yF+hF-rf)
+	rast.LineTo(xF, yF+rf)
+	rast.CubeTo(xF, yF+rf-k, xF+rf-k, yF, xF+rf, yF)
+	mask := image.NewAlpha(image.Rect(0, 0, w, h))
+	rast.Draw(mask, mask.Bounds(), image.Opaque, image.Point{})
+	draw.DrawMask(c.img, image.Rect(x, y, x+w, y+h),
+		&image.Uniform{col.rgba()}, image.Point{}, mask, image.Point{}, draw.Over)
 }
 
 func (c *reportCanvas) hline(x1, x2, y int, col reportColor) {
