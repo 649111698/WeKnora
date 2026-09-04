@@ -37,7 +37,7 @@ import (
 // 全程不用 emoji——CJK 矢量字体不含彩色 emoji，会渲染成方框。
 
 const (
-	imgW = 1080
+	imgW = 1320
 	// 品牌名固定（白标部署统一对外名称，不随租户名变化）。
 	reportBrand = "智能知识库"
 
@@ -345,23 +345,23 @@ func (c *reportCanvas) borderedPill(x, y, h int, label string, bg, border, fg re
 	return pw
 }
 
-// statTile 居中指标瓦片：label / 大数字 / sub（几何对齐模板 1.24x）。
+// statTile 居中指标瓦片（HTML 模板实测 ×1.52）。
 func (c *reportCanvas) statTile(x, y, w int, valueCol reportColor, label, value, sub string) {
-	c.fillRoundRect(x, y, w, 148, 18, icTileBg)
-	c.fillRect(x+16, y, w-32, 1, icTileBorder)
-	c.fillRect(x+16, y+147, w-32, 1, icTileBorder)
-	lw := c.textWidth(label, 16, false)
-	c.text(x+(w-lw)/2, y+39, label, 16, false, icLabel)
-	vw := c.textWidth(value, 40, true)
-	c.text(x+(w-vw)/2, y+93, value, 40, true, valueCol)
-	sw := c.textWidth(sub, 16, false)
-	c.text(x+(w-sw)/2, y+124, sub, 16, false, icLabel)
+	c.fillRoundRect(x, y, w, 180, 22, icTileBg)
+	c.fillRect(x+20, y, w-40, 1, icTileBorder)
+	c.fillRect(x+20, y+179, w-40, 1, icTileBorder)
+	lw := c.textWidth(label, 20, false)
+	c.text(x+(w-lw)/2, y+52, label, 20, false, icLabel)
+	vw := c.textWidth(value, 49, true)
+	c.text(x+(w-vw)/2, y+118, value, 49, true, valueCol)
+	sw := c.textWidth(sub, 20, false)
+	c.text(x+(w-sw)/2, y+156, sub, 20, false, icLabel)
 }
 
-// renderUsageReportImage 绘制整份日报为 PNG。几何参数来自模板 HTML
-// 在 868px 视口下的实测值 ×1.244（=1080/868）等比换算；文案固定品牌名
-// 「智能知识库」；正文常规字重，仅标题/表头/指标数字/徽章加粗；模板
-// emoji 在 CJK 矢量字体下渲染为方框，省略。
+// renderUsageReportImage 绘制整份日报为 PNG。几何参数 = 模板 HTML 在
+// 868px 视口下的实测值 ×1.52（=1320/868）；文案固定品牌名「智能知识库」；
+// 正文常规字重，仅标题/表头/指标数字/徽章加粗；页脚生成时间与趋势
+// 胶囊同行右侧。模板 emoji 在 CJK 矢量字体下渲染为方框，省略。
 func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	rows := r.Rows
 	hidden := 0
@@ -376,13 +376,13 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 		}
 	}
 
-	tableH := 62 + len(rows)*62 + 12
+	tableH := 72 + len(rows)*76 + 14
 	if hidden > 0 {
-		tableH += 44
+		tableH += 54
 	}
 	// 顺序排版 + 220px 余量，画完裁剪。
-	totalH := pageMargin + 90 + 35 + 174 + 40 + 148 + 35 + 50 + 30 +
-		tableH + 40 + 190 + 40 + pageMargin + 220
+	totalH := pageMargin + 110 + 42 + 240 + 48 + 180 + 42 + 54 + 30 +
+		tableH + 42 + 220 + 48 + pageMargin + 220
 
 	cv, err := newReportCanvas(totalH)
 	if err != nil {
@@ -402,9 +402,9 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	cw2 := imgW - pageMargin*2 - cardPad*2
 	y := pageMargin
 
-	// --- 头部（h≈90，底部分割线，下接 35） ---
-	cv.text(x0, y+34, reportBrand+" · 使用日报", 27, true, icInk)
-	cv.text(x0, y+60, fmt.Sprintf("%s（%s）", r.Date, weekday), 17, false, icMuted)
+	// --- 头部（padb 24 / mb 42） ---
+	cv.text(x0, y+46, reportBrand+" · 使用日报", 33, true, icInk)
+	cv.text(x0, y+82, fmt.Sprintf("%s（%s）", r.Date, weekday), 21, false, icMuted)
 	deltaTxt := "持平"
 	if diffPP > 0 {
 		deltaTxt = fmt.Sprintf("+%.1f%%", diffPP)
@@ -417,57 +417,55 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	}
 	chipFg := reportColor{0xFF, 0xFF, 0xFF}
 	{
-		// 右侧“较前日 +x%”胶囊（h45），与标题块底部对齐
 		lbl := "较前日"
-		lw := cv.textWidth(lbl, 17, false)
-		cw2v := cv.textWidth(deltaTxt, 16, true)
-		pw := lw + cw2v + 17 + 12 + 20 + 20
-		ph := 45
+		lw := cv.textWidth(lbl, 21, false)
+		cw2v := cv.textWidth(deltaTxt, 19, true)
+		pw := lw + cw2v + 22 + 14 + 26 + 24
+		ph := 54
 		px := x0 + cw2 - pw
-		py := y + 90 - 20 - ph
+		py := y + 110 - 24 - ph
 		cv.fillRoundRect(px, py, pw, ph, ph/2, icBlueBg)
-		cv.text(px+20, py+ph/2+6, lbl, 17, false, icBlue)
-		cv.fillRoundRect(px+20+lw+12, py+9, cw2v+24, ph-18, (ph-18)/2, chipBg)
-		cv.text(px+20+lw+12+12, py+ph/2+6, deltaTxt, 16, true, chipFg)
+		cv.text(px+24, py+ph/2+7, lbl, 21, false, icBlue)
+		cv.fillRoundRect(px+24+lw+14, py+11, cw2v+30, ph-22, (ph-22)/2, chipBg)
+		cv.text(px+24+lw+14+15, py+ph/2+7, deltaTxt, 19, true, chipFg)
 	}
-	cv.fillRect(x0, y+90, cw2, 1, icSep)
-	y += 90 + 35
+	cv.fillRect(x0, y+110, cw2, 1, icSep)
+	y += 110 + 42
 
-	// --- 问候区（文本 / 考核胶囊；宽字体下并排放不下时自动堆叠） ---
+	// --- 问候区（文本 / 考核胶囊；放得下并排，否则堆叠） ---
 	ruleTxt := "考核标准：每日登录 ≥ 1 次 且 对话 ≥ 2 条 为达标"
 	line1 := "老板好，"
 	line2 := "以下是 " + reportBrand + " 昨天的使用情况汇总，请查阅。"
-	l1w := cv.textWidth(line1, 19, false)
-	l2w := cv.textWidth(line2, 19, false)
-	rw := cv.textWidth(ruleTxt, 17, false) + 44
-	sideBySide := 30+l1w+rw+30 <= cw2 && 30+l2w+rw+30 <= cw2
-	greetH := 174
+	l1w := cv.textWidth(line1, 23, false)
+	l2w := cv.textWidth(line2, 23, false)
+	rw := cv.textWidth(ruleTxt, 21, false) + 52
+	sideBySide := 36+l1w+rw+36 <= cw2 && 36+l2w+rw+36 <= cw2
+	greetH := 210
 	if !sideBySide {
-		greetH = 200
+		greetH = 240
 	}
-	cv.fillRoundRect(x0, y, cw2, greetH, 25, icGreetBg)
-	cv.fillRoundRect(x0, y, cw2, greetH, 25, icGreetBorder)
+	cv.fillRoundRect(x0, y, cw2, greetH, 30, icGreetBg)
+	cv.fillRoundRect(x0, y, cw2, greetH, 30, icGreetBorder)
 	drawRulePill := func(px, py int) {
 		pw := rw
-		ph := 42
+		ph := 50
 		cv.fillRoundRect(px, py, pw, ph, ph/2, icRuleBorder)
 		cv.fillRoundRect(px+1, py+1, pw-2, ph-2, ph/2-1, icRuleBg)
-		cv.text(px+22, py+ph/2+6, ruleTxt, 17, false, icBlue)
+		cv.text(px+26, py+ph/2+7, ruleTxt, 21, false, icBlue)
 	}
 	if sideBySide {
-		// 与模板一致：文本左、胶囊右，整组垂直居中
-		cv.text(x0+30, y+68, line1, 19, false, icInk2)
-		cv.text(x0+30, y+102, line2, 19, false, icInk2)
-		drawRulePill(x0+cw2-30-rw, y+(greetH-42)/2)
+		cv.text(x0+36, y+82, line1, 23, false, icInk2)
+		cv.text(x0+36, y+124, line2, 23, false, icInk2)
+		drawRulePill(x0+cw2-36-rw, y+(greetH-50)/2)
 	} else {
-		cv.text(x0+30, y+58, line1, 19, false, icInk2)
-		cv.text(x0+30, y+106, line2, 19, false, icInk2)
-		drawRulePill(x0+30, y+134)
+		cv.text(x0+36, y+70, line1, 23, false, icInk2)
+		cv.text(x0+36, y+128, line2, 23, false, icInk2)
+		drawRulePill(x0+36, y+162)
 	}
-	y += greetH + 40
+	y += greetH + 48
 
 	// --- 四联指标瓦片（1.2 / 1 / 1 / 1.2） ---
-	gap := 17
+	gap := 21
 	unit := int(float64(cw2-gap*3) / 4.4)
 	w1 := int(float64(unit) * 1.2)
 	w2 := unit
@@ -476,14 +474,14 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 	cv.statTile(x0+w1+gap, y, w2, icInk, "总用户数", fmt.Sprintf("%d", r.TotalUsers), fmt.Sprintf("活跃用户 %d 人", activeUsers))
 	cv.statTile(x0+w1+gap+w2+gap, y, w2, icGreen, "达标用户", fmt.Sprintf("%d", r.Qualified), "达标率 "+pct(r.Qualified, r.TotalUsers))
 	cv.statTile(x0+w1+gap*3+w2*2, y, w4, icRed, "未达标用户", fmt.Sprintf("%d", r.Unqualified), "未达标率 "+pct(r.Unqualified, r.TotalUsers))
-	y += 148 + 35
+	y += 180 + 42
 
-	// --- 昨日消息胶囊（h45，数字加粗，其余常规） ---
+	// --- 昨日消息胶囊（h54） ---
 	{
 		lbl := "昨日消息"
-		lw := cv.textWidth(lbl, 17, false)
+		lw := cv.textWidth(lbl, 21, false)
 		num := fmt.Sprintf("%d", r.TotalMessages)
-		nw := cv.textWidth(num, 25, true)
+		nw := cv.textWidth(num, 30, true)
 		msgDelta := deltaPercent(r.TotalMessages, r.PrevMessages)
 		chipCol := icBlue
 		if msgDelta == "持平" {
@@ -491,101 +489,101 @@ func renderUsageReportImage(r *UsageReport, now time.Time) ([]byte, error) {
 		} else if strings.HasPrefix(msgDelta, "-") {
 			chipCol = icRedBadge
 		}
-		tw2 := cv.textWidth(msgDelta, 16, false)
-		pw := 25 + lw + 12 + nw + 12 + tw2 + 30 + 23
-		ph := 45
+		tw2 := cv.textWidth(msgDelta, 20, false)
+		pw := 30 + lw + 14 + nw + 14 + tw2 + 36 + 28
+		ph := 54
 		cv.fillRoundRect(x0, y, pw, ph, ph/2, icMsgBg)
-		cv.text(x0+25, y+ph/2+6, lbl, 17, false, reportColor{0x2C, 0x3E, 0x5A})
-		cv.text(x0+25+lw+12, y+ph/2+8, num, 25, true, icInk)
-		cxp := x0 + 25 + lw + 12 + nw + 12
-		cv.fillRoundRect(cxp, y+13, tw2+30, ph-26, (ph-26)/2, icBlueChip)
-		cv.text(cxp+15, y+ph/2+5, msgDelta, 16, false, chipCol)
+		cv.text(x0+30, y+ph/2+7, lbl, 21, false, reportColor{0x2C, 0x3E, 0x5A})
+		cv.text(x0+30+lw+14, y+ph/2+10, num, 30, true, icInk)
+		cxp := x0 + 30 + lw + 14 + nw + 14
+		cv.fillRoundRect(cxp, y+16, tw2+36, ph-32, (ph-32)/2, icBlueChip)
+		cv.text(cxp+18, y+ph/2+6, msgDelta, 20, false, chipCol)
 	}
-	y += 45 + 30
+	y += 54 + 30
 
-	// --- 明细表（圆角描边容器，行高 62） ---
+	// --- 明细表（圆角描边容器，行高 76） ---
 	tx := x0
 	tw := cw2
-	cv.fillRoundRect(tx, y, tw, tableH, 18, icTileBorder)
-	cv.fillRoundRect(tx+1, y+1, tw-2, tableH-2, 17, icCard)
-	cv.fillRoundRect(tx+1, y+1, tw-2, 62, 17, icThBg)
-	colLogin := tx + 420
-	colChat := tx + 560
-	colStatus := tx + 700
-	activeRight := tx + tw - 20
-	hh := y + 31 + 6
-	cv.text(tx+20, hh, "用户", 16, true, icThText)
-	cv.textCenter(colLogin, hh, "登录", 16, true, icThText)
-	cv.textCenter(colChat, hh, "对话", 16, true, icThText)
-	cv.textCenter(colStatus, hh, "状态", 16, true, icThText)
-	cv.textRight(activeRight, hh, "上次活跃", 16, true, icThText)
-	cv.fillRect(tx+1, y+62, tw-2, 1, reportColor{0xE6, 0xED, 0xF5})
-	rowY := y + 62
+	cv.fillRoundRect(tx, y, tw, tableH, 22, icTileBorder)
+	cv.fillRoundRect(tx+1, y+1, tw-2, tableH-2, 21, icCard)
+	cv.fillRoundRect(tx+1, y+1, tw-2, 72, 21, icThBg)
+	colLogin := tx + 500
+	colChat := tx + 670
+	colStatus := tx + 840
+	activeRight := tx + tw - 24
+	hh := y + 45
+	cv.text(tx+24, hh, "用户", 20, true, icThText)
+	cv.textCenter(colLogin, hh, "登录", 20, true, icThText)
+	cv.textCenter(colChat, hh, "对话", 20, true, icThText)
+	cv.textCenter(colStatus, hh, "状态", 20, true, icThText)
+	cv.textRight(activeRight, hh, "上次活跃", 20, true, icThText)
+	cv.fillRect(tx+1, y+72, tw-2, 1, reportColor{0xE6, 0xED, 0xF5})
+	rowY := y + 72
 	for i, row := range rows {
-		base := rowY + 31 + 6
-		cv.text(tx+20, base, cv.truncateMiddle(reportDisplayName(row.Username), 340, 17, false), 17, false, icInk)
-		cv.textCenter(colLogin, base, fmt.Sprintf("%d", row.Logins), 17, false, icInk2)
-		cv.textCenter(colChat, base, fmt.Sprintf("%d", row.Chats), 17, false, icInk2)
+		base := rowY + 45
+		cv.text(tx+24, base, cv.truncateMiddle(reportDisplayName(row.Username), 420, 21, false), 21, false, icInk)
+		cv.textCenter(colLogin, base, fmt.Sprintf("%d", row.Logins), 21, false, icInk2)
+		cv.textCenter(colChat, base, fmt.Sprintf("%d", row.Chats), 21, false, icInk2)
 		if row.Qualified {
-			cv.pill(colStatus, rowY+31, "达标", icGreenBg, icGreen, 15)
+			cv.pill(colStatus, rowY+38, "达标", icGreenBg, icGreen, 18)
 		} else {
-			cv.pill(colStatus, rowY+31, "未达标", icRedBg, icRedBadge, 15)
+			cv.pill(colStatus, rowY+38, "未达标", icRedBg, icRedBadge, 18)
 		}
-		cv.textRight(activeRight, base, lastActiveText(row.LastActive, now), 16, false, icLastActive)
+		cv.textRight(activeRight, base, lastActiveText(row.LastActive, now), 20, false, icLastActive)
 		if i < len(rows)-1 || hidden > 0 {
-			cv.fillRect(tx+20, rowY+62, tw-40, 1, icRowSep)
+			cv.fillRect(tx+24, rowY+76, tw-48, 1, icRowSep)
 		}
-		rowY += 62
+		rowY += 76
 	}
 	if hidden > 0 {
-		cv.text(tx+20, rowY+30, fmt.Sprintf("其余 %d 人略", hidden), 16, false, icFooterGray)
-		rowY += 44
+		cv.text(tx+24, rowY+36, fmt.Sprintf("其余 %d 人略", hidden), 20, false, icFooterGray)
+		rowY += 54
 	}
-	y += tableH + 40
+	y += tableH + 42
 
 	// --- 页脚：胶囊行（右侧同排生成时间）+ 居中落款 ---
 	cv.fillRect(x0, y, cw2, 1, icSep)
-	fy := y + 25
+	fy := y + 30
 	extraOff := 0
 	{
 		lbl := "整体达标率"
-		lw := cv.textWidth(lbl, 17, false)
-		rw := cv.textWidth(rate, 20, true)
-		pw := lw + 6 + rw + 44
-		cv.fillRoundRect(x0, fy, pw, 44, 22, icTrendBg)
-		cv.text(x0+22, fy+28, lbl, 17, false, icBlue)
-		cv.text(x0+22+lw+6, fy+30, rate, 20, true, icBlue)
+		lw := cv.textWidth(lbl, 21, false)
+		rw2 := cv.textWidth(rate, 24, true)
+		pw := lw + 8 + rw2 + 52
+		cv.fillRoundRect(x0, fy, pw, 52, 26, icTrendBg)
+		cv.text(x0+26, fy+33, lbl, 21, false, icBlue)
+		cv.text(x0+26+lw+8, fy+35, rate, 24, true, icBlue)
 		trend := "较前日持平"
 		if diffPP > 0 {
 			trend = fmt.Sprintf("较前日 +%.1f 个百分点，趋势向好", diffPP)
 		} else if diffPP < 0 {
 			trend = fmt.Sprintf("较前日 %.1f 个百分点，有所回落", diffPP)
 		}
-		tw2 := cv.textWidth(trend, 17, false)
-		cxp := x0 + pw + 20
-		cv.fillRoundRect(cxp, fy, tw2+40, 44, 22, icCompareBg)
-		cv.text(cxp+20, fy+28, trend, 17, false, reportColor{0x1D, 0x3A, 0x5A})
+		tw2 := cv.textWidth(trend, 21, false)
+		cxp := x0 + pw + 24
+		cv.fillRoundRect(cxp, fy, tw2+48, 52, 26, icCompareBg)
+		cv.text(cxp+24, fy+33, trend, 21, false, reportColor{0x1D, 0x3A, 0x5A})
+		// 生成时间与胶囊同行右对齐、垂直居中（1320 宽度下充裕；极端
+		// 宽字体放不下才退到下一行，落款同步下移）。
 		gen := "报告生成于 " + now.Format("2006-01-02 15:04")
-		// 生成时间与胶囊同行右侧（模板 footer 布局）；宽字体一行放不下
-		// 时换到下一行右对齐，避免与胶囊挤压重叠。
-		genW := cv.textWidth(gen, 16, false)
-		pillsW := pw + 20 + tw2 + 40
-		genBase := fy + 28
-		if pillsW+24+genW > cw2 {
-			genBase = fy + 44 + 12 + 22
-			extraOff = 56
+		genW := cv.textWidth(gen, 20, false)
+		pillsW := pw + 24 + tw2 + 48
+		genBase := fy + 33
+		if pillsW+28+genW > cw2 {
+			genBase = fy + 52 + 14 + 26
+			extraOff = 66
 		}
-		cv.textRight(x0+cw2, genBase, gen, 16, false, icMuted)
+		cv.textRight(x0+cw2, genBase, gen, 20, false, icMuted)
 	}
-	cv.fillRect(x0, fy+80+extraOff, cw2, 1, reportColor{0xF0, 0xF4, 0xFA})
+	cv.fillRect(x0, fy+96+extraOff, cw2, 1, reportColor{0xF0, 0xF4, 0xFA})
 	extra1 := "本报告由 " + reportBrand + " 自动生成 · 如有疑问请联系管理员"
 	extra2 := fmt.Sprintf("© %d %s · 使用汇总日报", now.Year(), reportBrand)
-	e1w := cv.textWidth(extra1, 15, false)
-	e2w := cv.textWidth(extra2, 15, false)
-	cv.text(x0+(cw2-e1w)/2, fy+128+extraOff, extra1, 15, false, icFooterGray)
-	cv.text(x0+(cw2-e2w)/2, fy+160+extraOff, extra2, 15, false, icFooterGray)
+	e1w := cv.textWidth(extra1, 18, false)
+	e2w := cv.textWidth(extra2, 18, false)
+	cv.text(x0+(cw2-e1w)/2, fy+150+extraOff, extra1, 18, false, icFooterGray)
+	cv.text(x0+(cw2-e2w)/2, fy+192+extraOff, extra2, 18, false, icFooterGray)
 
-	finalH := fy + 180 + extraOff + pageMargin
+	finalH := fy + 216 + extraOff + pageMargin
 	if finalH > totalH {
 		finalH = totalH
 	}
