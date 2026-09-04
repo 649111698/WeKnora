@@ -409,8 +409,8 @@ func (s *tenantMemberService) emitAgentAccessAudit(
 	ids types.AgentIDList,
 ) {
 	details, _ := json.Marshal(map[string]any{
-		"restricted":         ids != nil,
-		"allowed_agent_ids":  ids,
+		"restricted":        ids != nil,
+		"allowed_agent_ids": ids,
 	})
 	s.emitAudit(ctx, &types.AuditLog{
 		TenantID:     tenantID,

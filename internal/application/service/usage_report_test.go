@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestIsWeComSyntheticEmail(t *testing.T) {

@@ -620,13 +620,33 @@ func (s *userService) completeSSOLogin(
 	provisioning types.TenantProvisioningMode,
 	targetTenant *types.Tenant,
 ) (*types.OIDCCallbackResponse, error) {
-	email := ssoSyntheticEmail(platform, externalID)
+	email := ssoSyntheticEmailV2(platform, externalID)
 	user, err := s.userRepo.GetUserByEmail(ctx, email)
 	if err != nil && !isUserLookupNotFound(err) {
 		return nil, fmt.Errorf("failed to query user by email: %w", err)
 	}
-	isNewUser := false
 	if isUserLookupNotFound(err) || user == nil {
+		// 旧编码回退：早期合成邮箱把 userid 里的 @ 替换成了 _，
+		// 邮箱式 userid 的老账号挂在旧地址下。命中则原地迁移到新
+		// 编码，账号/成员关系/历史保持不变。
+		legacy := ssoSyntheticEmail(platform, externalID)
+		if legacy != email {
+			if lu, lerr := s.userRepo.GetUserByEmail(ctx, legacy); lerr == nil && lu != nil {
+				oldEmail := lu.Email
+				lu.Email = email
+				lu.UpdatedAt = time.Now()
+				if uerr := s.userRepo.UpdateUser(ctx, lu); uerr != nil {
+					logger.Warnf(ctx, "[SSO] migrate synthetic email failed for %s: %v", lu.ID, uerr)
+					lu.Email = oldEmail
+				}
+				user = lu
+			} else if lerr != nil && !isUserLookupNotFound(lerr) {
+				logger.Warnf(ctx, "[SSO] legacy email lookup failed: %v", lerr)
+			}
+		}
+	}
+	isNewUser := false
+	if user == nil {
 		effProvisioning := provisioning
 		if targetTenant != nil {
 			// 目标租户已知：不建个人空间，建号后直接加入目标租户。
@@ -755,9 +775,12 @@ func (s *userService) generateSSOUsername(ctx context.Context, platform, externa
 func ssoSyntheticEmail(platform, externalID string) string {
 	sanitized := strings.Map(func(r rune) rune {
 		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.', r == '%':
 			return r
 		default:
+			// 企微 userid 可以是邮箱式（含 @）。@ 直接丢掉会让还原出的
+			// userid 不存在（消息静默丢弃），改成可逆的百分号编码；
+			// % 不是企微 userid 的合法字符，解码无歧义。
 			return '_'
 		}
 	}, externalID)
@@ -765,6 +788,24 @@ func ssoSyntheticEmail(platform, externalID string) string {
 		sanitized = "unknown"
 	}
 	return fmt.Sprintf("%s_%s@%s.sso.weknora.local", platform, sanitized, platform)
+}
+
+// ssoSyntheticEmailV2 同 V1，但保留 userid 里的 @（%40）与 %（%25），
+// 使 WeComUserIDFromEmail 能无损还原。
+func ssoSyntheticEmailV2(platform, externalID string) string {
+	enc := strings.ReplaceAll(externalID, "%", "%25")
+	enc = strings.ReplaceAll(enc, "@", "%40")
+	return ssoSyntheticEmail(platform, enc)
+}
+
+// ssoDecodeSyntheticUserid 还原 %40/@、%25/%。
+func ssoDecodeSyntheticUserid(inner string) string {
+	if !strings.Contains(inner, "%") {
+		return inner
+	}
+	inner = strings.ReplaceAll(inner, "%40", "@")
+	inner = strings.ReplaceAll(inner, "%25", "%")
+	return inner
 }
 
 func ssoDoJSON(ctx context.Context, req *http.Request, out interface{}) error {

@@ -308,6 +308,7 @@ func WeComUserIDFromEmail(email string) (string, bool) {
 	}
 	inner := strings.TrimSuffix(strings.TrimPrefix(email, wecomSyntheticPrefix), wecomSyntheticDomain)
 	inner = strings.TrimSuffix(inner, "@wecom")
+	inner = ssoDecodeSyntheticUserid(inner)
 	return inner, inner != ""
 }
 
