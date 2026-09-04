@@ -116,6 +116,16 @@
                   </template>
                 </div>
               </template>
+              <template #realName="{ row }">
+                <div :class="['member-name-cell', { 'is-editable': canManage }]" role="button"
+                  :tabindex="canManage ? 0 : -1"
+                  :title="canManage ? t('tenantMember.editName.button') : undefined"
+                  @click="canManage && openNameEdit(row)" @keyup.enter="canManage && openNameEdit(row)">
+                  <span v-if="row.name?.trim()" class="member-name-text">{{ row.name }}</span>
+                  <span v-else class="member-name-empty">{{ t('tenantMember.nameEmpty') }}</span>
+                  <t-icon v-if="canManage" name="edit-1" size="14px" class="member-name-edit-icon" />
+                </div>
+              </template>
               <template #role="{ row }">
                 <t-tag :theme="roleTagTheme(row.role)" size="small">
                   {{ $t('tenantMember.role.' + row.role) }}
@@ -395,6 +405,16 @@
                     </t-tooltip>
                   </span>
                   <span v-if="memberSecondary(row)" class="member-email">{{ memberSecondary(row) }}</span>
+                </div>
+              </template>
+              <template #realName="{ row }">
+                <div :class="['member-name-cell', { 'is-editable': canManage }]" role="button"
+                  :tabindex="canManage ? 0 : -1"
+                  :title="canManage ? t('tenantMember.editName.button') : undefined"
+                  @click="canManage && openNameEdit(row)" @keyup.enter="canManage && openNameEdit(row)">
+                  <span v-if="row.name?.trim()" class="member-name-text">{{ row.name }}</span>
+                  <span v-else class="member-name-empty">{{ t('tenantMember.nameEmpty') }}</span>
+                  <t-icon v-if="canManage" name="edit-1" size="14px" class="member-name-edit-icon" />
                 </div>
               </template>
               <template #role="{ row }">
@@ -1027,21 +1047,17 @@ function roleMatrixIcon(role: TenantRole): string {
 
 const columns = computed(() => [
   { colKey: 'member', title: t('tenantMember.columns.member'), ellipsis: true, minWidth: 132 },
-  { colKey: 'role', title: t('tenantMember.columns.role'), width: 128 },
-  { colKey: 'joined_at', title: t('tenantMember.columns.joinedAt'), width: 154 },
-  { colKey: 'actions', title: t('tenantMember.columns.operations'), width: 148, align: 'left' },
+  { colKey: 'realName', title: t('tenantMember.columns.name'), width: 150 },
+  { colKey: 'role', title: t('tenantMember.columns.role'), width: 118 },
+  { colKey: 'joined_at', title: t('tenantMember.columns.joinedAt'), width: 148 },
+  { colKey: 'actions', title: t('tenantMember.columns.operations'), width: 112, align: 'left' },
 ])
 
-function memberPrimary(row: { name?: string; username?: string; email?: string }) {
-  return row.name?.trim() || row.username?.trim() || row.email?.trim() || '—'
+function memberPrimary(row: { username?: string; email?: string }) {
+  return row.username?.trim() || row.email?.trim() || '—'
 }
 
-function memberSecondary(row: { name?: string; username?: string; email?: string }) {
-  // 有姓名时副行展示账号（用户名/邮箱），否则维持原来的邮箱副行。
-  const realName = row.name?.trim()
-  if (realName) {
-    return row.username?.trim() || row.email?.trim() || ''
-  }
+function memberSecondary(row: { username?: string; email?: string }) {
   const name = row.username?.trim()
   const mail = row.email?.trim()
   if (name && mail) return mail
@@ -1856,6 +1872,44 @@ watch(
 <style lang="less" scoped>
 .tenant-members {
   width: 100%;
+}
+
+.member-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  cursor: default;
+
+  .member-name-text {
+    font-size: 14px;
+    color: var(--td-text-color-primary);
+  }
+
+  .member-name-empty {
+    font-size: 13px;
+    color: var(--td-text-color-placeholder);
+  }
+
+  .member-name-edit-icon {
+    color: var(--td-text-color-placeholder);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  &.is-editable {
+    cursor: pointer;
+
+    &:hover {
+      .member-name-edit-icon {
+        opacity: 1;
+      }
+
+      .member-name-empty {
+        color: var(--td-brand-color);
+      }
+    }
+  }
 }
 
 .member-cell {

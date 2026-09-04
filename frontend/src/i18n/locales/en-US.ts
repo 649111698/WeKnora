@@ -6700,6 +6700,7 @@ export default {
       failed: 'Failed to create member, please retry',
       emailExists: 'This email is already registered; use invite or direct add instead',
     },
+    nameEmpty: 'Not set',
     editName: {
       button: 'Edit name',
       title: 'Edit name · {name}',
@@ -6727,6 +6728,7 @@ export default {
     },
     columns: {
       member: 'Name & email',
+      name: 'Name',
       role: 'Role',
       joinedAt: 'Joined',
       operations: 'Actions'

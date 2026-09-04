@@ -261,6 +261,7 @@ export default {
       failed: '创建成员失败，请重试',
       emailExists: '该邮箱已注册，请改用邀请或直接添加',
     },
+    nameEmpty: '未填写',
     editName: {
       button: '维护姓名',
       title: '维护姓名 · {name}',
@@ -378,6 +379,7 @@ export default {
     },
     columns: {
       member: '姓名与邮箱',
+      name: '姓名',
       role: '角色',
       joinedAt: '加入时间',
       operations: '操作'

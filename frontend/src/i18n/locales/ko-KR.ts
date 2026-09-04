@@ -262,6 +262,7 @@ export default {
       failed: '멤버 생성에 실패했습니다. 다시 시도하세요',
       emailExists: '이미 등록된 이메일입니다. 초대 또는 직접 추가를 이용하세요',
     },
+    nameEmpty: '미입력',
     editName: {
       button: '이름 수정',
       title: '이름 수정 · {name}',
@@ -379,6 +380,7 @@ export default {
     },
     columns: {
       member: '이름 · 이메일',
+      name: '이름',
       role: '역할',
       joinedAt: '가입일',
       operations: '작업'

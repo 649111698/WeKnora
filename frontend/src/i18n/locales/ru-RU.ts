@@ -262,6 +262,7 @@ export default {
       failed: 'Не удалось создать участника, попробуйте снова',
       emailExists: 'Этот email уже зарегистрирован; используйте приглашение или прямое добавление',
     },
+    nameEmpty: 'Не указано',
     editName: {
       button: 'Изменить имя',
       title: 'Изменить имя · {name}',
@@ -379,6 +380,7 @@ export default {
     },
     columns: {
       member: 'Имя и email',
+      name: 'Имя',
       role: 'Роль',
       joinedAt: 'Дата вступления',
       operations: 'Действия'
