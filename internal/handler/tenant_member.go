@@ -386,7 +386,7 @@ type updateMemberAgentAccessRequest struct {
 
 // UpdateMemberAgentAccess godoc
 // @Summary      设置成员可用的智能体
-// @Description  Owner 设置成员在对话中可访问的本空间自定义智能体；null 清除限制（全部可用），空数组表示全部不可用。内置与共享智能体不受影响
+// @Description  Admin/Owner 设置成员在对话中可访问的本空间自定义智能体；null 清除限制（全部可用），空数组表示全部不可用。内置与共享智能体不受影响
 // @Tags         空间成员
 // @Accept       json
 // @Produce      json

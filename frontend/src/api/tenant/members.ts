@@ -177,7 +177,7 @@ export async function updateMemberRole(
 
 /**
  * 设置成员在对话中可访问的本空间自定义智能体。
- * Backend: PUT /api/v1/tenants/:id/members/:user_id/agent-access (Owner+)。
+ * Backend: PUT /api/v1/tenants/:id/members/:user_id/agent-access (Admin+)。
  *
  * allowedAgentIds 传 null 表示清除限制（全部可用，写库为 SQL NULL）；
  * 传数组（可为空）表示仅这些智能体可用。内置与共享智能体不受影响。

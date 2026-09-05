@@ -133,9 +133,10 @@ func RegisterTenantRoutes(
 				// 成员姓名维护：企业微信等 SSO 账号自动取不到姓名时由
 				// Owner 手工补充（用户管理、使用日报都按姓名展示）。
 				g.apiKeyRoute(tenantByID, http.MethodPut, "/members/:user_id/profile", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.UpdateMemberProfile)
-				// 成员可用的智能体范围：与角色变更同级（Owner+），影响面是该成员
-				// 在对话里能看到/运行哪些本空间自定义智能体。
-				g.apiKeyRoute(tenantByID, http.MethodPut, "/members/:user_id/agent-access", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.UpdateMemberAgentAccess)
+				// 成员可用的智能体范围：Admin+ 可配置（用户要求管理员与
+				// 所有者都能给成员分配智能体），影响面是该成员在对话里
+				// 能看到/运行哪些本空间自定义智能体。
+				g.apiKeyRoute(tenantByID, http.MethodPut, "/members/:user_id/agent-access", apiKeyManageMembers(apiKeyFullAccess()), g.Admin(), memberHandler.UpdateMemberAgentAccess)
 				g.apiKeyRoute(tenantByID, http.MethodDelete, "/members/:user_id", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), memberHandler.RemoveMember)
 				tenantByID.POST("/leave", g.Viewer(), memberHandler.LeaveTenant)
 			}

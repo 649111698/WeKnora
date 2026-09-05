@@ -444,7 +444,7 @@
                   </t-button>
                 </t-tooltip>
                 <t-tooltip
-                  v-if="canManage && row.user_id !== currentUserId"
+                  v-if="canAssignAgents && row.user_id !== currentUserId"
                   :content="$t('tenantMember.agentAccess.button')" placement="top">
                   <t-button shape="square" variant="text" size="small" @click.stop="openAgentAccess(row)">
                     <template #icon><t-icon name="lock-on" :class="{ 'agent-access-restricted': isAgentRestricted(row) }" /></template>
@@ -805,6 +805,12 @@ const currentRole = computed<TenantRole | ''>(() => (authStore.currentTenantRole
 // the role branch.
 const canManage = computed(
   () => currentRole.value === 'owner' || authStore.canAccessAllTenants === true,
+)
+
+// 智能体分配：Admin+ 即可（用户要求管理员与所有者都能给成员分配
+// 智能体），比成员增删/改名的 Owner 门槛低一档；跨空间超管同样放行。
+const canAssignAgents = computed(
+  () => authStore.hasRole('admin') || authStore.canAccessAllTenants === true,
 )
 
 // --- 智能体访问权限（成员可用哪些本空间自定义智能体） ---
