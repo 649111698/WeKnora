@@ -16,136 +16,195 @@ let mermaidMod: typeof import('mermaid') | null = null
 let mermaidInitialized = false
 let initPromise: Promise<void> | null = null
 
+// ECharts 5 default theme tokens (see echarts/theme default):
+//   series palette #5470C6 #91CC75 #FAC858 #EE6666 #73C0DE #3BA272 #FC8452
+//   #9A60B4 #EA7CCC; title #464646; legend text #333333; axis label/axis line
+//   #6E7074; splitLine #E0E6F1. Node/task fills take the series palette with
+//   white text (ECharts graph/bar look), borders match the fill (borderless
+//   series style), pie slices are opaque with white gaps.
 const MERMAID_LIGHT_THEME = {
   darkMode: false,
   background: '#ffffff',
-  primaryColor: '#e2e8f0',
-  primaryTextColor: '#334155',
-  primaryBorderColor: '#94a3b8',
-  secondaryColor: '#f1f5f9',
-  secondaryTextColor: '#475569',
-  secondaryBorderColor: '#cbd5e1',
-  tertiaryColor: '#f8fafc',
-  tertiaryTextColor: '#64748b',
-  tertiaryBorderColor: '#e2e8f0',
-  lineColor: '#94a3b8',
-  textColor: '#334155',
-  mainBkg: '#ffffff',
-  nodeBorder: '#94a3b8',
-  clusterBkg: '#f8fafc',
-  clusterBorder: '#cbd5e1',
-  titleColor: '#1e293b',
+  primaryColor: '#5470C6',
+  primaryTextColor: '#FFFFFF',
+  primaryBorderColor: '#5470C6',
+  secondaryColor: '#91CC75',
+  secondaryTextColor: '#FFFFFF',
+  secondaryBorderColor: '#91CC75',
+  tertiaryColor: '#FAC858',
+  tertiaryTextColor: '#464646',
+  tertiaryBorderColor: '#FAC858',
+  lineColor: '#6E7074',
+  textColor: '#333333',
+  classText: '#FFFFFF',
+  mainBkg: '#5470C6',
+  // 类图文字填充优先取 nodeBorder（fill: nodeBorder || classText），实心
+  // 节点需要它保持白色；顺带给实心节点一圈 1px 白描边（ECharts 饼图缝
+  // 隙/柱体分隔同款语言）。
+  nodeBorder: '#FFFFFF',
+  clusterBkg: '#F7F8FA',
+  clusterBorder: '#E0E6F1',
+  titleColor: '#464646',
   edgeLabelBackground: '#ffffff',
-  actorBorder: '#94a3b8',
-  actorBkg: '#f1f5f9',
-  actorTextColor: '#334155',
-  actorLineColor: '#94a3b8',
-  signalColor: '#94a3b8',
-  labelBoxBkgColor: '#f1f5f9',
-  labelBoxBorderColor: '#cbd5e1',
-  labelTextColor: '#334155',
-  loopTextColor: '#475569',
-  noteBkgColor: '#f8fafc',
-  noteTextColor: '#475569',
-  noteBorderColor: '#cbd5e1',
+  actorBorder: '#5470C6',
+  actorBkg: '#5470C6',
+  actorTextColor: '#FFFFFF',
+  actorLineColor: '#6E7074',
+  signalColor: '#6E7074',
+  signalTextColor: '#333333',
+  labelBoxBkgColor: '#EBF0FA',
+  labelBoxBorderColor: '#5470C6',
+  labelTextColor: '#464646',
+  loopTextColor: '#464646',
+  noteBkgColor: '#F7F8FA',
+  noteTextColor: '#464646',
+  noteBorderColor: '#E0E6F1',
+  activationBkgColor: '#EBF0FA',
+  activationBorderColor: '#5470C6',
   // Gantt
-  sectionBkgColor: '#f8fafc',
+  sectionBkgColor: '#FAFBFC',
   altSectionBkgColor: '#ffffff',
-  gridColor: '#e2e8f0',
-  todayLineColor: '#64748b',
-  taskBorderColor: '#94a3b8',
-  taskBkgColor: '#e2e8f0',
-  activeTaskBorderColor: '#64748b',
-  activeTaskBkgColor: '#94a3b8',
-  doneTaskBkgColor: '#cbd5e1',
-  doneTaskBorderColor: '#94a3b8',
-  critBkgColor: '#fecaca',
-  critBorderColor: '#f87171',
+  gridColor: '#E0E6F1',
+  todayLineColor: '#EE6666',
+  taskBorderColor: '#5470C6',
+  taskBkgColor: '#5470C6',
+  taskTextLightColor: '#FFFFFF',
+  taskTextDarkColor: '#464646',
+  activeTaskBorderColor: '#91CC75',
+  activeTaskBkgColor: '#91CC75',
+  doneTaskBkgColor: '#73C0DE',
+  doneTaskBorderColor: '#73C0DE',
+  critBkgColor: '#EE6666',
+  critBorderColor: '#EE6666',
   fontSize: '14px',
-  // Categorical chart palette (pie slices, series colors). Without these the
-  // base theme renders every slice in the same muted slate — charts read as
-  // monochrome. AntV-derived hues with adequate light-mode contrast.
-  pie1: '#5B8FF9',
-  pie2: '#61DDAA',
-  pie3: '#F6BD16',
-  pie4: '#F08BB4',
-  pie5: '#7262FD',
-  pie6: '#78D3F8',
-  pie7: '#9661BC',
-  pie8: '#F6903D',
-  pie9: '#008685',
-  pie10: '#E8684A',
-  pie11: '#6DC8EC',
-  pie12: '#A0A6AB',
+  // Categorical chart palette (pie slices): ECharts series palette, then
+  // lightened repeats for slices 10-12. pieOpacity defaults to 0.7 — ECharts
+  // pie slices are opaque with white borders between them.
+  pie1: '#5470C6',
+  pie2: '#91CC75',
+  pie3: '#FAC858',
+  pie4: '#EE6666',
+  pie5: '#73C0DE',
+  pie6: '#3BA272',
+  pie7: '#FC8452',
+  pie8: '#9A60B4',
+  pie9: '#EA7CCC',
+  pie10: '#A1B6E6',
+  pie11: '#BCE0AC',
+  pie12: '#FCD98F',
+  pieStrokeColor: '#FFFFFF',
+  pieOuterStrokeColor: '#FFFFFF',
+  pieOpacity: '1',
+  pieTitleTextColor: '#464646',
+  pieSectionTextColor: '#FFFFFF',
+  pieLegendTextColor: '#333333',
   // xychart-beta series palette — mermaid reads xyChart.plotColorPalette from
   // themeVariables (not top-level config); keep it in sync with the pie slices.
+  // Axis lines/ticks/labels use the ECharts axis gray (#6E7074).
   xyChart: {
-    plotColorPalette: '#5B8FF9,#61DDAA,#F6BD16,#F08BB4,#7262FD,#78D3F8,#9661BC,#F6903D',
+    backgroundColor: '#FFFFFF',
+    titleColor: '#464646',
+    xAxisLabelColor: '#6E7074',
+    xAxisTitleColor: '#464646',
+    xAxisTickColor: '#6E7074',
+    xAxisLineColor: '#6E7074',
+    yAxisLabelColor: '#6E7074',
+    yAxisTitleColor: '#464646',
+    yAxisTickColor: '#6E7074',
+    yAxisLineColor: '#6E7074',
+    plotColorPalette: '#5470C6,#91CC75,#FAC858,#EE6666,#73C0DE,#3BA272,#FC8452,#9A60B4',
   },
 }
 
+// Dark mirror of the light ECharts theme: the same ECharts hue set, with the
+// blue/teal/purple series brightened for the app's #1a1f28 canvas; pie gaps
+// and xy axes follow the dark equivalents (canvas-colored slice borders,
+// lightened axis gray).
 const MERMAID_DARK_THEME = {
   darkMode: true,
   background: '#1a1f28',
-  primaryColor: '#475569',
-  primaryTextColor: '#e2e8f0',
-  primaryBorderColor: '#64748b',
-  secondaryColor: '#334155',
-  secondaryTextColor: '#cbd5e1',
-  secondaryBorderColor: '#64748b',
-  tertiaryColor: '#1e293b',
-  tertiaryTextColor: '#94a3b8',
-  tertiaryBorderColor: '#475569',
-  lineColor: '#64748b',
-  textColor: '#e2e8f0',
-  mainBkg: '#1e293b',
-  nodeBorder: '#64748b',
+  primaryColor: '#6C8FE8',
+  primaryTextColor: '#FFFFFF',
+  primaryBorderColor: '#6C8FE8',
+  secondaryColor: '#91CC75',
+  secondaryTextColor: '#FFFFFF',
+  secondaryBorderColor: '#91CC75',
+  tertiaryColor: '#FAC858',
+  tertiaryTextColor: '#333840',
+  tertiaryBorderColor: '#FAC858',
+  lineColor: '#8E959F',
+  textColor: '#E2E8F0',
+  classText: '#FFFFFF',
+  mainBkg: '#6C8FE8',
+  // 同浅色版：类图文字与节点描边走 nodeBorder。
+  nodeBorder: '#FFFFFF',
   clusterBkg: '#1a2332',
-  clusterBorder: '#475569',
+  clusterBorder: '#3E4655',
   titleColor: '#f1f5f9',
   edgeLabelBackground: '#1e293b',
-  actorBorder: '#64748b',
-  actorBkg: '#1e293b',
-  actorTextColor: '#f1f5f9',
-  actorLineColor: '#64748b',
-  signalColor: '#64748b',
-  labelBoxBkgColor: '#334155',
-  labelBoxBorderColor: '#64748b',
-  labelTextColor: '#e2e8f0',
-  loopTextColor: '#cbd5e1',
-  noteBkgColor: '#334155',
-  noteTextColor: '#e2e8f0',
-  noteBorderColor: '#64748b',
+  actorBorder: '#6C8FE8',
+  actorBkg: '#6C8FE8',
+  actorTextColor: '#FFFFFF',
+  actorLineColor: '#8E959F',
+  signalColor: '#8E959F',
+  signalTextColor: '#E2E8F0',
+  labelBoxBkgColor: '#28324A',
+  labelBoxBorderColor: '#6C8FE8',
+  labelTextColor: '#E2E8F0',
+  loopTextColor: '#CBD5E1',
+  noteBkgColor: '#272E3B',
+  noteTextColor: '#CBD5E1',
+  noteBorderColor: '#3E4655',
+  activationBkgColor: '#28324A',
+  activationBorderColor: '#6C8FE8',
   // Gantt
   sectionBkgColor: '#1a2332',
   altSectionBkgColor: '#1e293b',
   gridColor: '#334155',
-  todayLineColor: '#94a3b8',
-  taskBorderColor: '#64748b',
-  taskBkgColor: '#475569',
-  activeTaskBorderColor: '#94a3b8',
-  activeTaskBkgColor: '#64748b',
-  doneTaskBkgColor: '#334155',
-  doneTaskBorderColor: '#64748b',
-  critBkgColor: '#7f1d1d',
-  critBorderColor: '#ef4444',
+  todayLineColor: '#EE6666',
+  taskBorderColor: '#6C8FE8',
+  taskBkgColor: '#6C8FE8',
+  taskTextLightColor: '#FFFFFF',
+  taskTextDarkColor: '#1F2937',
+  activeTaskBorderColor: '#91CC75',
+  activeTaskBkgColor: '#91CC75',
+  doneTaskBkgColor: '#3E4A6E',
+  doneTaskBorderColor: '#5A6A96',
+  critBkgColor: '#EE6666',
+  critBorderColor: '#EE6666',
   fontSize: '14px',
-  // Categorical chart palette, brightened for dark backgrounds.
-  pie1: '#699CFF',
-  pie2: '#7CE8BC',
-  pie3: '#FFD666',
-  pie4: '#FFA9C9',
-  pie5: '#9A8FFF',
-  pie6: '#9BDDFB',
-  pie7: '#B28AD6',
-  pie8: '#FFAA6E',
-  pie9: '#4DBDBA',
-  pie10: '#FF8A6B',
-  pie11: '#93D8F2',
-  pie12: '#B9C0C6',
+  // ECharts palette brightened for dark backgrounds; 10-12 lighten further.
+  pie1: '#6C8FE8',
+  pie2: '#91CC75',
+  pie3: '#FAC858',
+  pie4: '#EE6666',
+  pie5: '#73C0DE',
+  pie6: '#4CBF8F',
+  pie7: '#FC8452',
+  pie8: '#AC85CE',
+  pie9: '#EA7CCC',
+  pie10: '#9DADF0',
+  pie11: '#B9E5A9',
+  pie12: '#FBD98F',
+  pieStrokeColor: '#1A1F28',
+  pieOuterStrokeColor: '#1A1F28',
+  pieOpacity: '1',
+  pieTitleTextColor: '#F1F5F9',
+  pieSectionTextColor: '#FFFFFF',
+  pieLegendTextColor: '#E2E8F0',
   // Brightened xychart-beta series palette for dark backgrounds.
   xyChart: {
-    plotColorPalette: '#699CFF,#7CE8BC,#FFD666,#FFA9C9,#9A8FFF,#9BDDFB,#B28AD6,#FFAA6E',
+    backgroundColor: 'transparent',
+    titleColor: '#F1F5F9',
+    xAxisLabelColor: '#9AA3B2',
+    xAxisTitleColor: '#E2E8F0',
+    xAxisTickColor: '#8E959F',
+    xAxisLineColor: '#8E959F',
+    yAxisLabelColor: '#9AA3B2',
+    yAxisTitleColor: '#E2E8F0',
+    yAxisTickColor: '#8E959F',
+    yAxisLineColor: '#8E959F',
+    plotColorPalette: '#6C8FE8,#91CC75,#FAC858,#EE6666,#73C0DE,#4CBF8F,#FC8452,#AC85CE',
   },
 }
 
@@ -259,11 +318,28 @@ export const renderMermaidToSvg = async (code: string, id?: string): Promise<str
     // one so a later render cannot collide with an SVG already in the DOM.
     const renderId = `${id || 'mermaid'}-${++mermaidCount}`
     const { svg } = await mermaid.render(renderId, code)
-    return svg
+    return patchEdgeLabelContrast(svg)
   } catch (e) {
     console.error('Mermaid rendering error:', e)
     return null
   }
+}
+
+// Mermaid 没有独立的边线标签文字色变量：`.label` 的 color 取
+// primaryTextColor（实心色节点需要白字），流程图的边线标签（是/否等）
+// 继承同一规则，白色标签底上就是白字。在渲染出的 SVG 自带的 <style>
+// 末尾追加一条 !important 规则兜底，文字色对齐 ECharts 图例灰。
+// 规则用 SVG 根 id 作用域，避免同页多图（如明暗混排的缓存）互相覆盖；
+// 只命中 .edgeLabel（流程图/状态图的边线标签），不影响节点、饼图、
+// 时序图等其它文本。
+const patchEdgeLabelContrast = (svg: string): string => {
+  const m = /<svg[^>]*\sid="([^"]+)"/.exec(svg)
+  if (!m || !svg.includes('</style>')) return svg
+  const isDark = document.documentElement.getAttribute('theme-mode') === 'dark'
+  const text = isDark ? '#E2E8F0' : '#333333'
+  const scope = `#${m[1]}`
+  const rules = `${scope} .edgeLabel,${scope} .edgeLabel *{color:${text} !important;fill:${text} !important;}`
+  return svg.replace('</style>', rules + '</style>')
 }
 
 // Mermaid lays out some diagrams (pie titles especially) with near-zero
@@ -380,7 +456,7 @@ export const renderMermaidInContainer = async (
       const renderId = `mermaid-render-${++mermaidCount}`
       const { svg } = await mermaid.render(renderId, code)
       el.classList.add('mermaid')
-      el.innerHTML = svg
+      el.innerHTML = patchEdgeLabelContrast(svg)
       el.setAttribute('data-mermaid', 'true')
       const rendered = el.querySelector('svg')
       fitMermaidSvgViewport(rendered)
