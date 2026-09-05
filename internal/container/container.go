@@ -1588,6 +1588,11 @@ func NewDuckDB() (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open duckdb: %w", err)
 	}
+	// ":memory:" DuckDB 的每个驱动连接都是独立数据库；放任连接池扩张会
+	// 出现"A 连接建的表/装的扩展在 B 连接不可见"。固定单连接，串行使用
+	// （DuckDB 本就是进程内嵌入式引擎）。
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 
 	// Try to install and load required extensions unless explicitly disabled.
 	//   - spatial: used for st_read_meta() to enumerate layer (sheet) names from .xlsx/.xls

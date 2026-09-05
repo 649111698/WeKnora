@@ -224,18 +224,17 @@ func (t *DataAnalysisTool) Execute(ctx context.Context, args json.RawMessage) (*
 			Error:   fmt.Sprintf("Failed to parse input args: %v", err),
 		}, err
 	}
-	if t.scopeEnforced {
-		if _, err := authorizeKnowledgeInSearchTargets(ctx, t.searchTargets, input.KnowledgeID, t.knowledgeService); err != nil {
-			return &types.ToolResult{Success: false, Error: err.Error()}, err
-		}
-	}
-
+	// MCP 大结果物化表优先：不是知识库文档，必须先于知识库授权判断，
+	// 否则表名会被当成文档 ID 拦成 "knowledge not found"。
 	var schema *TableSchema
 	if t.offload != nil && t.offload.Has(input.KnowledgeID) {
-		// MCP 大结果物化表：不是知识库文档，跳过文档授权与加载，
-		// 结构由落表时登记（行数/列型已知，无需再物化文件）。
 		schema = t.offload.Schema(input.KnowledgeID)
 	} else {
+		if t.scopeEnforced {
+			if _, err := authorizeKnowledgeInSearchTargets(ctx, t.searchTargets, input.KnowledgeID, t.knowledgeService); err != nil {
+				return &types.ToolResult{Success: false, Error: err.Error()}, err
+			}
+		}
 		var err error
 		schema, err = t.LoadFromKnowledgeID(ctx, input.KnowledgeID)
 		if err != nil {

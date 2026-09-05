@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -13,9 +15,10 @@ import (
 )
 
 // MCP 大结果自动"落表"：MCP 工具返回的结构化大结果不再全量拼进 LLM
-// 上下文，而是物化为 DuckDB 只读表。模型只拿到行数/列结构/样例行，
-// 随后用 data_analysis 工具写 SQL 聚合分析，上下文里只回小结果。
-// 这是应对"MCP 明细数据量一大就撑爆上下文/思考预算"的通用解法。
+// 上下文，而是物化为 DuckDB 只读表。模型只拿到行数/列结构/样例行与分页
+// 完整性信息，随后用 data_analysis 工具写 SQL 聚合分析，上下文里只回
+// 小结果。同一查询的分页结果（去掉分页键后参数一致的调用）自动追加进
+// 同一张表，模型不必 UNION 多张分页表。
 
 const (
 	// mcpOffloadMinBytes 与 mcpOffloadMinRows 同时满足才落表；小结果直接
@@ -47,10 +50,24 @@ const (
 	mcpOffloadCellBudget = 2_000_000
 )
 
+// paginationKeys 是"分页参数"键：指纹时剔除它们，同一查询的不同页就归
+// 并到同一张表；页幂等键则保留全部参数。
+var paginationKeys = map[string]bool{
+	"pageNo": true, "page_no": true, "page": true, "pageIndex": true, "page_index": true,
+	"pageNum": true, "page_num": true, "offset": true, "skip": true, "cursor": true,
+	"pageSize": true, "page_size": true, "limit": true, "size": true,
+}
+
 type offloadedTable struct {
-	name    string
-	columns []ColumnInfo
-	rows    int64
+	name         string
+	columns      []ColumnInfo
+	rowKeys      []string // 与 columns 对齐的行内键名
+	rows         int64
+	fingerprint  string
+	totalCount   int
+	nextRow      int64
+	childCols    []string
+	childNextRow map[string]int64
 }
 
 // MCPOffloadStore 追踪一次问答请求内物化的 MCP 表。每个 agent engine
@@ -60,18 +77,20 @@ type MCPOffloadStore struct {
 	mu      sync.Mutex
 	db      *sql.DB
 	tables  map[string]*offloadedTable
-	byTool  map[string][]string
+	byQuery map[string]string          // toolName+query 指纹 → 表名
+	pages   map[string]map[string]bool // 表名 → 已加载的页指纹
 	seq     int
-	cells   int64 // 已物化累计单元格数（预算控制，防嵌套膨胀）
+	cells   int64
 	cleaned bool
 }
 
 // NewMCPOffloadStore 建立会话级落表存储；db 为 nil 时所有方法退化为空操作。
 func NewMCPOffloadStore(db *sql.DB) *MCPOffloadStore {
 	return &MCPOffloadStore{
-		db:     db,
-		tables: map[string]*offloadedTable{},
-		byTool: map[string][]string{},
+		db:      db,
+		tables:  map[string]*offloadedTable{},
+		byQuery: map[string]string{},
+		pages:   map[string]map[string]bool{},
 	}
 }
 
@@ -92,7 +111,8 @@ func (s *MCPOffloadStore) Cleanup(ctx context.Context) {
 		}
 	}
 	s.tables = map[string]*offloadedTable{}
-	s.byTool = map[string][]string{}
+	s.byQuery = map[string]string{}
+	s.pages = map[string]map[string]bool{}
 	s.cleaned = true
 }
 
@@ -122,19 +142,52 @@ func (s *MCPOffloadStore) Schema(name string) *TableSchema {
 }
 
 // TryOffload 判断 text 是否"大而表格化"，是则物化为 DuckDB 表并返回给
-// 模型的摘要；不适合落表时 ok=false，调用方保留原文。
-func (s *MCPOffloadStore) TryOffload(ctx context.Context, toolName, text string) (string, bool) {
+// 模型的摘要；不适合落表时 ok=false，调用方保留原文。args 是本次工具
+// 调用参数：去掉分页键后的指纹相同的多次调用视为同一查询，结果行追加
+// 进同一张表（先探总数、再翻页拉数的两段式用法自然合并）。
+func (s *MCPOffloadStore) TryOffload(ctx context.Context, toolName string, args json.RawMessage, text string) (string, bool) {
 	if s == nil || s.db == nil {
 		return "", false
 	}
 	if len(text) < mcpOffloadMinBytes {
 		return "", false
 	}
-	rows, ok := extractTabularRows(text)
+	rows, meta, ok := extractTabularRows(text)
 	if !ok || len(rows) < mcpOffloadMinRows {
 		return "", false
 	}
-	summary, err := s.materialize(ctx, toolName, rows)
+
+	queryFP := argsFingerprint(args, true)
+	pageKey := argsFingerprint(args, false)
+
+	s.mu.Lock()
+	existing := s.byQuery[toolName+"\x00"+queryFP]
+	var tbl *offloadedTable
+	if existing != "" {
+		tbl = s.tables[existing]
+	}
+	if tbl != nil && s.pages[tbl.name][pageKey] {
+		// 同一页重复加载：幂等跳过，防模型重试造成重复行。
+		s.mu.Unlock()
+		return alreadyLoadedSummary(tbl), true
+	}
+	if tbl != nil && tbl.totalCount > 0 && tbl.rows >= int64(tbl.totalCount) {
+		// 表已含全量数据：拒绝继续拉页（配合完整性提示消除无谓翻页）。
+		s.pages[tbl.name][pageKey] = true
+		total := tbl.rows
+		name := tbl.name
+		s.mu.Unlock()
+		return fmt.Sprintf("[Offloaded data] Table `%s` already contains ALL %d rows (totalCount=%d) — the dataset is complete. Do NOT fetch more pages; analyze `%s` with the `data_analysis` tool.", name, total, total, name), true
+	}
+	s.mu.Unlock()
+
+	var summary string
+	var err error
+	if tbl != nil {
+		summary, err = s.appendRows(ctx, tbl, rows, meta)
+	} else {
+		summary, err = s.createFresh(ctx, toolName, rows, meta, queryFP, pageKey)
+	}
 	if err != nil {
 		logger.GetLogger(ctx).Warnf("MCP offload: materialize %s failed (%d rows), falling back to inline result: %v", toolName, len(rows), err)
 		return "", false
@@ -142,39 +195,90 @@ func (s *MCPOffloadStore) TryOffload(ctx context.Context, toolName, text string)
 	return summary, true
 }
 
+// ---- 摘要 ----
+
+func completenessLine(loaded int64, total int) string {
+	if total > 0 {
+		if loaded >= int64(total) {
+			return fmt.Sprintf("Completeness: ALL %d rows of totalCount=%d are loaded — the dataset is COMPLETE. Do NOT fetch more pages.", loaded, total)
+		}
+		return fmt.Sprintf("Completeness: PARTIAL — %d of totalCount=%d rows loaded. Fetch the remaining pages with the SAME query; each page is appended into this same table automatically.", loaded, total)
+	}
+	return "Completeness unknown — if the source paginates, keep fetching pages with the same query; they append into this same table."
+}
+
+func analyzeHint(name string) string {
+	return fmt.Sprintf("Analyze it with the `data_analysis` tool: knowledge_id = \"%s\", sql = SELECT-only statements. Do not fetch the raw rows again — they will not fit in context.", name)
+}
+
+func alreadyLoadedSummary(t *offloadedTable) string {
+	return fmt.Sprintf("[Offloaded data] This page is already loaded into table `%s` (%d rows). Analyze the existing table; do not re-fetch this page.", t.name, t.rows)
+}
+
+// ---- 参数指纹 ----
+
+// argsFingerprint 对调用参数做稳定哈希；stripPagination 为 true 时剔除分
+// 页键（同一查询的不同页归并），否则保留全部参数（页幂等键）。
+func argsFingerprint(args json.RawMessage, stripPagination bool) string {
+	if len(args) == 0 {
+		return "-"
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(args, &m); err == nil {
+		if stripPagination {
+			for k := range paginationKeys {
+				delete(m, k)
+			}
+		}
+		if b, err := json.Marshal(m); err == nil {
+			args = b
+		}
+	}
+	sum := sha256.Sum256(args)
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+// ---- 结构识别 ----
+
+// offloadMeta 携带分页元信息（数组直接父对象上的 totalCount 等）。
+type offloadMeta struct {
+	totalCount int
+}
+
 // extractTabularRows 从 JSON 文本中抽出记录数组：顶层是数组，或在多层
 // 包装对象里递归找最大的对象数组（{"code":0,"data":{"records":[...]}}、
 // {"result":{"list":[...]}} 等真实 MCP 常见形态）。
-func extractTabularRows(text string) ([]map[string]interface{}, bool) {
+func extractTabularRows(text string) ([]map[string]interface{}, offloadMeta, bool) {
 	trimmed := strings.TrimSpace(text)
 	if !strings.HasPrefix(trimmed, "[") && !strings.HasPrefix(trimmed, "{") {
-		return nil, false
+		return nil, offloadMeta{}, false
 	}
 	var top interface{}
 	if err := json.Unmarshal([]byte(trimmed), &top); err != nil {
-		return nil, false
+		return nil, offloadMeta{}, false
 	}
-	best, bestLen := findLargestRowArray(top, 0)
+	best, bestLen, meta := findLargestRowArray(top, 0)
 	if bestLen == 0 {
-		return nil, false
+		return nil, offloadMeta{}, false
 	}
-	return best, true
+	return best, meta, true
 }
 
 // findLargestRowArray 深度优先递归（上限 mcpOffloadSearchDepth），返回节
-// 点子树里行数最多的对象数组。
-func findLargestRowArray(v interface{}, depth int) ([]map[string]interface{}, int) {
+// 点子树里行数最多的对象数组；totalCount 取离数组最近的父对象上的值。
+func findLargestRowArray(v interface{}, depth int) ([]map[string]interface{}, int, offloadMeta) {
 	if rows, ok := rowsFromArray(v); ok {
-		return rows, len(rows)
+		return rows, len(rows), offloadMeta{}
 	}
 	if depth >= mcpOffloadSearchDepth {
-		return nil, 0
+		return nil, 0, offloadMeta{}
 	}
 	obj, ok := v.(map[string]interface{})
 	if !ok {
-		return nil, 0
+		return nil, 0, offloadMeta{}
 	}
 	best, bestLen := []map[string]interface{}{}, 0
+	var bestMeta offloadMeta
 	// map 遍历无序，按 key 排序保证同结构输入选出同一数组（确定性）。
 	keys := make([]string, 0, len(obj))
 	for k := range obj {
@@ -182,11 +286,27 @@ func findLargestRowArray(v interface{}, depth int) ([]map[string]interface{}, in
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if rows, n := findLargestRowArray(obj[k], depth+1); n > bestLen {
-			best, bestLen = rows, n
+		rows, n, meta := findLargestRowArray(obj[k], depth+1)
+		if n > bestLen {
+			best, bestLen, bestMeta = rows, n, meta
+			// 更深递归已捕获 totalCount 时保留（离数组更近的父对象）；
+			// 否则当前对象可能正是数组的直接父对象。
+			if bestMeta.totalCount == 0 {
+				bestMeta.totalCount = siblingTotalCount(obj)
+			}
 		}
 	}
-	return best, bestLen
+	return best, bestLen, bestMeta
+}
+
+// siblingTotalCount 读包装对象上的分页总数字段（totalCount/total/...）。
+func siblingTotalCount(obj map[string]interface{}) int {
+	for _, k := range []string{"totalCount", "total_count", "total", "totalcount"} {
+		if f, ok := obj[k].(float64); ok && f > 0 && f == float64(int(f)) {
+			return int(f)
+		}
+	}
+	return 0
 }
 
 // rowsFromArray 把 []interface{} 归一为记录切片：元素是对象则原样；
@@ -208,173 +328,6 @@ func rowsFromArray(v interface{}) ([]map[string]interface{}, bool) {
 		}
 	}
 	return rows, true
-}
-
-// materialize 建表（含数组列递归拆子表）、灌数、登记并返回摘要文本。
-func (s *MCPOffloadStore) materialize(ctx context.Context, toolName string, rows []map[string]interface{}) (string, error) {
-	s.mu.Lock()
-	s.seq++
-	seq := s.seq
-	s.mu.Unlock()
-
-	base := sanitizeName(toolName)
-	if len(base) > 40 {
-		base = base[:40]
-	}
-	table := fmt.Sprintf("%s_t%d", base, seq)
-
-	var desc tableDesc
-	if err := s.buildTable(ctx, table, rows, 0, &desc); err != nil {
-		return "", err
-	}
-
-	s.mu.Lock()
-	s.byTool[toolName] = append(s.byTool[toolName], table)
-	prev := append([]string{}, s.byTool[toolName]...)
-	s.mu.Unlock()
-
-	sampleN := mcpOffloadSampleRows
-	if sampleN > len(rows) {
-		sampleN = len(rows)
-	}
-	var sample strings.Builder
-	for i := 0; i < sampleN; i++ {
-		original, _ := json.Marshal(rows[i])
-		sample.WriteString("  " + string(original) + "\n")
-	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "[Offloaded data] This tool returned %d rows — too large to inline into the conversation. The full dataset is loaded into local read-only SQL tables:\n\n", len(rows))
-	b.WriteString(desc.render(0))
-	fmt.Fprintf(&b, "\nSample rows (first %d of %d, original JSON):\n%s\n", sampleN, len(rows), sample.String())
-	fmt.Fprintf(&b, "Analyze with the `data_analysis` tool: knowledge_id = the table name, sql = SELECT-only statements. Do not fetch the raw rows again — they will not fit in context.")
-	if len(prev) > 1 {
-		fmt.Fprintf(&b, " Earlier offloads from this same tool: %s (UNION ALL them if they are pages of the same query).", strings.Join(prev[:len(prev)-1], ", "))
-	}
-	return b.String(), nil
-}
-
-// tableDesc 记录主表与子表的层级结构，用于渲染给模型的摘要。
-type tableDesc struct {
-	name     string
-	rows     int
-	cols     []ColumnInfo
-	arrayCol string // 子表来源列（主表里保留同名列的 JSON 原文）
-	children []*tableDesc
-}
-
-func (d *tableDesc) render(indent int) string {
-	var b strings.Builder
-	pad := strings.Repeat("  ", indent)
-	colDesc := make([]string, 0, len(d.cols))
-	for _, c := range d.cols {
-		colDesc = append(colDesc, fmt.Sprintf("%s (%s)", c.Name, c.Type))
-	}
-	fmt.Fprintf(&b, "%s- `%s` (%d rows): %s\n", pad, d.name, d.rows, strings.Join(colDesc, ", "))
-	for _, child := range d.children {
-		fmt.Fprintf(&b, "%s  child of `%s` via `%s._prow` = parent `_row`:\n", pad, d.name, child.name)
-		b.WriteString(child.render(indent + 1))
-	}
-	return b.String()
-}
-
-// buildTable 把一组记录物化为表；子记录列（值可能时为数组、时为单对象、
-// 时为 null —— 真实 MCP 常见形态）按实际数据量决定是否递归拆成
-// "__列名" 子表，用 _row（行号）/_prow（父行号）关联。
-// 停止条件（结合实际而非固定层数）：
-//   - 子表行数 < 2 或序列化后 < mcpOffloadChildMinBytes：数据量太小，
-//     保留 JSON 字符串列即可，样例行已够模型理解；
-//   - 累计单元格数超 mcpOffloadCellBudget：防嵌套数组笛卡尔式膨胀；
-//   - 深度达 mcpOffloadChildDepthMax：防自引用/病态深嵌套的硬上限。
-func (s *MCPOffloadStore) buildTable(ctx context.Context, table string, rows []map[string]interface{}, depth int, desc *tableDesc) error {
-	if depth >= mcpOffloadChildDepthMax {
-		logger.GetLogger(ctx).Infof("MCP offload: stop splitting at %s (max depth)", table)
-		return nil
-	}
-	// 先基于原始行识别子记录列（混合形态归一），摊平时这些列保持原值，
-	// 不做点路径展开，避免父表 schema 被同一列的数组/对象两种形态污染。
-	childCols := detectChildCols(rows)
-	skip := make(map[string]bool, len(childCols))
-	for _, c := range childCols {
-		skip[c] = true
-	}
-	flatRows, cols, colOrder := flattenAll(rows, skip)
-	if len(cols) == 0 {
-		return fmt.Errorf("no columns detected for %s", table)
-	}
-
-	// 再按实际数据量筛"值得拆"的列。
-	worthSplitting := make([]string, 0, len(childCols))
-	for _, col := range childCols {
-		childRows := collectChildRows(flatRows, col)
-		if len(childRows) < 2 {
-			continue
-		}
-		if estimateRowsBytes(childRows) < mcpOffloadChildMinBytes {
-			continue
-		}
-		if s.cells+int64(len(childRows))*int64(maxInt(len(cols), 1)) > mcpOffloadCellBudget {
-			logger.GetLogger(ctx).Warnf("MCP offload: skip child table %s__%s (cell budget)", table, col)
-			continue
-		}
-		worthSplitting = append(worthSplitting, col)
-	}
-	if len(worthSplitting) > 0 {
-		cols, colOrder, flatRows = appendRowOrdinal(cols, colOrder, flatRows)
-	}
-	if err := s.createAndLoad(ctx, table, cols, colOrder, flatRows); err != nil {
-		return err
-	}
-
-	desc.name = table
-	desc.rows = len(flatRows)
-	desc.cols = cols
-
-	s.mu.Lock()
-	s.tables[table] = &offloadedTable{name: table, columns: cols, rows: int64(len(flatRows))}
-	s.cells += int64(len(flatRows)) * int64(len(cols))
-	s.mu.Unlock()
-
-	for _, col := range worthSplitting {
-		childRows := collectChildRows(flatRows, col)
-		childName := table + "__" + sanitizeName(col)
-		if len(childName) > 63 {
-			childName = childName[:63]
-		}
-		childDesc := &tableDesc{arrayCol: col}
-		if err := s.buildTable(ctx, childName, childRows, depth+1, childDesc); err != nil {
-			logger.GetLogger(ctx).Warnf("MCP offload: child table %s failed: %v", childName, err)
-			continue
-		}
-		if childDesc.name != "" {
-			desc.children = append(desc.children, childDesc)
-		}
-	}
-	return nil
-}
-
-// estimateRowsBytes 粗估一组行的序列化字节数（子表拆分价值判断）。
-func estimateRowsBytes(rows []map[string]interface{}) int {
-	n := 0
-	for i, row := range rows {
-		if i >= 200 { // 抽样前 200 行足够判断量级
-			n = n * len(rows) / i
-			break
-		}
-		b, err := json.Marshal(row)
-		if err != nil {
-			continue
-		}
-		n += len(b)
-	}
-	return n
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // childElements 归一取出某行某列的子记录：数组取其中的对象元素，单对象
@@ -437,43 +390,354 @@ func detectChildCols(rows []map[string]interface{}) []string {
 	return cols
 }
 
-// appendRowOrdinal 为主表补 _row 行号列（1 起），供子表 _prow 关联。
-func appendRowOrdinal(cols []ColumnInfo, colOrder []string, flatRows []map[string]interface{}) ([]ColumnInfo, []string, []map[string]interface{}) {
-	if _, exists := colIndex(cols, "_row"); exists {
-		return cols, colOrder, flatRows
+// ---- 建表 / 追加 ----
+
+// createFresh 首次落表：建主表并按实际数据量递归拆子表，登记指纹与页。
+func (s *MCPOffloadStore) createFresh(ctx context.Context, toolName string, rows []map[string]interface{}, meta offloadMeta, queryFP, pageKey string) (string, error) {
+	s.mu.Lock()
+	s.seq++
+	seq := s.seq
+	s.mu.Unlock()
+
+	base := sanitizeName(toolName)
+	if len(base) > 40 {
+		base = base[:40]
 	}
-	cols = append(cols, ColumnInfo{Name: "_row", Type: "BIGINT"})
-	colOrder = append(colOrder, "_row")
-	for i, row := range flatRows {
-		row["_row"] = float64(i + 1)
+	table := fmt.Sprintf("%s_t%d", base, seq)
+
+	desc := tableDesc{}
+	if err := s.buildTable(ctx, table, rows, 0, &desc); err != nil {
+		return "", err
 	}
-	return cols, colOrder, flatRows
+
+	s.mu.Lock()
+	t := s.tables[table]
+	t.fingerprint = queryFP
+	s.byQuery[toolName+"\x00"+queryFP] = table
+	if t.totalCount < meta.totalCount {
+		t.totalCount = meta.totalCount
+	}
+	s.markPageLocked(table, pageKey)
+	s.mu.Unlock()
+
+	logger.GetLogger(ctx).Infof("MCP offload: %s -> table %s (%d rows, totalCount=%d)", toolName, table, t.rows, t.totalCount)
+	return s.renderFreshSummary(desc, rows, meta, t), nil
 }
 
-func colIndex(cols []ColumnInfo, name string) (int, bool) {
-	for i, c := range cols {
-		if strings.EqualFold(c.Name, name) {
-			return i, true
-		}
+// appendRows 同一查询的后续分页：行追加进既有主表（新列 ALTER 补齐），
+// 子记录列同样追加进既有子表；_row/_prow 序号接续。
+func (s *MCPOffloadStore) appendRows(ctx context.Context, t *offloadedTable, rows []map[string]interface{}, meta offloadMeta) (string, error) {
+	// 子记录列 = 既有列 ∪ 本批新列（新列懒建子表）。
+	newChildCols := detectChildCols(rows)
+	skip := map[string]bool{}
+	for _, c := range t.childCols {
+		skip[c] = true
 	}
-	return -1, false
-}
+	for _, c := range newChildCols {
+		skip[c] = true
+	}
+	flatRows, _, _ := flattenAll(rows, skip)
 
-// collectChildRows 把子记录列摊成子表行：每个元素摊平后带 _prow（父行
-// 号）；数组/单对象/null 都已归一。自己的 _row 由子表阶段的
-// appendRowOrdinal 补充（当子表还有下一层时）。
-func collectChildRows(flatRows []map[string]interface{}, col string) []map[string]interface{} {
-	child := make([]map[string]interface{}, 0)
+	// 补新列（ALTER ADD），保持 rowKeys 与 columns 对齐。
+	s.mu.Lock()
+	colIdx := map[string]int{}
+	for i, k := range t.rowKeys {
+		colIdx[k] = i
+	}
+	seenNew := make([]string, 0)
+	_ = seenNew
+	var newCols []ColumnInfo
+	var newKeys []string
 	for _, row := range flatRows {
-		parentRow, _ := row["_row"].(float64)
-		for _, elem := range childElements(row[col]) {
-			flat := flattenRow(elem, "", mcpOffloadFlattenDepth, nil)
-			flat["_prow"] = parentRow
-			child = append(child, flat)
+		for k, v := range row {
+			if _, ok := colIdx[k]; ok {
+				continue
+			}
+			colIdx[k] = len(t.columns) + len(newKeys)
+			kinds := map[string]bool{}
+			switch v.(type) {
+			case bool:
+				kinds["bool"] = true
+			case float64:
+				if isIntegralFloat(v.(float64)) {
+					kinds["int"] = true
+				} else {
+					kinds["float"] = true
+				}
+			case string:
+				kinds["str"] = true
+			}
+			newCols = append(newCols, ColumnInfo{Name: k, Type: inferDuckType(kinds)})
+			newKeys = append(newKeys, k)
 		}
 	}
-	return child
+	for i, c := range newCols {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", quoteIdent(t.name), quoteIdent(c.Name), c.Type)); err != nil {
+			s.mu.Unlock()
+			return "", fmt.Errorf("alter table: %w", err)
+		}
+		t.columns = append(t.columns, c)
+		t.rowKeys = append(t.rowKeys, newKeys[i])
+	}
+	total := meta.totalCount
+	if t.totalCount > total {
+		total = t.totalCount
+	}
+	t.totalCount = total
+	// 行号接续。
+	offset := t.nextRow
+	for i, row := range flatRows {
+		row["_row"] = float64(offset + int64(i) + 1)
+	}
+	s.mu.Unlock()
+
+	cols, keys := t.columns, t.rowKeys
+	if err := insertRows(ctx, s.db, t.name, cols, keys, flatRows); err != nil {
+		return "", err
+	}
+
+	// 子表追加/懒建。
+	for _, col := range append(append([]string{}, t.childCols...), newChildCols...) {
+		childRows := collectChildRows(flatRows, col)
+		if len(childRows) == 0 {
+			continue
+		}
+		childName := childTableName(t.name, col)
+		if s.Has(childName) {
+			if err := s.appendChild(ctx, childName, childRows); err != nil {
+				logger.GetLogger(ctx).Warnf("MCP offload: append child %s failed: %v", childName, err)
+			}
+			continue
+		}
+		childDesc := &tableDesc{}
+		if err := s.buildTable(ctx, childName, childRows, 1, childDesc); err != nil {
+			logger.GetLogger(ctx).Warnf("MCP offload: child table %s failed: %v", childName, err)
+			continue
+		}
+	}
+
+	s.mu.Lock()
+	t.rows += int64(len(flatRows))
+	t.nextRow = offset + int64(len(flatRows))
+	if !containsString(t.childCols, "") {
+		// no-op 占位，保持锁语义清晰
+	}
+	for _, c := range newChildCols {
+		if !containsString(t.childCols, c) {
+			t.childCols = append(t.childCols, c)
+		}
+	}
+	rowCount := t.rows
+	s.cells += int64(len(flatRows)) * int64(len(cols))
+	s.mu.Unlock()
+
+	logger.GetLogger(ctx).Infof("MCP offload: appended %d rows to %s (now %d, totalCount=%d)", len(flatRows), t.name, rowCount, total)
+	var b strings.Builder
+	fmt.Fprintf(&b, "[Offloaded data] Appended %d rows into existing table `%s` — now %d rows total.\n", len(flatRows), t.name, rowCount)
+	fmt.Fprintf(&b, "%s\n%s", completenessLine(rowCount, total), analyzeHint(t.name))
+	return b.String(), nil
 }
+
+// appendChild 把子记录行追加进既有子表（行号接续，新列 ALTER）。
+func (s *MCPOffloadStore) appendChild(ctx context.Context, childName string, childRows []map[string]interface{}) error {
+	s.mu.Lock()
+	c := s.tables[childName]
+	if c == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("child table %s missing", childName)
+	}
+	colIdx := map[string]int{}
+	for i, k := range c.rowKeys {
+		colIdx[k] = i
+	}
+	var newCols []ColumnInfo
+	var newKeys []string
+	for _, row := range childRows {
+		for k, v := range row {
+			if _, ok := colIdx[k]; ok {
+				continue
+			}
+			colIdx[k] = len(c.columns) + len(newKeys)
+			kinds := map[string]bool{}
+			switch v.(type) {
+			case bool:
+				kinds["bool"] = true
+			case float64:
+				if isIntegralFloat(v.(float64)) {
+					kinds["int"] = true
+				} else {
+					kinds["float"] = true
+				}
+			case string:
+				kinds["str"] = true
+			}
+			newCols = append(newCols, ColumnInfo{Name: k, Type: inferDuckType(kinds)})
+			newKeys = append(newKeys, k)
+		}
+	}
+	for i, col := range newCols {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", quoteIdent(childName), quoteIdent(col.Name), col.Type)); err != nil {
+			s.mu.Unlock()
+			return fmt.Errorf("alter child: %w", err)
+		}
+		c.columns = append(c.columns, col)
+		c.rowKeys = append(c.rowKeys, newKeys[i])
+	}
+	offset := c.nextRow
+	for i, row := range childRows {
+		row["_row"] = float64(offset + int64(i) + 1)
+	}
+	s.mu.Unlock()
+
+	if err := insertRows(ctx, s.db, childName, c.columns, c.rowKeys, childRows); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	c.rows += int64(len(childRows))
+	c.nextRow = offset + int64(len(childRows))
+	s.cells += int64(len(childRows)) * int64(len(c.columns))
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *MCPOffloadStore) markPageLocked(table, pageKey string) {
+	if s.pages[table] == nil {
+		s.pages[table] = map[string]bool{}
+	}
+	s.pages[table][pageKey] = true
+}
+
+func childTableName(parent, col string) string {
+	name := parent + "__" + sanitizeName(col)
+	if len(name) > 63 {
+		name = name[:63]
+	}
+	return name
+}
+
+// tableDesc 记录主表与子表的层级结构，用于渲染给模型的摘要。
+type tableDesc struct {
+	name     string
+	rows     int
+	cols     []ColumnInfo
+	children []*tableDesc
+}
+
+func (d *tableDesc) render(indent int) string {
+	var b strings.Builder
+	pad := strings.Repeat("  ", indent)
+	colDesc := make([]string, 0, len(d.cols))
+	for _, c := range d.cols {
+		colDesc = append(colDesc, fmt.Sprintf("%s (%s)", c.Name, c.Type))
+	}
+	fmt.Fprintf(&b, "%s- `%s` (%d rows): %s\n", pad, d.name, d.rows, strings.Join(colDesc, ", "))
+	for _, child := range d.children {
+		fmt.Fprintf(&b, "%s  child table (join `%s._prow` = parent `_row`):\n", pad, child.name)
+		b.WriteString(child.render(indent + 1))
+	}
+	return b.String()
+}
+
+// buildTable 把一组记录物化为新表；子记录列按实际数据量决定是否递归拆
+// 子表，用 _row（行号）/_prow（父行号）关联。
+// 停止条件（结合实际而非固定层数）：
+//   - 子表行数 < 2 或序列化后 < mcpOffloadChildMinBytes：数据量太小，
+//     保留 JSON 字符串列即可，样例行已够模型理解；
+//   - 累计单元格数超 mcpOffloadCellBudget：防嵌套数组笛卡尔式膨胀；
+//   - 深度达 mcpOffloadChildDepthMax：防自引用/病态深嵌套的硬上限。
+func (s *MCPOffloadStore) buildTable(ctx context.Context, table string, rows []map[string]interface{}, depth int, desc *tableDesc) error {
+	if depth >= mcpOffloadChildDepthMax {
+		logger.GetLogger(ctx).Infof("MCP offload: stop splitting at %s (max depth)", table)
+		return nil
+	}
+	// 先基于原始行识别子记录列（混合形态归一），摊平时这些列保持原值，
+	// 不做点路径展开，避免父表 schema 被同一列的数组/对象两种形态污染。
+	childCols := detectChildCols(rows)
+	skip := make(map[string]bool, len(childCols))
+	for _, c := range childCols {
+		skip[c] = true
+	}
+	flatRows, cols, colOrder := flattenAll(rows, skip)
+	if len(cols) == 0 {
+		return fmt.Errorf("no columns detected for %s", table)
+	}
+
+	// 再按实际数据量筛"值得拆"的列。
+	worthSplitting := make([]string, 0, len(childCols))
+	for _, col := range childCols {
+		childRows := collectChildRows(flatRows, col)
+		if len(childRows) < 2 {
+			continue
+		}
+		if estimateRowsBytes(childRows) < mcpOffloadChildMinBytes {
+			continue
+		}
+		if s.cells+int64(len(childRows))*int64(maxInt(len(cols), 1)) > mcpOffloadCellBudget {
+			logger.GetLogger(ctx).Warnf("MCP offload: skip child table %s__%s (cell budget)", table, col)
+			continue
+		}
+		worthSplitting = append(worthSplitting, col)
+	}
+	if len(worthSplitting) > 0 {
+		cols, colOrder, flatRows = appendRowOrdinal(cols, colOrder, flatRows)
+	}
+	if err := s.createAndLoad(ctx, table, cols, colOrder, flatRows); err != nil {
+		return err
+	}
+
+	desc.name = table
+	desc.rows = len(flatRows)
+	desc.cols = cols
+
+	s.mu.Lock()
+	s.tables[table] = &offloadedTable{
+		name:         table,
+		columns:      cols,
+		rowKeys:      colOrder,
+		rows:         int64(len(flatRows)),
+		nextRow:      int64(len(flatRows)),
+		childCols:    worthSplitting,
+		childNextRow: map[string]int64{},
+	}
+	s.cells += int64(len(flatRows)) * int64(len(cols))
+	s.mu.Unlock()
+
+	for _, col := range worthSplitting {
+		childRows := collectChildRows(flatRows, col)
+		childName := childTableName(table, col)
+		childDesc := &tableDesc{}
+		if err := s.buildTable(ctx, childName, childRows, depth+1, childDesc); err != nil {
+			logger.GetLogger(ctx).Warnf("MCP offload: child table %s failed: %v", childName, err)
+			continue
+		}
+		if childDesc.name != "" {
+			desc.children = append(desc.children, childDesc)
+		}
+	}
+	return nil
+}
+
+// renderFreshSummary 输出首次落表的完整摘要（结构 + 样例 + 完整性 + 指引）。
+func (s *MCPOffloadStore) renderFreshSummary(desc tableDesc, originalRows []map[string]interface{}, meta offloadMeta, t *offloadedTable) string {
+	sampleN := mcpOffloadSampleRows
+	if sampleN > len(originalRows) {
+		sampleN = len(originalRows)
+	}
+	var sample strings.Builder
+	for i := 0; i < sampleN; i++ {
+		b, _ := json.Marshal(originalRows[i])
+		sample.WriteString("  " + string(b) + "\n")
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "[Offloaded data] This tool returned %d rows — too large to inline into the conversation. The data is loaded into local read-only SQL tables:\n\n", len(originalRows))
+	b.WriteString(desc.render(0))
+	fmt.Fprintf(&b, "\nSample rows (first %d of %d, original JSON):\n%s\n", sampleN, len(originalRows), sample.String())
+	fmt.Fprintf(&b, "%s\n%s", completenessLine(t.rows, maxInt(t.totalCount, meta.totalCount)), analyzeHint(t.name))
+	return b.String()
+}
+
+// ---- 摊平 ----
 
 // flattenAll 把每行摊平为标量列：嵌套对象递归成点路径列（customer.name），
 // 数组/更深结构保留为 JSON 字符串列。skipKeys（子记录列）保持原值不摊
@@ -578,6 +842,76 @@ func flattenColumns(rows []map[string]interface{}) ([]ColumnInfo, []string) {
 	return cols, order
 }
 
+// collectChildRows 把子记录列摊成子表行：每个元素摊平后带 _prow（父行
+// 号）；数组/单对象/null 都已归一。自己的 _row 由建表/追加阶段补。
+func collectChildRows(flatRows []map[string]interface{}, col string) []map[string]interface{} {
+	child := make([]map[string]interface{}, 0)
+	for _, row := range flatRows {
+		parentRow, _ := row["_row"].(float64)
+		for _, elem := range childElements(row[col]) {
+			flat := flattenRow(elem, "", mcpOffloadFlattenDepth, nil)
+			flat["_prow"] = parentRow
+			child = append(child, flat)
+		}
+	}
+	return child
+}
+
+// appendRowOrdinal 为主表补 _row 行号列（1 起），供子表 _prow 关联。
+func appendRowOrdinal(cols []ColumnInfo, colOrder []string, flatRows []map[string]interface{}) ([]ColumnInfo, []string, []map[string]interface{}) {
+	if _, exists := colIndex(cols, "_row"); exists {
+		return cols, colOrder, flatRows
+	}
+	cols = append(cols, ColumnInfo{Name: "_row", Type: "BIGINT"})
+	colOrder = append(colOrder, "_row")
+	for i, row := range flatRows {
+		row["_row"] = float64(i + 1)
+	}
+	return cols, colOrder, flatRows
+}
+
+func colIndex(cols []ColumnInfo, name string) (int, bool) {
+	for i, c := range cols {
+		if strings.EqualFold(c.Name, name) {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+// estimateRowsBytes 粗估一组行的序列化字节数（子表拆分价值判断）。
+func estimateRowsBytes(rows []map[string]interface{}) int {
+	n := 0
+	for i, row := range rows {
+		if i >= 200 { // 抽样前 200 行足够判断量级
+			n = n * len(rows) / i
+			break
+		}
+		b, err := json.Marshal(row)
+		if err != nil {
+			continue
+		}
+		n += len(b)
+	}
+	return n
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
 func isIntegralFloat(f float64) bool {
 	return f == float64(int64(f))
 }
@@ -616,7 +950,11 @@ func (s *MCPOffloadStore) createAndLoad(ctx context.Context, table string, cols 
 	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s (%s)", quoteIdent(table), colDefs.String())); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
+	return insertRows(ctx, s.db, table, cols, colOrder, rows)
+}
 
+// insertRows 按列序参数化批量写入（缺键按 NULL）。
+func insertRows(ctx context.Context, db *sql.DB, table string, cols []ColumnInfo, colOrder []string, rows []map[string]interface{}) error {
 	placeholders := make([]string, len(cols))
 	for i := range placeholders {
 		placeholders[i] = "?"
@@ -628,7 +966,7 @@ func (s *MCPOffloadStore) createAndLoad(ctx context.Context, table string, cols 
 		if end > len(rows) {
 			end = len(rows)
 		}
-		tx, err := s.db.BeginTx(ctx, nil)
+		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}

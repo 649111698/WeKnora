@@ -42,7 +42,7 @@ func TestMCPOffload_TryOffloadArray(t *testing.T) {
 	store := NewMCPOffloadStore(db)
 	ctx := context.Background()
 
-	summary, ok := store.TryOffload(ctx, "mcp_zhijietong_queryaftersale", bigRowsJSON(50))
+	summary, ok := store.TryOffload(ctx, "mcp_zhijietong_queryaftersale", nil, bigRowsJSON(50))
 	if !ok {
 		t.Fatal("large array of objects should offload")
 	}
@@ -82,7 +82,7 @@ func TestMCPOffload_WrappedRecords(t *testing.T) {
 	}
 	b, _ := json.Marshal(wrapped)
 
-	summary, ok := store.TryOffload(context.Background(), "mcp_svc_tool", string(b))
+	summary, ok := store.TryOffload(context.Background(), "mcp_svc_tool", nil, string(b))
 	if !ok {
 		t.Fatal("wrapped records array should offload")
 	}
@@ -96,15 +96,15 @@ func TestMCPOffload_SkipsSmallOrNonTabular(t *testing.T) {
 	store := NewMCPOffloadStore(db)
 	ctx := context.Background()
 
-	if _, ok := store.TryOffload(ctx, "t", bigRowsJSON(10)); ok {
+	if _, ok := store.TryOffload(ctx, "t", nil, bigRowsJSON(10)); ok {
 		t.Fatal("few rows should not offload")
 	}
 	small := `{"msg":"` + strings.Repeat("x", 20000) + `"}`
-	if _, ok := store.TryOffload(ctx, "t", small); ok {
+	if _, ok := store.TryOffload(ctx, "t", nil, small); ok {
 		t.Fatal("big non-tabular JSON should not offload")
 	}
 	prose := strings.Repeat("不是 JSON 的一大段文本。", 2000)
-	if _, ok := store.TryOffload(ctx, "t", prose); ok {
+	if _, ok := store.TryOffload(ctx, "t", nil, prose); ok {
 		t.Fatal("plain text should not offload")
 	}
 }
@@ -114,7 +114,7 @@ func TestMCPOffload_DataAnalysisQueryAndCleanup(t *testing.T) {
 	store := NewMCPOffloadStore(db)
 	ctx := context.Background()
 
-	if _, ok := store.TryOffload(ctx, "mcp_zhijietong_queryaftersale", bigRowsJSON(40)); !ok {
+	if _, ok := store.TryOffload(ctx, "mcp_zhijietong_queryaftersale", nil, bigRowsJSON(40)); !ok {
 		t.Fatal("offload failed")
 	}
 
@@ -153,28 +153,61 @@ func TestMCPOffload_DataAnalysisQueryAndCleanup(t *testing.T) {
 	}
 }
 
-func TestMCPOffload_SequentialTablesSameTool(t *testing.T) {
+// TestMCPOffload_PaginationMergesIntoOneTable 同一查询的分页（仅分页键不同）
+// 自动合并进同一张表：建表→追加→同页幂等→满 totalCount 拒绝→不同查询另建表。
+func TestMCPOffload_PaginationMergesIntoOneTable(t *testing.T) {
 	db := newOffloadDuckDB(t)
 	store := NewMCPOffloadStore(db)
 	ctx := context.Background()
 
-	s1, ok1 := store.TryOffload(ctx, "mcp_svc_tool", bigRowsJSON(25))
-	s2, ok2 := store.TryOffload(ctx, "mcp_svc_tool", bigRowsJSON(25))
-	if !ok1 || !ok2 {
-		t.Fatalf("both pages should offload: %v %v", ok1, ok2)
+	resp := func(n int) string {
+		b, _ := json.Marshal(map[string]interface{}{"totalCount": 50, "records": json.RawMessage(bigRowsJSON(n))})
+		return string(b)
 	}
-	if !strings.Contains(s1, "mcp_svc_tool_t1") || !strings.Contains(s2, "mcp_svc_tool_t2") {
-		t.Fatalf("sequential tables expected:\n%s\n%s", s1, s2)
+	page1 := []byte(`{"data":{"endTime":"2026-09-05 23:59:59","startTime":"2026-08-31 00:00:00"},"pageNo":1,"pageSize":30,"totalCount":50}`)
+
+	s1, ok1 := store.TryOffload(ctx, "mcp_svc_tool", page1, resp(25))
+	if !ok1 {
+		t.Fatal("page 1 should offload")
 	}
-	if !strings.Contains(s2, "mcp_svc_tool_t1") {
-		t.Fatal("second page should hint at the first table for UNION ALL")
+	if !strings.Contains(s1, "mcp_svc_tool_t1") || !strings.Contains(s1, "PARTIAL") {
+		t.Fatalf("page 1 summary unexpected:\n%s", s1)
 	}
-	// UNION 两个分页表聚合。
-	var total int
-	err := db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM mcp_svc_tool_t1 UNION ALL SELECT COUNT(*) FROM mcp_svc_tool_t2").Scan(&total)
-	if err != nil || total != 25 {
-		t.Fatalf("union across pages failed: err=%v total=%d", err, total)
+
+	page2 := []byte(`{"data":{"endTime":"2026-09-05 23:59:59","startTime":"2026-08-31 00:00:00"},"pageNo":2,"pageSize":30,"totalCount":50}`)
+	s2, ok2 := store.TryOffload(ctx, "mcp_svc_tool", page2, resp(25))
+	if !ok2 {
+		t.Fatal("page 2 should offload")
+	}
+	if !strings.Contains(s2, "Appended 25 rows into existing table `mcp_svc_tool_t1`") || !strings.Contains(s2, "now 50 rows") {
+		t.Fatalf("page 2 should append into t1:\n%s", s2)
+	}
+	if !strings.Contains(s2, "COMPLETE") {
+		t.Fatalf("50 of totalCount=50 should be COMPLETE:\n%s", s2)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM mcp_svc_tool_t1").Scan(&n); err != nil || n != 50 {
+		t.Fatalf("merged rows = %d err=%v, want 50", n, err)
+	}
+
+	s3, ok3 := store.TryOffload(ctx, "mcp_svc_tool", page1, resp(25))
+	if !ok3 || !strings.Contains(s3, "already loaded") {
+		t.Fatalf("repeat page should be idempotent:\n%s ok=%v", s3, ok3)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM mcp_svc_tool_t1").Scan(&n); err != nil || n != 50 {
+		t.Fatalf("rows after repeat = %d err=%v, want 50", n, err)
+	}
+
+	page3 := []byte(`{"data":{"endTime":"2026-09-05 23:59:59","startTime":"2026-08-31 00:00:00"},"pageNo":3,"pageSize":30,"totalCount":50}`)
+	s4, ok4 := store.TryOffload(ctx, "mcp_svc_tool", page3, resp(25))
+	if !ok4 || !strings.Contains(s4, "already contains ALL 50 rows") {
+		t.Fatalf("complete table should refuse more pages:\n%s ok=%v", s4, ok4)
+	}
+
+	other := []byte(`{"data":{"endTime":"2026-09-05 23:59:59","startTime":"2026-09-01 00:00:00"},"pageNo":1,"pageSize":30,"totalCount":50}`)
+	s5, ok5 := store.TryOffload(ctx, "mcp_svc_tool", other, resp(25))
+	if !ok5 || !strings.Contains(s5, "mcp_svc_tool_t2") {
+		t.Fatalf("different query should create t2:\n%s ok=%v", s5, ok5)
 	}
 }
 
@@ -192,7 +225,7 @@ func TestMCPOffload_NestedObjectsFlattenedToDottedColumns(t *testing.T) {
 		})
 	}
 	b, _ := json.Marshal(rows)
-	if _, ok := store.TryOffload(ctx, "mcp_svc_tool", string(b)); !ok {
+	if _, ok := store.TryOffload(ctx, "mcp_svc_tool", nil, string(b)); !ok {
 		t.Fatal("rows with nested objects should offload")
 	}
 	// 嵌套对象摊平成点路径列，可直接 SQL 查询。
@@ -226,7 +259,7 @@ func TestMCPOffload_ArrayFieldsStayJSONString(t *testing.T) {
 		})
 	}
 	b, _ := json.Marshal(rows)
-	if _, ok := store.TryOffload(ctx, "mcp_svc_tool", string(b)); !ok {
+	if _, ok := store.TryOffload(ctx, "mcp_svc_tool", nil, string(b)); !ok {
 		t.Fatal("rows with array fields should offload")
 	}
 	var tags string
@@ -251,7 +284,7 @@ func TestMCPOffload_DeeplyWrappedArray(t *testing.T) {
 		"result":  map[string]interface{}{"data": map[string]interface{}{"page": map[string]interface{}{"records": inner}}},
 	}
 	b, _ := json.Marshal(wrapped)
-	summary, ok := store.TryOffload(ctx, "mcp_zhijietong_queryaftersale", string(b))
+	summary, ok := store.TryOffload(ctx, "mcp_zhijietong_queryaftersale", nil, string(b))
 	if !ok {
 		t.Fatal("deeply wrapped records array should offload")
 	}
@@ -269,7 +302,7 @@ func TestMCPOffload_DeeplyWrappedArray(t *testing.T) {
 
 func TestMCPOffload_NilStoreIsNoop(t *testing.T) {
 	var store *MCPOffloadStore
-	if _, ok := store.TryOffload(context.Background(), "t", bigRowsJSON(100)); ok {
+	if _, ok := store.TryOffload(context.Background(), "t", nil, bigRowsJSON(100)); ok {
 		t.Fatal("nil store must be a no-op")
 	}
 	if store.Has("x") {
@@ -330,7 +363,7 @@ func TestMCPOffload_RealZhijietongShape(t *testing.T) {
 		"status":    true,
 	})
 
-	summary, ok := store.TryOffload(ctx, "mcp_zhijietong_queryaftersale", string(payload))
+	summary, ok := store.TryOffload(ctx, "mcp_zhijietong_queryaftersale", nil, string(payload))
 	if !ok {
 		t.Fatal("zhijietong-shaped payload should offload")
 	}
@@ -408,7 +441,7 @@ func TestMCPOffload_SmallChildNotSplit(t *testing.T) {
 		})
 	}
 	b, _ := json.Marshal(rows)
-	summary, ok := store.TryOffload(ctx, "mcp_svc_tool", string(b))
+	summary, ok := store.TryOffload(ctx, "mcp_svc_tool", nil, string(b))
 	if !ok {
 		t.Fatal("should offload main rows")
 	}
@@ -443,7 +476,7 @@ func TestMCPOffload_BigChildStillSplits(t *testing.T) {
 		})
 	}
 	b, _ := json.Marshal(rows)
-	summary, ok := store.TryOffload(ctx, "mcp_svc_tool", string(b))
+	summary, ok := store.TryOffload(ctx, "mcp_svc_tool", nil, string(b))
 	if !ok {
 		t.Fatal("should offload")
 	}
@@ -484,7 +517,7 @@ func TestMCPOffload_MixedArrayObjectNullField(t *testing.T) {
 		})
 	}
 	b, _ := json.Marshal(rows)
-	summary, ok := store.TryOffload(ctx, "mcp_svc_tool", string(b))
+	summary, ok := store.TryOffload(ctx, "mcp_svc_tool", nil, string(b))
 	if !ok {
 		t.Fatal("should offload")
 	}
