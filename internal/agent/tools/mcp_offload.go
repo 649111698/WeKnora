@@ -208,7 +208,9 @@ func completenessLine(loaded int64, total int) string {
 }
 
 func analyzeHint(name string) string {
-	return fmt.Sprintf("Analyze it with the `data_analysis` tool: knowledge_id = \"%s\", sql = SELECT-only statements. Do not fetch the raw rows again — they will not fit in context.", name)
+	return fmt.Sprintf("Analyze it with the `data_analysis` tool: knowledge_id = \"%s\", sql = ONE single SELECT statement per call. "+
+		"The SQL validator rejects compound queries (UNION/INTERSECT/EXCEPT), WITH/CTE, and invented table names — always write the exact table `%s` in the FROM clause. "+
+		"For multiple dimensions, issue several parallel data_analysis calls in the same round instead of UNION. Do not fetch the raw rows again — they will not fit in context.", name, name)
 }
 
 func alreadyLoadedSummary(t *offloadedTable) string {

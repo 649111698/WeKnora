@@ -22,7 +22,8 @@ var dataAnalysisTool = BaseTool{
 	description: "Use this tool when the knowledge is CSV or Excel files. It loads the data into memory and executes SQL for data analysis. " +
 		"For Excel files with multiple sheets, every sheet is loaded into the same table and the source sheet name is exposed as a '__sheet_name' column so you can filter or aggregate per sheet. " +
 		"If the user's question requires data statistics, convert the question into SQL and execute it. " +
-		"Large MCP tool results are offloaded into read-only tables named like 'mcp_..._tN' (see the tool result summary for the exact name, columns and sample rows) — analyze those tables here by passing the table name as knowledge_id.",
+		"Large MCP tool results are offloaded into read-only tables named like 'mcp_..._tN' (see the tool result summary for the exact name, columns and sample rows) — analyze those tables here by passing the table name as knowledge_id. " +
+		"One single SELECT per call: the validator rejects UNION/INTERSECT/EXCEPT and WITH/CTE — make parallel calls for multiple aggregations — and always reference the exact table name in FROM (no aliases).",
 	schema: utils.GenerateSchema[DataAnalysisInput](),
 }
 
