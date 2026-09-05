@@ -771,6 +771,22 @@ func (h *Handler) SearchKnowledge(c *gin.Context) {
 		return
 	}
 
+	// 访客（viewer）不提供任何搜索（含语义检索）：前端放大镜入口已隐藏，
+	// 这里兜底返回空结果。与 /knowledge/search、/messages/search 的 viewer
+	// 拦截一致。只拦"显式解析为 viewer"的调用：API key 主体不经租户角色
+	// 阶梯（交给 APIKeyGate 的 KB 范围校验），上下文无角色的内部/测试
+	// 调用也不按 viewer 兜底处理。
+	if viewerRole, hasRole := ctx.Value(types.TenantRoleContextKey).(types.TenantRole); hasRole &&
+		viewerRole == types.TenantRoleViewer {
+		if _, isAPIKey := types.TenantAPIKeyScopeFromContext(ctx); !isAPIKey {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data":    []interface{}{},
+			})
+			return
+		}
+	}
+
 	// Resolve the storage-reference representation before retrieving, so a typo
 	// or a rejected scope costs nothing.
 	rewriter, err := h.resolveResourceRewriter(c)
@@ -1075,12 +1091,12 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 				// AgentSteps/Content. Without this, cancelled-ctx makes
 				// GORM skip the write and the agent's intermediate steps
 				// (thinking / tool_call history) are lost on page refresh.
-			updateCtx := context.WithValue(
-				context.WithoutCancel(streamCtx.asyncCtx),
-				types.TenantIDContextKey, reqCtx.session.TenantID,
-			)
-			logger.Infof(streamCtx.asyncCtx, "[answer-forensics] persist: content_len=%d", len(streamCtx.assistantMessage.Content))
-			h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, reqCtx.userMessageID)
+				updateCtx := context.WithValue(
+					context.WithoutCancel(streamCtx.asyncCtx),
+					types.TenantIDContextKey, reqCtx.session.TenantID,
+				)
+				logger.Infof(streamCtx.asyncCtx, "[answer-forensics] persist: content_len=%d", len(streamCtx.assistantMessage.Content))
+				h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, reqCtx.userMessageID)
 				logger.Infof(streamCtx.asyncCtx, "Agent QA service completed for session: %s", sessionID)
 			}
 		}()

@@ -249,15 +249,20 @@ func (h *MessageHandler) SearchMessages(c *gin.Context) {
 
 	// 访客（viewer）不提供全局搜索，与 /knowledge-search 的 viewer 兜底一致：
 	// 前端已隐藏放大镜入口并拦截唤起，这里直接返回空结果做最终防线。
-	if types.TenantRoleFromContext(ctx) == types.TenantRoleViewer {
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data": &types.MessageSearchResult{
-				Items: []*types.MessageSearchGroupItem{},
-				Total: 0,
-			},
-		})
-		return
+	// 只拦"显式解析为 viewer"的调用：API key 主体无租户角色（交给
+	// APIKeyGate 范围校验），无角色的上下文也不按 viewer 兜底处理。
+	if viewerRole, hasRole := ctx.Value(types.TenantRoleContextKey).(types.TenantRole); hasRole &&
+		viewerRole == types.TenantRoleViewer {
+		if _, isAPIKey := types.TenantAPIKeyScopeFromContext(ctx); !isAPIKey {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data": &types.MessageSearchResult{
+					Items: []*types.MessageSearchGroupItem{},
+					Total: 0,
+				},
+			})
+			return
+		}
 	}
 
 	logger.Info(ctx, "Start searching messages")

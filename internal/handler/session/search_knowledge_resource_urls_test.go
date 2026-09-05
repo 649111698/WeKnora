@@ -98,3 +98,35 @@ func TestSearchKnowledge_DefaultKeepsHandles(t *testing.T) {
 	require.Len(t, resp.Data, 1)
 	assert.Contains(t, resp.Data[0].Content, testResourceHandle)
 }
+
+func TestSearchKnowledge_ViewerRoleGetsEmptyResults(t *testing.T) {
+	// 访客（viewer）显式角色 → 空结果，不触达检索服务；无角色上下文
+	// （API key / 内部调用）不按 viewer 兜底拦截。
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(middleware.ErrorHandler())
+	h := &Handler{
+		sessionService: &stubSearchSessionService{},
+		fileService:    &stubResourceFileService{},
+	}
+	r.POST("/knowledge-search", func(c *gin.Context) {
+		ctx := context.WithValue(c.Request.Context(), types.TenantRoleContextKey, types.TenantRoleViewer)
+		c.Request = c.Request.WithContext(ctx)
+		h.SearchKnowledge(c)
+	})
+
+	body := bytes.NewBufferString(`{"query":"diagram","knowledge_base_ids":["kb-1"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/knowledge-search", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	var resp struct {
+		Success bool              `json:"success"`
+		Data    []json.RawMessage `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.True(t, resp.Success)
+	assert.Empty(t, resp.Data, "viewer must not receive search chunks")
+}
