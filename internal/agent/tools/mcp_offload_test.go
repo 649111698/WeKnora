@@ -654,3 +654,28 @@ ORDER BY n DESC`,
 		t.Fatalf("forced query should run against the offload table only:\n%s", resForced.Output)
 	}
 }
+
+// TestMCPOffload_UnionBranchOrderHint 分支内 ORDER BY 导致解析失败时，
+// 错误信息附带方言提示，模型当轮可改对。
+func TestMCPOffload_UnionBranchOrderHint(t *testing.T) {
+	db := newOffloadDuckDB(t)
+	store := NewMCPOffloadStore(db)
+	ctx := context.Background()
+
+	if _, ok := store.TryOffload(ctx, "mcp_svc_tool", nil, bigRowsJSON(40)); !ok {
+		t.Fatal("offload failed")
+	}
+	da := NewDataAnalysisTool(nil, nil, nil, nil, db, "sess-hint").WithMCPOffload(store)
+
+	args, _ := json.Marshal(DataAnalysisInput{
+		KnowledgeID: "mcp_svc_tool_t1",
+		Sql:         `SELECT "问题类型", COUNT(*) AS n FROM mcp_svc_tool_t1 GROUP BY 1 ORDER BY n DESC UNION ALL SELECT "状态", COUNT(*) FROM mcp_svc_tool_t1 GROUP BY 1`,
+	})
+	res, err := da.Execute(ctx, args)
+	if err == nil && res.Success {
+		t.Fatal("branch-level ORDER BY must fail")
+	}
+	if !strings.Contains(res.Error, "Hint: in a UNION/UNION ALL query") {
+		t.Fatalf("parse failure should carry the dialect hint, got: %s", res.Error)
+	}
+}

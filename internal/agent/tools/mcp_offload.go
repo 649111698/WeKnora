@@ -232,7 +232,12 @@ func completenessLine(loaded int64, total int) string {
 func analyzeHint(name string) string {
 	return fmt.Sprintf("Analyze it with the `data_analysis` tool: knowledge_id = \"%s\", sql = SELECT-only statements. "+
 		"WITH/CTE and invented table names are rejected — always write the exact table `%s` in the FROM clause. "+
-		"You SHOULD combine multiple dimension aggregations into ONE call using `SELECT ... UNION ALL SELECT ...` to save rounds. Do not fetch the raw rows again — they will not fit in context.", name, name)
+		"UNION ALL IS allowed on this table and you SHOULD combine all dimension aggregations into ONE call, e.g.:\n"+
+		"SELECT '问题类型' AS dim, qtt AS label, COUNT(*) AS n FROM %s GROUP BY qtt "+
+		"UNION ALL SELECT '状态', stt, COUNT(*) FROM %s GROUP BY stt "+
+		"UNION ALL SELECT '产品', pn, COUNT(*) FROM %s GROUP BY pn ORDER BY n DESC\n"+
+		"IMPORTANT: a compound query must NOT contain ORDER BY/LIMIT inside individual branches — one trailing ORDER BY sorts the whole result. "+
+		"Do not fetch the raw rows again — they will not fit in context.", name, name, name, name, name)
 }
 
 func alreadyLoadedSummary(t *offloadedTable) string {

@@ -23,7 +23,7 @@ var dataAnalysisTool = BaseTool{
 		"For Excel files with multiple sheets, every sheet is loaded into the same table and the source sheet name is exposed as a '__sheet_name' column so you can filter or aggregate per sheet. " +
 		"If the user's question requires data statistics, convert the question into SQL and execute it. " +
 		"Large MCP tool results are offloaded into read-only tables named like 'mcp_..._tN' (see the tool result summary for the exact name, columns and sample rows) — analyze those tables here by passing the table name as knowledge_id. " +
-		"Always reference the exact table name in FROM (no invented aliases) and avoid WITH/CTE. For offloaded mcp_* tables you may combine multiple dimension aggregations into ONE call using UNION ALL; for regular knowledge tables UNION is rejected — use parallel calls instead.",
+		"Always reference the exact table name in FROM (no invented aliases) and avoid WITH/CTE. When the previous tool result says UNION ALL is allowed (offloaded mcp_* tables), combine multiple dimension aggregations into ONE call — branches must not carry their own ORDER BY/LIMIT. Only plain knowledge-file tables reject UNION: there use parallel calls instead.",
 	schema: utils.GenerateSchema[DataAnalysisInput](),
 }
 
@@ -295,10 +295,21 @@ func (t *DataAnalysisTool) Execute(ctx context.Context, args json.RawMessage) (*
 	}
 	_, validation := utils.ValidateSQL(input.Sql, validateOpts...)
 	if !validation.Valid {
+		errMsg := fmt.Sprintf("SQL validation failed: %v", validation.Errors)
+		// 复合查询的常见方言坑：分支内不允许 ORDER BY/LIMIT。解析错误时
+		// 附带提示，模型当轮即可改对，省掉整轮试错。
+		if strings.Contains(strings.ToUpper(input.Sql), "UNION") {
+			for _, e := range validation.Errors {
+				if strings.Contains(strings.ToLower(e.Message), "parse") {
+					errMsg += " Hint: in a UNION/UNION ALL query, individual SELECT branches must NOT have their own ORDER BY or LIMIT — remove them and keep a single ORDER BY/LIMIT after the last branch."
+					break
+				}
+			}
+		}
 		logger.Warnf(ctx, "[Tool][DataAnalysis] SQL validation failed for session %s: %v", t.sessionID, validation.Errors)
 		return &types.ToolResult{
 			Success: false,
-			Error:   fmt.Sprintf("SQL validation failed: %v", validation.Errors),
+			Error:   errMsg,
 		}, fmt.Errorf("SQL validation failed: %v", validation.Errors)
 	}
 
