@@ -14,7 +14,9 @@
                 <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
             </div>
             <div class="logo_actions">
-                <t-tooltip placement="bottom">
+                <!-- 访客（viewer）不提供全局搜索：入口隐藏（⌘K 等唤起在
+                     commandPalette store 里统一拦截）。 -->
+                <t-tooltip v-if="authStore.hasRole('contributor')" placement="bottom">
                     <template #content>
                         <span class="cmdk-tip">
                             <span class="cmdk-tip-label">{{ t('menu.search') }}</span>
@@ -65,8 +67,8 @@
         <!-- 上半部分：新对话吸顶 + 知识库/智能体/共享空间/历史会话随滚动一起滚走 -->
         <div class="menu_top" ref="scrollContainer" @scroll="handleScroll">
             <!-- 全局搜索入口：点击打开命令面板（⌘K）。展开态移至顶部 logo_row 的图标按钮；
-                 折叠态在此处保留为图标项 + 深色 tooltip。 -->
-            <div class="menu_box menu_box--cmdk" v-if="sidebarCollapsedUI">
+                 折叠态在此处保留为图标项 + 深色 tooltip。访客（viewer）无搜索入口。 -->
+            <div class="menu_box menu_box--cmdk" v-if="sidebarCollapsedUI && authStore.hasRole('contributor')">
                 <t-tooltip placement="right">
                     <template #content>
                         <span class="cmdk-tip">

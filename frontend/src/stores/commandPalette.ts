@@ -43,6 +43,11 @@ export const useCommandPaletteStore = defineStore('commandPalette', () => {
   }
 
   const openPalette = (query = '') => {
+    // 访客（viewer）不提供全局搜索：侧栏放大镜按钮已隐藏，这里统一拦下
+    // ⌘K、"/"、?cmdk= 路由等程序化唤起入口。角色判断仅 UI 层；服务端
+    // 对 knowledge-search / messages/search 均有 viewer 空结果兜底。
+    const auth = useAuthStore()
+    if (!auth.hasRole('contributor')) return
     initialQuery.value = query
     open.value = true
   }
