@@ -26,11 +26,31 @@ import (
 // gotten here" assertions.
 type stubMemberService struct {
 	interfaces.TenantMemberService
-	add             func(ctx context.Context, userID string, tenantID uint64, role types.TenantRole, invitedBy *string) (*types.TenantMember, error)
-	listTenant      func(ctx context.Context, tenantID uint64) ([]*types.TenantMember, error)
-	listMembersPage func(ctx context.Context, tenantID uint64, query string, page, pageSize int) ([]*types.TenantMember, int64, error)
-	updateRole      func(ctx context.Context, userID string, tenantID uint64, newRole types.TenantRole) error
-	remove          func(ctx context.Context, userID string, tenantID uint64) error
+	add                 func(ctx context.Context, userID string, tenantID uint64, role types.TenantRole, invitedBy *string) (*types.TenantMember, error)
+	listTenant          func(ctx context.Context, tenantID uint64) ([]*types.TenantMember, error)
+	listMembersPage     func(ctx context.Context, tenantID uint64, query string, page, pageSize int) ([]*types.TenantMember, int64, error)
+	updateRole          func(ctx context.Context, userID string, tenantID uint64, newRole types.TenantRole) error
+	remove              func(ctx context.Context, userID string, tenantID uint64) error
+	getMembership       func(ctx context.Context, userID string, tenantID uint64) (*types.TenantMember, error)
+	updateAllowedAgents func(ctx context.Context, tenantID uint64, userID string, ids types.AgentIDList) error
+}
+
+func (s *stubMemberService) GetMembership(
+	ctx context.Context, userID string, tenantID uint64,
+) (*types.TenantMember, error) {
+	if s.getMembership != nil {
+		return s.getMembership(ctx, userID, tenantID)
+	}
+	return nil, nil
+}
+
+func (s *stubMemberService) UpdateAllowedAgentIDs(
+	ctx context.Context, tenantID uint64, userID string, ids types.AgentIDList,
+) error {
+	if s.updateAllowedAgents != nil {
+		return s.updateAllowedAgents(ctx, tenantID, userID, ids)
+	}
+	return nil
 }
 
 func (s *stubMemberService) ListMembersPage(
@@ -152,6 +172,8 @@ func memberTestRouterWithCfg(h *TenantMemberHandler, cfg *config.Config) *gin.En
 	tenantByID.GET("/members", h.ListMembers)
 	tenantByID.POST("/members", h.AddMember)
 	tenantByID.PUT("/members/:user_id", h.UpdateMemberRole)
+	tenantByID.PUT("/members/:user_id/profile", h.UpdateMemberProfile)
+	tenantByID.PUT("/members/:user_id/agent-access", h.UpdateMemberAgentAccess)
 	tenantByID.DELETE("/members/:user_id", h.RemoveMember)
 	tenantByID.POST("/leave", h.LeaveTenant)
 	return r
@@ -169,7 +191,8 @@ type memberCtxOpts struct {
 	callerID   string
 	tenantID   uint64
 	user       *types.User
-	skipTenant bool // when true, do NOT set TenantIDContextKey at all
+	role       types.TenantRole // when non-zero, set TenantRoleContextKey
+	skipTenant bool             // when true, do NOT set TenantIDContextKey at all
 }
 
 // withMemberCtx installs the auth-middleware-equivalent values on req's
@@ -180,6 +203,9 @@ func withMemberCtx(req *http.Request, opts memberCtxOpts) *http.Request {
 	ctx := req.Context()
 	if opts.callerID != "" {
 		ctx = context.WithValue(ctx, types.UserIDContextKey, opts.callerID)
+	}
+	if opts.role != "" {
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, opts.role)
 	}
 	if !opts.skipTenant {
 		tid := opts.tenantID
@@ -771,5 +797,143 @@ func TestTenantMember_AddMember_SyntheticCallerLeavesInvitedByNull(t *testing.T)
 	}
 	if captured.invited != nil {
 		t.Fatalf("invited_by must be nil for synthetic caller; got %q", *captured.invited)
+	}
+}
+
+// ---------- UpdateMemberAgentAccess: admin 不得改动 Owner 成员 ----------
+
+func TestUpdateMemberAgentAccess_AdminCannotModifyOwner(t *testing.T) {
+	updated := false
+	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, _ uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: 1, Role: types.TenantRoleOwner, Status: types.TenantMemberStatusActive}, nil
+		},
+		updateAllowedAgents: func(_ context.Context, _ uint64, _ string, _ types.AgentIDList) error {
+			updated = true
+			return nil
+		},
+	}
+	h := newTestMemberHandler(ms, &stubMemberUserService{})
+	body := map[string]any{"allowed_agent_ids": nil}
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPut, "/tenants/1/members/u-owner/agent-access", body,
+		memberCtxOpts{callerID: "u-admin", role: types.TenantRoleAdmin})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("admin modifying owner member must be 403, got %d body=%s", w.Code, w.Body.String())
+	}
+	if updated {
+		t.Fatal("update must not run when admin targets an owner member")
+	}
+}
+
+func TestUpdateMemberAgentAccess_AdminCanModifyNonOwner(t *testing.T) {
+	updated := false
+	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, _ uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: 1, Role: types.TenantRoleViewer, Status: types.TenantMemberStatusActive}, nil
+		},
+		updateAllowedAgents: func(_ context.Context, _ uint64, userID string, ids types.AgentIDList) error {
+			updated = userID == "u-viewer" && ids == nil
+			return nil
+		},
+	}
+	h := newTestMemberHandler(ms, &stubMemberUserService{})
+	body := map[string]any{"allowed_agent_ids": nil}
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPut, "/tenants/1/members/u-viewer/agent-access", body,
+		memberCtxOpts{callerID: "u-admin", role: types.TenantRoleAdmin})
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin modifying viewer member must be 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !updated {
+		t.Fatal("update must run for non-owner target")
+	}
+}
+
+func TestUpdateMemberAgentAccess_OwnerAndSuperuserCanModifyOwner(t *testing.T) {
+	for name, opts := range map[string]memberCtxOpts{
+		"owner caller":           {callerID: "u-owner2", role: types.TenantRoleOwner},
+		"cross-tenant superuser": {callerID: "u-super", role: types.TenantRoleAdmin, user: &types.User{ID: "u-super", CanAccessAllTenants: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			updated := false
+			ms := &stubMemberService{
+				getMembership: func(_ context.Context, userID string, _ uint64) (*types.TenantMember, error) {
+					return &types.TenantMember{UserID: userID, TenantID: 1, Role: types.TenantRoleOwner, Status: types.TenantMemberStatusActive}, nil
+				},
+				updateAllowedAgents: func(_ context.Context, _ uint64, _ string, _ types.AgentIDList) error {
+					updated = true
+					return nil
+				},
+			}
+			h := newTestMemberHandler(ms, &stubMemberUserService{})
+			body := map[string]any{"allowed_agent_ids": nil}
+			w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPut, "/tenants/1/members/u-owner/agent-access", body, opts)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+			}
+			if !updated {
+				t.Fatal("update must run for owner/superuser caller")
+			}
+		})
+	}
+}
+
+// ---------- Admin 不得编辑/删除 Owner 成员（处理器级防线） ----------
+
+func TestUpdateMemberProfile_AdminCannotEditOwner(t *testing.T) {
+	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, _ uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: 1, Role: types.TenantRoleOwner, Status: types.TenantMemberStatusActive}, nil
+		},
+	}
+	h := newTestMemberHandler(ms, &stubMemberUserService{})
+	body := map[string]any{"name": "新名字"}
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPut, "/tenants/1/members/u-owner/profile", body,
+		memberCtxOpts{callerID: "u-admin", role: types.TenantRoleAdmin})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("admin editing owner member must be 403, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestRemoveMember_AdminCannotRemoveOwner(t *testing.T) {
+	removed := false
+	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, _ uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: 1, Role: types.TenantRoleOwner, Status: types.TenantMemberStatusActive}, nil
+		},
+		remove: func(_ context.Context, _ string, _ uint64) error {
+			removed = true
+			return nil
+		},
+	}
+	h := newTestMemberHandler(ms, &stubMemberUserService{})
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodDelete, "/tenants/1/members/u-owner", nil,
+		memberCtxOpts{callerID: "u-admin", role: types.TenantRoleAdmin})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("admin removing owner member must be 403, got %d body=%s", w.Code, w.Body.String())
+	}
+	if removed {
+		t.Fatal("remove must not run when admin targets an owner member")
+	}
+}
+
+func TestRemoveMember_OwnerCanRemoveNonOwner(t *testing.T) {
+	removed := false
+	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, _ uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: 1, Role: types.TenantRoleViewer, Status: types.TenantMemberStatusActive}, nil
+		},
+		remove: func(_ context.Context, _ string, _ uint64) error {
+			removed = true
+			return nil
+		},
+	}
+	h := newTestMemberHandler(ms, &stubMemberUserService{})
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodDelete, "/tenants/1/members/u-viewer", nil,
+		memberCtxOpts{callerID: "u-owner", role: types.TenantRoleOwner})
+	if w.Code != http.StatusOK {
+		t.Fatalf("owner removing viewer member must be 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !removed {
+		t.Fatal("remove must run for owner caller on non-owner target")
 	}
 }

@@ -409,6 +409,11 @@ func (h *TenantMemberHandler) UpdateMemberAgentAccess(c *gin.Context) {
 		return
 	}
 
+	// Admin 可给成员分配智能体，但不能改动 Owner 成员的配置。
+	if h.denyNonOwnerTouchingOwner(c, ctx, tenantID, userID, nil) {
+		return
+	}
+
 	var req updateMemberAgentAccessRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(apperrors.NewValidationError("invalid request body").WithDetails(err.Error()))
@@ -470,6 +475,34 @@ type updateMemberProfileRequest struct {
 // @Failure      404  {object}  errors.AppError  "成员不存在"
 // @Security     Bearer
 // @Router       /tenants/{id}/members/{user_id}/profile [put]
+// denyNonOwnerTouchingOwner: 调用方低于 Owner 且非跨空间超管时，Owner
+// 成员的成员管理操作（改名/删除/智能体配置）一律拒绝。Admin 只能管理
+// 非 Owner 成员；Owner 与跨空间超管不受限（超管在本空间的临时角色也是
+// Admin，用 CanAccessAllTenants 区分）。membership 传 nil 时自行查询，
+// 调用方已取过成员行时传入可省一次查询。
+func (h *TenantMemberHandler) denyNonOwnerTouchingOwner(
+	c *gin.Context, ctx context.Context, tenantID uint64, userID string, membership *types.TenantMember,
+) bool {
+	if types.TenantRoleFromContext(ctx) == types.TenantRoleOwner {
+		return false
+	}
+	if caller, ok := ctx.Value(types.UserContextKey).(*types.User); ok && caller.CanAccessAllTenants {
+		return false
+	}
+	if membership == nil {
+		var err error
+		membership, err = h.memberService.GetMembership(ctx, userID, tenantID)
+		if err != nil {
+			return false // 查询失败交给后续流程按 404/500 报错
+		}
+	}
+	if membership != nil && membership.Role == types.TenantRoleOwner {
+		c.Error(apperrors.NewForbiddenError("admin cannot modify an owner member"))
+		return true
+	}
+	return false
+}
+
 func (h *TenantMemberHandler) UpdateMemberProfile(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID, ok := parseTenantIDFromPath(c)
@@ -497,6 +530,10 @@ func (h *TenantMemberHandler) UpdateMemberProfile(c *gin.Context) {
 	member, err := h.memberService.GetMembership(ctx, userID, tenantID)
 	if err != nil || member == nil {
 		c.Error(apperrors.NewNotFoundError("membership not found"))
+		return
+	}
+	// Admin 不能改 Owner 成员的姓名。
+	if h.denyNonOwnerTouchingOwner(c, ctx, tenantID, userID, member) {
 		return
 	}
 
@@ -540,6 +577,11 @@ func (h *TenantMemberHandler) RemoveMember(c *gin.Context) {
 	userID := strings.TrimSpace(c.Param("user_id"))
 	if userID == "" {
 		c.Error(apperrors.NewValidationError("user_id is required"))
+		return
+	}
+
+	// Admin 不能删除 Owner 成员。
+	if h.denyNonOwnerTouchingOwner(c, ctx, tenantID, userID, nil) {
 		return
 	}
 
