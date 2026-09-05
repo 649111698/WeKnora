@@ -116,13 +116,18 @@ const MERMAID_LIGHT_THEME = {
   },
 }
 
+// 暗黑主题图表画布底色（与应用暗色聊天背景一致）；全屏查看器
+// （mermaidViewer）的内容卡片与导出 PNG 复用同一底色，保证暗黑下
+// 预览与正文观感一致。
+export const mermaidDarkCanvas = '#1a1f28'
+
 // Dark mirror of the light ECharts theme: the same ECharts hue set, with the
 // blue/teal/purple series brightened for the app's #1a1f28 canvas; pie gaps
 // and xy axes follow the dark equivalents (canvas-colored slice borders,
 // lightened axis gray).
 const MERMAID_DARK_THEME = {
   darkMode: true,
-  background: '#1a1f28',
+  background: mermaidDarkCanvas,
   primaryColor: '#6C8FE8',
   primaryTextColor: '#FFFFFF',
   primaryBorderColor: '#6C8FE8',

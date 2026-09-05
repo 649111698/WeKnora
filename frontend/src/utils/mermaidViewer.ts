@@ -3,11 +3,23 @@
  * 支持：点击放大、滚轮缩放、鼠标拖拽、高清导出
  */
 import i18n from '@/i18n';
+import { mermaidDarkCanvas } from '@/utils/mermaidShared';
+
+// 全屏卡片与导出 PNG 的画布底色：跟随当前主题。图表按当前主题配色渲染
+// （暗黑下是浅字/深缝的深色系 SVG），白底卡片会把这批颜色衬错。
+const viewerCanvasBackground = (): string =>
+  document.documentElement.getAttribute('theme-mode') === 'dark'
+    ? mermaidDarkCanvas
+    : '#ffffff'
 
 /**
  * 下载 SVG 为 PNG 图片（使用实际渲染尺寸）
  */
-const downloadSvgAsImage = async (svgElement: SVGElement, filename = 'mermaid-diagram.png'): Promise<void> => {
+const downloadSvgAsImage = async (
+  svgElement: SVGElement,
+  filename = 'mermaid-diagram.png',
+  background = '#ffffff',
+): Promise<void> => {
   // 获取 SVG 实际渲染尺寸
   const bbox = svgElement.getBoundingClientRect()
   const w = Math.round(bbox.width)
@@ -30,7 +42,7 @@ const downloadSvgAsImage = async (svgElement: SVGElement, filename = 'mermaid-di
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
-      ctx.fillStyle = '#ffffff'
+      ctx.fillStyle = background
       ctx.fillRect(0, 0, w, h)
       ctx.drawImage(img, 0, 0, w, h)
 
@@ -104,7 +116,7 @@ export const openMermaidFullscreen = (svgHtml: string): void => {
 
   // 创建内容区域
   const content = document.createElement('div')
-  content.style.cssText = 'position:absolute;left:50%;top:50%;background:#fff;border-radius:12px;padding:32px;box-shadow:0 8px 32px rgba(0,0,0,0.2);transformOrigin:0 0;'
+  content.style.cssText = `position:absolute;left:50%;top:50%;background:${viewerCanvasBackground()};border-radius:12px;padding:32px;box-shadow:0 8px 32px rgba(0,0,0,0.2);transformOrigin:0 0;`
   content.innerHTML = svgHtml
   const svgEl = content.querySelector('svg')
   if (svgEl) {
@@ -136,11 +148,11 @@ export const openMermaidFullscreen = (svgHtml: string): void => {
   zoomOutBtn.onclick = (e) => { e.stopPropagation(); scale = Math.max(0.2, scale - STEP); applyTransform() }
   resetBtn.onclick = (e) => { e.stopPropagation(); scale = 1; translateX = 0; translateY = 0; applyTransform() }
 
-  // 下载 - 使用实际渲染尺寸
+  // 下载 - 使用实际渲染尺寸（底色与全屏卡片一致）
   downloadBtn.onclick = (e) => {
     e.stopPropagation()
     if (!svgEl) return
-    downloadSvgAsImage(svgEl)
+    downloadSvgAsImage(svgEl, undefined, viewerCanvasBackground())
     showBtnFeedback(downloadBtn, true, t('mermaid.downloading'))
   }
 
