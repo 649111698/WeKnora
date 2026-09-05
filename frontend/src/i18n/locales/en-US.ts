@@ -1176,7 +1176,7 @@ export default {
       sandboxBackendMissing: 'Config deleted',
       sandboxNoConfigs: 'This workspace has no sandbox yet, so skill scripts will not run.',
       skillsInfoTitle: 'How Skills and the sandbox work together',
-      skillsInfoContent: 'Skills are preloaded knowledge modules whose scripts run in the selected sandbox. The list comes from skills installed there. Once a session sandbox exists, its attachments, artifacts, and teardown stay pinned to the config it was created on — changing the sandbox only affects later sessions.'
+      skillsInfoContent: 'Skills are knowledge modules whose scripts run in the selected sandbox. The list comes from skills installed there. Once a session sandbox exists, its attachments, artifacts, and teardown stay pinned to the config it was created on — changing the sandbox only affects later sessions.'
     },
     selector: {
       title: 'Select Agent',
@@ -4290,7 +4290,10 @@ export default {
       emptyDescription: 'This service did not provide tools or resources',
       requireApproval: 'Require human approval',
       requireApprovalTip: 'When enabled, the agent pauses before calling this tool until you approve — use for DB writes, deletes, etc.',
-      approvalSaveFailed: 'Failed to save approval setting'
+      approvalSaveFailed: 'Failed to save approval setting',
+      toolEnabled: 'Enable tool',
+      toolEnabledTip: 'When disabled, the agent will not see or call this tool',
+      toolEnabledSaveFailed: 'Failed to save tool setting'
     }
   },
   error: {
@@ -5585,6 +5588,7 @@ export default {
       readSkill: 'Read Skill',
       executeSkillScript: 'Execute Skill Script',
       listSandboxFiles: 'List sandbox files',
+      readFile: 'Read file',
       readSandboxFile: 'Read sandbox file',
       writeSandboxFile: 'Write sandbox file',
       editSandboxFile: 'Edit sandbox file',

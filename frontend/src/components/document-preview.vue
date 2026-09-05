@@ -31,6 +31,7 @@ const VueOfficePptx = defineAsyncComponent(() => import('@vue-office/pptx'));
 const { t } = useI18n();
 
 const props = defineProps<{
+  sourceBlob?: Blob;
   knowledgeId?: string;
   sessionId?: string;
   attachmentId?: string;
@@ -214,6 +215,9 @@ function onImageLoad(e: Event) {
 }
 
 function getPreviewSourceKey(): string {
+  if (props.sourceBlob) {
+    return `resource-blob:${props.fileName}:${props.fileType}:${props.sourceBlob.size}:${props.sourceBlob.type}`;
+  }
   if (props.knowledgeId) return `knowledge:${props.knowledgeId}`;
   if (props.sessionId && props.attachmentId) return `attachment:${props.sessionId}:${props.attachmentId}`;
   if (
@@ -235,6 +239,7 @@ function allowsHtmlScriptPreview(): boolean {
 }
 
 async function fetchPreviewBlob(): Promise<Blob> {
+  if (props.sourceBlob) return props.sourceBlob;
   if (props.knowledgeId) {
     return previewKnowledgeFile(props.knowledgeId);
   }
@@ -373,7 +378,7 @@ function cleanup() {
 }
 
 watch(
-  () => [props.active, props.knowledgeId, props.sessionId, props.attachmentId, props.messageId, props.artifactIndex],
+  () => [props.active, props.knowledgeId, props.sessionId, props.attachmentId, props.messageId, props.artifactIndex, props.sourceBlob, props.fileName, props.fileType],
   ([active]) => {
     if (active && getPreviewSourceKey()) {
       loadPreview();

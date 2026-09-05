@@ -1482,6 +1482,7 @@ export default {
       readSkill: '读取技能',
       executeSkillScript: '执行技能脚本',
       listSandboxFiles: '列出沙箱文件',
+      readFile: '读取文件',
       readSandboxFile: '读取沙箱文件',
       writeSandboxFile: '写入沙箱文件',
       editSandboxFile: '编辑沙箱文件',
@@ -2798,7 +2799,10 @@ export default {
       emptyDescription: '该服务未提供工具或资源',
       requireApproval: '需人工审核',
       requireApprovalTip: '开启后，Agent 调用该工具前会暂停并等待确认，适用于可能改库/删文件等高危操作',
-      approvalSaveFailed: '保存审核设置失败'
+      approvalSaveFailed: '保存审核设置失败',
+      toolEnabled: '启用工具',
+      toolEnabledTip: '关闭后，Agent 不会再看到或调用该工具',
+      toolEnabledSaveFailed: '保存工具开关失败'
     }
   },
   system: {

@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, NotifyPlugin } from 'tdesign-vue-next'
+import ProtectedResourcePreview from '@/components/ProtectedResourcePreview.vue'
 import ManualKnowledgeEditor from '@/components/manual-knowledge-editor.vue'
 import UploadConfirmHost from '@/components/UploadConfirmHost.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -340,6 +341,7 @@ onUnmounted(() => {
     <div id="app">
       <RouterView />
       <ManualKnowledgeEditor />
+      <ProtectedResourcePreview />
       <UploadConfirmHost />
       <!-- 全站水印（WATERMARK_ENABLED 控制，{username} 替换为当前登录用户名） -->
       <SiteWatermark v-if="watermarkEnabled" :text="watermarkText" />

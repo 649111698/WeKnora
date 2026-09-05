@@ -1481,6 +1481,7 @@ export default {
       readSkill: 'Чтение навыка',
       executeSkillScript: 'Выполнение скрипта навыка',
       listSandboxFiles: 'Список файлов песочницы',
+      readFile: 'Чтение файла',
       readSandboxFile: 'Чтение файла песочницы',
       writeSandboxFile: 'Запись файла песочницы',
       editSandboxFile: 'Правка файла песочницы',
@@ -2797,7 +2798,10 @@ export default {
       emptyDescription: 'Сервис не предоставил инструменты или ресурсы',
       requireApproval: 'Требуется подтверждение',
       requireApprovalTip: 'При включении агент ждёт подтверждения перед вызовом инструмента.',
-      approvalSaveFailed: 'Не удалось сохранить настройку'
+      approvalSaveFailed: 'Не удалось сохранить настройку',
+      toolEnabled: 'Включить инструмент',
+      toolEnabledTip: 'Если отключить, агент не увидит и не вызовет этот инструмент.',
+      toolEnabledSaveFailed: 'Не удалось сохранить настройку инструмента'
     }
   },
   system: {
