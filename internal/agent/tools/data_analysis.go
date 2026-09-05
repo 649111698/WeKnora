@@ -228,8 +228,17 @@ func (t *DataAnalysisTool) Execute(ctx context.Context, args json.RawMessage) (*
 	// MCP 大结果物化表优先：不是知识库文档，必须先于知识库授权判断，
 	// 否则表名会被当成文档 ID 拦成 "knowledge not found"。
 	var schema *TableSchema
+	allowedTables := []string{}
 	if t.offload != nil && t.offload.Has(input.KnowledgeID) {
 		schema = t.offload.Schema(input.KnowledgeID)
+		family := t.offload.Family(input.KnowledgeID)
+		allowedTables = append(allowedTables, family...)
+		// 模型常给长表名自造简称（FROM d1）；家族只有一张表时可安全
+		// 归一，避免一整轮纠错浪费。
+		if rewritten := rewriteInventedTableRefs(input.Sql, family); rewritten != input.Sql {
+			logger.Infof(ctx, "[Tool][DataAnalysis] Auto-normalized invented table alias for session %s", t.sessionID)
+			input.Sql = rewritten
+		}
 	} else {
 		if t.scopeEnforced {
 			if _, err := authorizeKnowledgeInSearchTargets(ctx, t.searchTargets, input.KnowledgeID, t.knowledgeService); err != nil {
@@ -245,6 +254,7 @@ func (t *DataAnalysisTool) Execute(ctx context.Context, args json.RawMessage) (*
 				Error:   fmt.Sprintf("Failed to load knowledge ID '%s': %v", input.KnowledgeID, err),
 			}, err
 		}
+		allowedTables = []string{schema.TableName}
 	}
 
 	// Replace knowledge ID with table name
@@ -274,7 +284,7 @@ func (t *DataAnalysisTool) Execute(ctx context.Context, args json.RawMessage) (*
 	// Validate SQL with comprehensive security checks
 	// IMPORTANT: Must enable validateSelectStmt to block RangeFunction attacks
 	_, validation := utils.ValidateSQL(input.Sql,
-		utils.WithAllowedTables(schema.TableName),
+		utils.WithAllowedTables(allowedTables...),
 		utils.WithSingleStatement(),      // Block multiple statements
 		utils.WithNoDangerousFunctions(), // Block dangerous functions
 	)

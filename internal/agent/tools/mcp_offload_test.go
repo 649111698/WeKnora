@@ -540,3 +540,79 @@ func TestMCPOffload_MixedArrayObjectNullField(t *testing.T) {
 		}
 	}
 }
+
+// TestMCPOffload_DataAnalysisAutoAlias 模型自造表简称（FROM d1）时自动
+// 归一到真实表名，不再浪费一整轮纠错；子表也在允许列表里。
+func TestMCPOffload_DataAnalysisAutoAlias(t *testing.T) {
+	db := newOffloadDuckDB(t)
+	store := NewMCPOffloadStore(db)
+	ctx := context.Background()
+
+	if _, ok := store.TryOffload(ctx, "mcp_svc_tool", nil, bigRowsJSON(40)); !ok {
+		t.Fatal("offload failed")
+	}
+	da := NewDataAnalysisTool(nil, nil, nil, nil, db, "sess-alias").WithMCPOffload(store)
+
+	args, _ := json.Marshal(DataAnalysisInput{
+		KnowledgeID: "mcp_svc_tool_t1",
+		Sql:         `SELECT "问题类型", COUNT(*) AS n FROM d1 GROUP BY "问题类型" ORDER BY n DESC`,
+	})
+	res, err := da.Execute(ctx, args)
+	if err != nil || !res.Success {
+		t.Fatalf("invented alias should be auto-normalized: err=%v res=%+v", err, res)
+	}
+	if !strings.Contains(res.Output, "问题查询") {
+		t.Fatalf("aggregate result unexpected:\n%s", res.Output)
+	}
+
+	// 带引号的自造名同样归一。
+	args2, _ := json.Marshal(DataAnalysisInput{
+		KnowledgeID: "mcp_svc_tool_t1",
+		Sql:         `SELECT COUNT(*) AS n FROM "d1"`,
+	})
+	res2, err2 := da.Execute(ctx, args2)
+	if err2 != nil || !res2.Success {
+		t.Fatalf("quoted invented alias should be normalized: err=%v res=%+v", err2, res2)
+	}
+	if !strings.Contains(res2.Output, "40") {
+		t.Fatalf("row count missing:\n%s", res2.Output)
+	}
+}
+
+// TestMCPOffload_DataAnalysisChildTableAllowed 主表调用里 JOIN/查询子表
+// 被家族允许列表放行。
+func TestMCPOffload_DataAnalysisChildTableAllowed(t *testing.T) {
+	db := newOffloadDuckDB(t)
+	store := NewMCPOffloadStore(db)
+	ctx := context.Background()
+
+	var rows []map[string]interface{}
+	for i := 0; i < 30; i++ {
+		rows = append(rows, map[string]interface{}{
+			"id": i,
+			"ee": []interface{}{
+				map[string]interface{}{"seq": 1, "tobn": "张三", "tost": "已解决", "说明": strings.Repeat("处理记录。", 40)},
+				map[string]interface{}{"seq": 2, "tobn": "李四", "tost": "已提交", "说明": strings.Repeat("处理记录。", 40)},
+			},
+			"备注": strings.Repeat("详情。", 150),
+		})
+	}
+	b, _ := json.Marshal(rows)
+	if _, ok := store.TryOffload(ctx, "mcp_svc_tool", nil, string(b)); !ok {
+		t.Fatal("offload failed")
+	}
+	da := NewDataAnalysisTool(nil, nil, nil, nil, db, "sess-child").WithMCPOffload(store)
+
+	// 用主表 knowledge_id 直接查子表。
+	args, _ := json.Marshal(DataAnalysisInput{
+		KnowledgeID: "mcp_svc_tool_t1",
+		Sql:         `SELECT "tobn", COUNT(*) AS n FROM mcp_svc_tool_t1__ee GROUP BY "tobn" ORDER BY n DESC`,
+	})
+	res, err := da.Execute(ctx, args)
+	if err != nil || !res.Success {
+		t.Fatalf("child table should be in allowed family: err=%v res=%+v", err, res)
+	}
+	if !strings.Contains(res.Output, "张三") {
+		t.Fatalf("child aggregate unexpected:\n%s", res.Output)
+	}
+}

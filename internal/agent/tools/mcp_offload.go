@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -127,6 +128,27 @@ func (s *MCPOffloadStore) Has(name string) bool {
 	return ok
 }
 
+// Family 返回物化表家族：主表及其全部 "__子表" 后代（JOIN 子表分析时
+// data_analysis 需要把整族都放进允许列表）。
+func (s *MCPOffloadStore) Family(name string) []string {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tables[name]; !ok {
+		return nil
+	}
+	prefix := name + "__"
+	family := []string{name}
+	for t := range s.tables {
+		if strings.HasPrefix(t, prefix) {
+			family = append(family, t)
+		}
+	}
+	return family
+}
+
 // Schema 返回物化表的表结构；不存在时返回 nil。
 func (s *MCPOffloadStore) Schema(name string) *TableSchema {
 	if s == nil {
@@ -215,6 +237,27 @@ func analyzeHint(name string) string {
 
 func alreadyLoadedSummary(t *offloadedTable) string {
 	return fmt.Sprintf("[Offloaded data] This page is already loaded into table `%s` (%d rows). Analyze the existing table; do not re-fetch this page.", t.name, t.rows)
+}
+
+// rewriteInventedTableRefs 归一模型自造的表简称（FROM d1 之类）：扫描
+// FROM/JOIN 后的表名，家族只有一张表时把未知名替换为真实表名。多表家
+// 族无法确定意图，保持原文交给校验器报完整错误。
+func rewriteInventedTableRefs(sql string, family []string) string {
+	if len(family) != 1 {
+		return sql
+	}
+	real := family[0]
+	allowed := map[string]bool{strings.ToLower(real): true}
+	re := regexp.MustCompile(`(?i)\b(?:from|join)\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?`)
+	rewritten := sql
+	for _, m := range re.FindAllStringSubmatch(sql, -1) {
+		name := m[1]
+		if allowed[strings.ToLower(name)] {
+			continue
+		}
+		rewritten = regexp.MustCompile(`(?i)"?\b`+regexp.QuoteMeta(name)+`\b"?`).ReplaceAllString(rewritten, `"`+real+`"`)
+	}
+	return rewritten
 }
 
 // ---- 参数指纹 ----
