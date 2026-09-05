@@ -116,6 +116,11 @@ type sqlValidator struct {
 	allowedTables   map[string]bool
 	checkTableNames bool
 
+	// Compound query validation: UNION/INTERSECT/EXCEPT of SELECTs stay
+	// rejected by default; call sites that own the tables (e.g. session-local
+	// MCP offload tables) may relax it — still read-only and table-scoped.
+	allowCompound bool
+
 	// Function validation
 	allowedFunctions   map[string]bool
 	checkFunctionNames bool
@@ -472,6 +477,15 @@ func WithSelectOnly() SQLValidationOption {
 func WithSingleStatement() SQLValidationOption {
 	return func(v *sqlValidator) {
 		v.checkSingleStatement = true
+	}
+}
+
+// WithAllowCompoundQueries permits UNION/INTERSECT/EXCEPT between SELECTs.
+// Only for call sites that own the allowed tables and keep every other
+// restriction (read-only, single statement, function/table allowlists).
+func WithAllowCompoundQueries() SQLValidationOption {
+	return func(v *sqlValidator) {
+		v.allowCompound = true
 	}
 }
 
@@ -1345,7 +1359,26 @@ func (v *sqlValidator) validateSelectStmt(stmt *pg_query.SelectStmt, result *SQL
 
 	// Check for UNION/INTERSECT/EXCEPT (compound queries)
 	if stmt.Op != pg_query.SetOperation_SETOP_NONE {
-		return fmt.Errorf("compound queries (UNION/INTERSECT/EXCEPT) are not allowed")
+		if !v.allowCompound {
+			return fmt.Errorf("compound queries (UNION/INTERSECT/EXCEPT) are not allowed")
+		}
+		// 两侧各自完整校验：表白名单/函数限制/危险子句对每一边都生效。
+		sidesValidated := false
+		if stmt.Larg != nil {
+			if err := v.validateSelectStmt(stmt.Larg, result); err != nil {
+				return err
+			}
+			sidesValidated = true
+		}
+		if stmt.Rarg != nil {
+			if err := v.validateSelectStmt(stmt.Rarg, result); err != nil {
+				return err
+			}
+			sidesValidated = true
+		}
+		if sidesValidated {
+			tablesInQuery["__compound_sides_validated__"] = ""
+		}
 	}
 
 	// Check for WITH clause (CTEs)
@@ -1405,7 +1438,9 @@ func (v *sqlValidator) validateSelectStmt(stmt *pg_query.SelectStmt, result *SQL
 		}
 	}
 
-	// Ensure at least one valid table is referenced
+	// Ensure at least one valid table is referenced. A compound statement's
+	// FROM clauses live on its two sides (validated above); the top node has
+	// no FromClause of its own, so sides having passed already counts.
 	if len(tablesInQuery) == 0 {
 		return fmt.Errorf("no valid table found in query")
 	}

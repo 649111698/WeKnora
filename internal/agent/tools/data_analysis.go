@@ -23,7 +23,7 @@ var dataAnalysisTool = BaseTool{
 		"For Excel files with multiple sheets, every sheet is loaded into the same table and the source sheet name is exposed as a '__sheet_name' column so you can filter or aggregate per sheet. " +
 		"If the user's question requires data statistics, convert the question into SQL and execute it. " +
 		"Large MCP tool results are offloaded into read-only tables named like 'mcp_..._tN' (see the tool result summary for the exact name, columns and sample rows) — analyze those tables here by passing the table name as knowledge_id. " +
-		"One single SELECT per call: the validator rejects UNION/INTERSECT/EXCEPT and WITH/CTE — make parallel calls for multiple aggregations — and always reference the exact table name in FROM (no aliases).",
+		"Always reference the exact table name in FROM (no invented aliases) and avoid WITH/CTE. For offloaded mcp_* tables you may combine multiple dimension aggregations into ONE call using UNION ALL; for regular knowledge tables UNION is rejected — use parallel calls instead.",
 	schema: utils.GenerateSchema[DataAnalysisInput](),
 }
 
@@ -283,11 +283,17 @@ func (t *DataAnalysisTool) Execute(ctx context.Context, args json.RawMessage) (*
 
 	// Validate SQL with comprehensive security checks
 	// IMPORTANT: Must enable validateSelectStmt to block RangeFunction attacks
-	_, validation := utils.ValidateSQL(input.Sql,
+	validateOpts := []utils.SQLValidationOption{
 		utils.WithAllowedTables(allowedTables...),
 		utils.WithSingleStatement(),      // Block multiple statements
 		utils.WithNoDangerousFunctions(), // Block dangerous functions
-	)
+	}
+	if len(allowedTables) > 0 && t.offload != nil && t.offload.Has(input.KnowledgeID) {
+		// 会话内落表由本服务创建且强制只读：允许 UNION 复合查询，
+		// 模型可把多个维度的聚合叠成一条 SQL，省掉成倍的调用轮次。
+		validateOpts = append(validateOpts, utils.WithAllowCompoundQueries())
+	}
+	_, validation := utils.ValidateSQL(input.Sql, validateOpts...)
 	if !validation.Valid {
 		logger.Warnf(ctx, "[Tool][DataAnalysis] SQL validation failed for session %s: %v", t.sessionID, validation.Errors)
 		return &types.ToolResult{

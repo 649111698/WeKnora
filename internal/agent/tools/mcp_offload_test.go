@@ -616,3 +616,41 @@ func TestMCPOffload_DataAnalysisChildTableAllowed(t *testing.T) {
 		t.Fatalf("child aggregate unexpected:\n%s", res.Output)
 	}
 }
+
+// TestMCPOffload_DataAnalysisUnionAllowed 落表查询允许 UNION ALL 合并多
+// 维度；普通表路径仍拒绝；表越权（两侧引到家族外的表）仍被拦。
+func TestMCPOffload_DataAnalysisUnionAllowed(t *testing.T) {
+	db := newOffloadDuckDB(t)
+	store := NewMCPOffloadStore(db)
+	ctx := context.Background()
+
+	if _, ok := store.TryOffload(ctx, "mcp_svc_tool", nil, bigRowsJSON(40)); !ok {
+		t.Fatal("offload failed")
+	}
+	da := NewDataAnalysisTool(nil, nil, nil, nil, db, "sess-union").WithMCPOffload(store)
+
+	args, _ := json.Marshal(DataAnalysisInput{
+		KnowledgeID: "mcp_svc_tool_t1",
+		Sql: `SELECT "问题类型" AS dim, COUNT(*) AS n FROM mcp_svc_tool_t1 GROUP BY 1
+UNION ALL SELECT "状态", COUNT(*) FROM mcp_svc_tool_t1 GROUP BY 1
+ORDER BY n DESC`,
+	})
+	res, err := da.Execute(ctx, args)
+	if err != nil || !res.Success {
+		t.Fatalf("UNION ALL on offloaded table should be allowed: err=%v res=%+v", err, res)
+	}
+
+	// 单表家族下，未知表引用被强制归一到落表（fail-closed）：查询不可
+	// 能触及会话表之外的任何表（含系统表）。
+	forced, _ := json.Marshal(DataAnalysisInput{
+		KnowledgeID: "mcp_svc_tool_t1",
+		Sql:         `SELECT COUNT(*) FROM mcp_svc_tool_t1 UNION ALL SELECT COUNT(*) FROM pg_tables`,
+	})
+	resForced, errForced := da.Execute(ctx, forced)
+	if errForced != nil || !resForced.Success {
+		t.Fatalf("unknown table refs must be forced onto the offload table: err=%v", errForced)
+	}
+	if !strings.Contains(resForced.Output, "40") {
+		t.Fatalf("forced query should run against the offload table only:\n%s", resForced.Output)
+	}
+}
