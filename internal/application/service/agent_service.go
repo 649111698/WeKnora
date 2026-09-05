@@ -340,8 +340,14 @@ func (s *agentService) registerMCPTools(
 				AuthWaitTimeoutSeconds: config.MCPAuthWaitTimeout,
 			}
 		}
+		// MCP 大结果落表存储：DuckDB 可用时每个 engine 一个，随
+		// ToolRegistry.Cleanup 在请求结束统一 DROP。
+		var offload *tools.MCPOffloadStore
+		if s.duckdb != nil {
+			offload = tools.NewMCPOffloadStore(s.duckdb)
+		}
 		registered, err := tools.RegisterMCPTools(
-			ctx, toolRegistry, enabledServices, s.mcpManager, s.toolApprovalGate, regCtx,
+			ctx, toolRegistry, enabledServices, s.mcpManager, s.toolApprovalGate, regCtx, offload,
 		)
 		if err != nil {
 			logger.Warnf(ctx, "Failed to register MCP tools: %v", err)
@@ -349,6 +355,15 @@ func (s *agentService) registerMCPTools(
 			logger.Warnf(ctx, "No MCP tools registered from %d enabled service(s)", len(enabledServices))
 		} else {
 			logger.Infof(ctx, "Registered %d MCP tool(s) from %d enabled service(s)", registered, len(enabledServices))
+			// 落表能力依赖 data_analysis 消费物化表：挂了 MCP 工具就注册
+			// 它（覆盖无知识库场景下被 Pure-Agent 过滤掉/未带 offload 的
+			// 实例），否则大结果落了表模型也没有 SQL 入口。
+			if offload != nil {
+				toolRegistry.RegisterTool(tools.NewDataAnalysisTool(
+					s.knowledgeBaseService, s.knowledgeService, s.tenantService, s.fileService, s.duckdb, sessionID, s.storageResolver,
+				).WithSearchTargets(config.SearchTargets).WithMCPOffload(offload))
+				logger.Infof(ctx, "Registered data_analysis tool for MCP result offload (session: %s)", sessionID)
+			}
 		}
 	}
 }

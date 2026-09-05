@@ -20,8 +20,9 @@ import (
 var dataAnalysisTool = BaseTool{
 	name: ToolDataAnalysis,
 	description: "Use this tool when the knowledge is CSV or Excel files. It loads the data into memory and executes SQL for data analysis. " +
-		"For Excel files with multiple sheets, every sheet is loaded into the same table and the source sheet name is exposed as a '__sheet_name' column so you can filter/aggregate per sheet. " +
-		"If the user's question requires data statistics, convert the question into SQL and execute it.",
+		"For Excel files with multiple sheets, every sheet is loaded into the same table and the source sheet name is exposed as a '__sheet_name' column so you can filter or aggregate per sheet. " +
+		"If the user's question requires data statistics, convert the question into SQL and execute it. " +
+		"Large MCP tool results are offloaded into read-only tables named like 'mcp_..._tN' (see the tool result summary for the exact name, columns and sample rows) — analyze those tables here by passing the table name as knowledge_id.",
 	schema: utils.GenerateSchema[DataAnalysisInput](),
 }
 
@@ -103,7 +104,7 @@ func buildMissingColumnSuggestion(sqlErr error, schema *TableSchema) string {
 }
 
 type DataAnalysisInput struct {
-	KnowledgeID string `json:"knowledge_id" jsonschema:"short dN document ID to query"`
+	KnowledgeID string `json:"knowledge_id" jsonschema:"short dN document ID to query, or an offloaded mcp_* table name from a previous tool result"`
 	Sql         string `json:"sql" jsonschema:"SQL to be executed on knowledge"`
 }
 
@@ -126,6 +127,15 @@ type DataAnalysisTool struct {
 	storageResolver interfaces.StorageBackendResolver
 	searchTargets   types.SearchTargets
 	scopeEnforced   bool
+	// offload 提供本请求物化的 MCP 大结果表；非 nil 且 knowledge_id 命中
+	// 物化表时跳过知识库授权/加载，直接按该表执行只读 SQL。
+	offload *MCPOffloadStore
+}
+
+// WithMCPOffload 接入 MCP 大结果落表存储，使本工具可查询 mcp_* 物化表。
+func (t *DataAnalysisTool) WithMCPOffload(store *MCPOffloadStore) *DataAnalysisTool {
+	t.offload = store
+	return t
 }
 
 // WithSearchTargets enables the Agent-only authorization boundary. Other
@@ -220,13 +230,21 @@ func (t *DataAnalysisTool) Execute(ctx context.Context, args json.RawMessage) (*
 		}
 	}
 
-	schema, err := t.LoadFromKnowledgeID(ctx, input.KnowledgeID)
-	if err != nil {
-		logger.Errorf(ctx, "[Tool][DataAnalysis] Failed to load knowledge ID '%s': %v", input.KnowledgeID, err)
-		return &types.ToolResult{
-			Success: false,
-			Error:   fmt.Sprintf("Failed to load knowledge ID '%s': %v", input.KnowledgeID, err),
-		}, err
+	var schema *TableSchema
+	if t.offload != nil && t.offload.Has(input.KnowledgeID) {
+		// MCP 大结果物化表：不是知识库文档，跳过文档授权与加载，
+		// 结构由落表时登记（行数/列型已知，无需再物化文件）。
+		schema = t.offload.Schema(input.KnowledgeID)
+	} else {
+		var err error
+		schema, err = t.LoadFromKnowledgeID(ctx, input.KnowledgeID)
+		if err != nil {
+			logger.Errorf(ctx, "[Tool][DataAnalysis] Failed to load knowledge ID '%s': %v", input.KnowledgeID, err)
+			return &types.ToolResult{
+				Success: false,
+				Error:   fmt.Sprintf("Failed to load knowledge ID '%s': %v", input.KnowledgeID, err),
+			}, err
+		}
 	}
 
 	// Replace knowledge ID with table name
